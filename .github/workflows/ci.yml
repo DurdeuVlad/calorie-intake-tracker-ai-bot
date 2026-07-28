@@ -40,12 +40,17 @@ jobs:
         if: always()
         run: docker compose down --volumes --remove-orphans
 
-  dependency-review:
+  security-scan:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - name: Scan repository dependencies and configuration
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true

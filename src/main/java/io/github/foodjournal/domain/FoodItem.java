@@ -10,5 +10,5 @@ public class FoodItem {
  @Column(nullable=false) private String name;
  private BigDecimal quantityGrams; private Integer calories; private BigDecimal proteinGrams; private BigDecimal carbsGrams; private BigDecimal fatGrams;
  protected FoodItem() {}
- public FoodItem(FoodEntry entry,String name){this.entry=entry;this.name=name;}
+ public FoodItem(FoodEntry entry,String name,BigDecimal quantityGrams,Integer calories){this.entry=entry;this.name=name;this.quantityGrams=quantityGrams;this.calories=calories;}
 }
