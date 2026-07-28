@@ -113,4 +113,30 @@ class JournalApplicationServiceTest {
     when(interpreter.interpret("save bad soup")).thenReturn(new JournalIntent(IntentType.SAVE_PRIVATE_FOOD,"bad",null,null,null,null,null,null,List.of(new JournalIntent.MealItem("Bad soup",100d,80,Double.NaN,10d,2d))));
     assertThat(service.handle(1L,1L,"A","save bad soup")).contains("valid nutrition"); verifyNoInteractions(privateFoods);
   }
+
+  @Test void searchesOnlyTheRequestingUsersJournal() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    when(interpreter.interpret("find soup")).thenReturn(new JournalIntent(IntentType.QUERY_JOURNAL,null,null,"soup",null,null,null,null,List.of())); when(entries.searchByUserAndTerm(user,"soup")).thenReturn(List.of());
+    assertThat(service.handle(1L,1L,"A","find soup")).isEqualTo("No matching entries found.");
+    verify(entries).searchByUserAndTerm(user,"soup");
+  }
+
+  @Test void resolvesNaturalLanguageYesterdayWithinTheRequestingUsersTimezone() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    when(interpreter.interpret("show yesterday")).thenReturn(new JournalIntent(IntentType.QUERY_JOURNAL,null,null,null,null,null,null,null,List.of())); when(entries.findByUserAndEatenAtBetweenOrderByEatenAtAsc(eq(user),any(),any())).thenReturn(List.of());
+    assertThat(service.handle(1L,1L,"A","show yesterday")).isEqualTo("No matching entries found.");
+    verify(entries).findByUserAndEatenAtBetweenOrderByEatenAtAsc(eq(user),any(),any()); verify(entries,never()).searchByUserAndTerm(any(),any());
+  }
+
+  @Test void editsOnlyAnEntryOwnedByTheRequestingUserAndRefreshesStatus() {
+    FoodUser user = new FoodUser(1L, "A"); FoodEntry entry = new FoodEntry(user,"old",java.time.Instant.now(),100,"manual","unknown"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    when(interpreter.interpret("correct entry 3")).thenReturn(new JournalIntent(IntentType.EDIT_ENTRY,"new",150,null,3L,null,null,null,List.of())); when(entries.findByIdAndUser(3L,user)).thenReturn(Optional.of(entry));
+    assertThat(service.handle(1L,1L,"A","correct entry 3")).contains("Updated entry"); assertThat(entry.getOriginalMessage()).isEqualTo("new"); verify(dailyStatus).refresh(user,1L);
+  }
+
+  @Test void deletesOnlyTheRequestingUsersEntryAndDoesNotLeakItsExistence() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    when(interpreter.interpret("delete entry 77")).thenReturn(new JournalIntent(IntentType.DELETE_ENTRY,null,null,null,77L,null,null,null,List.of())); when(entries.findByIdAndUser(77L,user)).thenReturn(Optional.empty());
+    assertThat(service.handle(1L,1L,"A","delete entry 77")).isEqualTo("I could not find that entry."); verify(entries,never()).delete(any()); verify(dailyStatus,never()).refresh(any(),anyLong());
+  }
 }
