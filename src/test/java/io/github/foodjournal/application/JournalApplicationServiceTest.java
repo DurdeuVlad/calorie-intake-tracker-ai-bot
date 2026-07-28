@@ -107,4 +107,10 @@ class JournalApplicationServiceTest {
     service.handle(1L,1L,"A","update grandma soup");
     assertThat(existing.getCaloriesPer100g()).isEqualTo(90); verify(privateFoods,never()).delete(any()); verify(privateFoods,never()).save(any());
   }
+
+  @Test void rejectsInvalidHouseholdFoodMacrosWithoutWriting() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    when(interpreter.interpret("save bad soup")).thenReturn(new JournalIntent(IntentType.SAVE_PRIVATE_FOOD,"bad",null,null,null,null,null,null,List.of(new JournalIntent.MealItem("Bad soup",100d,80,Double.NaN,10d,2d))));
+    assertThat(service.handle(1L,1L,"A","save bad soup")).contains("valid nutrition"); verifyNoInteractions(privateFoods);
+  }
 }
