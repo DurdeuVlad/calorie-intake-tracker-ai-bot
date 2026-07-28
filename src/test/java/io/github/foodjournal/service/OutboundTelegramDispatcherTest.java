@@ -15,7 +15,7 @@ class OutboundTelegramDispatcherTest {
     OutboundTelegramMessageRepository repository = mock(OutboundTelegramMessageRepository.class);
     TelegramGateway telegram = mock(TelegramGateway.class);
     OutboundTelegramMessage message = new OutboundTelegramMessage(1L, "Logged");
-    when(repository.findByStatusAndNextAttemptAtLessThanEqualOrderById(eq(OutboundTelegramMessage.Status.PENDING), any(), any(Pageable.class))).thenReturn(List.of(message));
+    when(repository.lockReadyForDelivery()).thenReturn(List.of(message));
 
     new OutboundTelegramDispatcher(repository, telegram).dispatch();
 

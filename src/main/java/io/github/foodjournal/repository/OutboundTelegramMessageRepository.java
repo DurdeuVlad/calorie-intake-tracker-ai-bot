@@ -1,5 +1,6 @@
 package io.github.foodjournal.repository;
-import io.github.foodjournal.domain.OutboundTelegramMessage; import java.time.Instant; import java.util.List; import org.springframework.data.jpa.repository.JpaRepository;
+import io.github.foodjournal.domain.OutboundTelegramMessage; import java.util.List; import org.springframework.data.jpa.repository.*;
 public interface OutboundTelegramMessageRepository extends JpaRepository<OutboundTelegramMessage,Long>{
-  List<OutboundTelegramMessage> findByStatusAndNextAttemptAtLessThanEqualOrderById(OutboundTelegramMessage.Status status, Instant now, org.springframework.data.domain.Pageable pageable);
+  @Query(value="select * from outbound_telegram_messages where status = 'PENDING' and next_attempt_at <= current_timestamp order by id for update skip locked limit 20", nativeQuery=true)
+  List<OutboundTelegramMessage> lockReadyForDelivery();
 }
