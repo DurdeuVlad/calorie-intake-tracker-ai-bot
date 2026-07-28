@@ -10,4 +10,4 @@ Calling the Telegram API inside a database transaction makes delivery failures i
 
 ## Consequences
 
-Delivery is asynchronous and may be delayed briefly. Delivery is at-least-once at the transport boundary, while incoming Telegram updates and scheduled reports are atomically deduplicated before messages are enqueued.
+Delivery is asynchronous and may be delayed briefly. Dispatch claims one message at a time with a 60-second lease; the Telegram client has 5-second connect and 10-second read limits. Delivery is at-least-once at the transport boundary, while incoming Telegram updates and scheduled reports are atomically deduplicated before messages are enqueued.
