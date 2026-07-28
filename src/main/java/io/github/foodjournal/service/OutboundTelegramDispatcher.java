@@ -1,7 +1,7 @@
 package io.github.foodjournal.service;
-import io.github.foodjournal.domain.OutboundTelegramMessage; import io.github.foodjournal.repository.OutboundTelegramMessageRepository; import io.github.foodjournal.telegram.TelegramGateway; import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty; import org.springframework.scheduling.annotation.Scheduled; import org.springframework.stereotype.Service; import org.springframework.transaction.annotation.Transactional;
+import io.github.foodjournal.telegram.TelegramGateway; import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty; import org.springframework.scheduling.annotation.Scheduled; import org.springframework.stereotype.Service;
 @Service @ConditionalOnProperty(prefix="food-journal", name="scheduling-enabled", havingValue="true", matchIfMissing=true) public class OutboundTelegramDispatcher {
- private final OutboundTelegramMessageRepository messages; private final TelegramGateway telegram;
- public OutboundTelegramDispatcher(OutboundTelegramMessageRepository m,TelegramGateway t){messages=m;telegram=t;}
- @Scheduled(fixedDelayString="${food-journal.outbox-delay-ms:5000}") @Transactional public void dispatch(){ for(OutboundTelegramMessage message:messages.lockReadyForDelivery()){try{telegram.sendMessage(message.getChatId(),message.getText());message.markSent();}catch(Exception ignored){message.scheduleRetry();}} }
+ private final OutboundTelegramClaimService claims; private final TelegramGateway telegram;
+ public OutboundTelegramDispatcher(OutboundTelegramClaimService c,TelegramGateway t){claims=c;telegram=t;}
+ @Scheduled(fixedDelayString="${food-journal.outbox-delay-ms:5000}") public void dispatch(){for(OutboundTelegramClaimService.Delivery message:claims.claimBatch()){try{telegram.sendMessage(message.chatId(),message.text());claims.markSent(message.id());}catch(Exception ignored){claims.scheduleRetry(message.id());}}}
 }

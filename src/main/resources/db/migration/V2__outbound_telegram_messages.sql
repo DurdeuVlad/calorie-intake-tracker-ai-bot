@@ -5,6 +5,7 @@ CREATE TABLE outbound_telegram_messages (
   status VARCHAR(16) NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0,
   next_attempt_at TIMESTAMPTZ NOT NULL,
+  lease_expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL,
   sent_at TIMESTAMPTZ
 );
