@@ -14,7 +14,7 @@ Compose retains at most three 10 MB JSON log files per application container. Th
 
 Back up PostgreSQL daily with tested point-in-time or dump recovery. Keep backups encrypted and access-controlled. The database is the system of record; original media is intentionally unrecoverable.
 
-For local Compose, run `bash docker/backup-postgres.sh` to create a timestamped, plain-SQL dump under `backups/`. The script refuses to overwrite an existing file. Restore only into an isolated database with `bash docker/restore-postgres.sh backups/<dump>.sql`; it requires an explicit `RESTORE_CONFIRM=foodjournal` acknowledgement. Test restore at least quarterly, verify Flyway's schema history and a sample of journal entries, then securely delete the temporary restore database. Never restore a dump over a live service as an incident shortcut.
+For local Compose, run `bash docker/backup-postgres.sh` to create a timestamped, plain-SQL dump under `backups/`. It writes to a restrictive temporary file and publishes the final filename only after `pg_dump` succeeds. Restore only into the separate `foodjournal_restore` database with `RESTORE_CONFIRM=foodjournal_restore bash docker/restore-postgres.sh backups/<dump>.sql`. The restore helper rejects `foodjournal` and recreates only its named restore target; choose another safe target with both `RESTORE_DATABASE=<name>` and a matching `RESTORE_CONFIRM=<name>`. Test restore at least quarterly, verify Flyway's schema history and a sample of journal entries, then securely delete the temporary restore database. Never restore a dump over a live service as an incident shortcut.
 
 ## Incident response
 
