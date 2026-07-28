@@ -38,4 +38,39 @@ class UpdateServiceTest {
 
     verify(outbound).save(argThat(message -> message.getChatId() == 1L && message.getText().equals("Logged")));
   }
+
+  @Test void ignoresNonAllowlistedUsersWithoutClaimingOrReplying() {
+    ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class);
+    OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class);
+    JournalApplicationService journal = mock(JournalApplicationService.class);
+    UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal);
+    TelegramUpdate update = new TelegramUpdate(77L, new TelegramMessage(5L, new TelegramChat(2L), new TelegramUser(2L, "B"), "I ate soup", null, null, null), null);
+
+    service.handle(update);
+
+    verifyNoInteractions(processed, outbound, journal);
+  }
+
+  @Test void ignoresMalformedUpdatesWithoutClaimingOrReplying() {
+    ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class);
+    OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class);
+    JournalApplicationService journal = mock(JournalApplicationService.class);
+    UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal);
+
+    service.handle(new TelegramUpdate(77L, null, null));
+
+    verifyNoInteractions(processed, outbound, journal);
+  }
+
+  @Test void ignoresNullRootAndMissingChatIdWithoutSideEffects() {
+    ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class);
+    OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class);
+    JournalApplicationService journal = mock(JournalApplicationService.class);
+    UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal);
+
+    service.handle(null);
+    service.handle(new TelegramUpdate(77L, new TelegramMessage(5L, new TelegramChat(null), new TelegramUser(1L, "A"), "I ate soup", null, null, null), null));
+
+    verifyNoInteractions(processed, outbound, journal);
+  }
 }
