@@ -1,0 +1,23 @@
+name: Bug report
+description: Report a reproducible defect without private data.
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Redact tokens, Telegram identifiers, messages, and food-journal data.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Version or commit

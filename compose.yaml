@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: foodjournal
+      POSTGRES_USER: foodjournal
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-foodjournal}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodjournal -d foodjournal"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  app:
+    build: .
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/foodjournal
+      DATABASE_USERNAME: foodjournal
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-foodjournal}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET}
+      ALLOWED_TELEGRAM_USER_IDS: ${ALLOWED_TELEGRAM_USER_IDS}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Europe/Bucharest}
+    ports: ["8080:8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  postgres-data:

@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+target/
+*.log
+.idea/
+.vscode/
+*.iml
+coverage/
+media/
+n8n/

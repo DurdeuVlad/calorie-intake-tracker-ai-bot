@@ -1,0 +1,15 @@
+spring:
+  application.name: food-journal-bot
+  datasource.url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/foodjournal}
+  datasource.username: ${DATABASE_USERNAME:foodjournal}
+  datasource.password: ${DATABASE_PASSWORD:foodjournal}
+  jpa.hibernate.ddl-auto: validate
+  flyway.enabled: true
+server.forward-headers-strategy: framework
+food-journal:
+  telegram-token: ${TELEGRAM_BOT_TOKEN}
+  webhook-secret: ${TELEGRAM_WEBHOOK_SECRET}
+  allowed-telegram-user-ids: ${ALLOWED_TELEGRAM_USER_IDS:}
+  default-timezone: ${DEFAULT_TIMEZONE:Europe/Bucharest}
+  openai-api-key: ${OPENAI_API_KEY:}
+  openai-model: ${OPENAI_MODEL:gpt-5.4-mini}

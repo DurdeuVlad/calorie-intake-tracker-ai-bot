@@ -1,0 +1,7 @@
+CREATE TABLE food_users (id BIGSERIAL PRIMARY KEY, telegram_user_id BIGINT NOT NULL UNIQUE, display_name VARCHAR(255), created_at TIMESTAMPTZ NOT NULL);
+CREATE TABLE user_settings (user_id BIGINT PRIMARY KEY REFERENCES food_users(id) ON DELETE CASCADE, timezone VARCHAR(64) NOT NULL, calorie_target INTEGER, reports_enabled BOOLEAN NOT NULL DEFAULT TRUE, morning_report_time TIME NOT NULL DEFAULT '08:00', evening_report_time TIME NOT NULL DEFAULT '22:00', pinned_message_id BIGINT);
+CREATE TABLE food_entries (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES food_users(id) ON DELETE CASCADE, original_message TEXT NOT NULL, eaten_at TIMESTAMPTZ NOT NULL, calories INTEGER, nutrition_source VARCHAR(32) NOT NULL, confidence VARCHAR(32) NOT NULL, created_at TIMESTAMPTZ NOT NULL);
+CREATE INDEX idx_food_entries_user_eaten_at ON food_entries(user_id, eaten_at);
+CREATE TABLE food_items (id BIGSERIAL PRIMARY KEY, entry_id BIGINT NOT NULL REFERENCES food_entries(id) ON DELETE CASCADE, name VARCHAR(255) NOT NULL, quantity_grams NUMERIC(10,2), calories INTEGER, protein_grams NUMERIC(10,2), carbs_grams NUMERIC(10,2), fat_grams NUMERIC(10,2));
+CREATE TABLE processed_telegram_updates (update_id BIGINT PRIMARY KEY, processed_at TIMESTAMPTZ NOT NULL);
+CREATE TABLE report_deliveries (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES food_users(id) ON DELETE CASCADE, report_type VARCHAR(16) NOT NULL, local_date DATE NOT NULL, delivered_at TIMESTAMPTZ NOT NULL, UNIQUE(user_id, report_type, local_date));
