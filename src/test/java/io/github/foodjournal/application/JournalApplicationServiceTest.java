@@ -100,4 +100,11 @@ class JournalApplicationServiceTest {
     assertThat(service.handle(1L,1L,"A","save grandma soup")).isEqualTo("Saved household food: Grandma soup.");
     verify(privateFoods).save(argThat((PrivateFood food)->food.getName().equals("Grandma soup")&&food.getCaloriesPer100g()==80));
   }
+
+  @Test void updatesAnExistingHouseholdFoodWithoutDeletingIt() {
+    FoodUser user = new FoodUser(1L, "A"); PrivateFood existing = new PrivateFood(user,"Grandma soup",80,null,null,null); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    when(interpreter.interpret("update grandma soup")).thenReturn(new JournalIntent(IntentType.SAVE_PRIVATE_FOOD,"grandma soup",null,null,null,null,null,null,List.of(new JournalIntent.MealItem("Grandma soup",100d,90,4d,11d,2d)))); when(privateFoods.findByUserAndNameIgnoreCase(user,"Grandma soup")).thenReturn(Optional.of(existing));
+    service.handle(1L,1L,"A","update grandma soup");
+    assertThat(existing.getCaloriesPer100g()).isEqualTo(90); verify(privateFoods,never()).delete(any()); verify(privateFoods,never()).save(any());
+  }
 }
