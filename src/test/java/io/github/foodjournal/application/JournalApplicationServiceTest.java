@@ -7,11 +7,12 @@ import static org.mockito.Mockito.*;
 import io.github.foodjournal.domain.FoodEntry;
 import io.github.foodjournal.domain.FoodUser;
 import io.github.foodjournal.domain.UserSettings;
+import io.github.foodjournal.config.BotProperties;
 import io.github.foodjournal.repository.FoodEntryRepository;
 import io.github.foodjournal.repository.FoodUserRepository;
 import io.github.foodjournal.repository.UserSettingsRepository;
 import java.util.List;
-import java.util.Optional;
+import java.util.Optional; import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,7 +27,7 @@ class JournalApplicationServiceTest {
   @Mock IntentInterpreter interpreter;
   private JournalApplicationService service;
 
-  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, interpreter); }
+  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test")); }
 
   @Test void rejectsInvalidCaloriesWithoutWriting() {
     FoodUser user = new FoodUser(1L, "A");
