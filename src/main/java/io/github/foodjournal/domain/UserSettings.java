@@ -13,9 +13,14 @@ public class UserSettings {
   @Column(nullable=false) private LocalTime morningReportTime=LocalTime.of(8,0);
   @Column(nullable=false) private LocalTime eveningReportTime=LocalTime.of(22,0);
   private Long pinnedMessageId;
+  @Column(nullable=false) private boolean onboardingCompleted=false;
+  @Column(nullable=false) private String onboardingStage="TIMEZONE";
   protected UserSettings() {}
   public UserSettings(FoodUser user, String timezone) { this.user=user; this.timezone=timezone; }
   public String getTimezone(){return timezone;} public Integer getCalorieTarget(){return calorieTarget;}
   public FoodUser getUser(){return user;} public boolean isReportsEnabled(){return reportsEnabled;} public LocalTime getMorningReportTime(){return morningReportTime;} public LocalTime getEveningReportTime(){return eveningReportTime;}
   public void setTimezone(String timezone){this.timezone=timezone;} public void setCalorieTarget(Integer target){this.calorieTarget=target;} public void setReportsEnabled(boolean enabled){this.reportsEnabled=enabled;}
+  public Long getPinnedMessageId(){return pinnedMessageId;} public void setPinnedMessageId(Long value){pinnedMessageId=value;}
+  public boolean isOnboardingCompleted(){return onboardingCompleted;} public void completeOnboarding(){onboardingCompleted=true;}
+  public String getOnboardingStage(){return onboardingStage;} public void requireCalorieTarget(){onboardingStage="CALORIE_TARGET";} public void skipCalorieTarget(){onboardingStage="COMPLETE";onboardingCompleted=true;}
 }
