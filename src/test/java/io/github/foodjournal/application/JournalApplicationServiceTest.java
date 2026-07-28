@@ -60,7 +60,7 @@ class JournalApplicationServiceTest {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
     configured(user);
-    when(interpreter.interpret("I ate soup")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "vegetable soup", 220, null, null, null, null, null, List.of()));
+    when(interpreter.interpret("I ate soup")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "vegetable soup", 220, null, null, null, null, null, List.of(new JournalIntent.MealItem("soup",300d,220))));
     when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     assertThat(service.handle(1L, 1L, "A", "I ate soup")).startsWith("Logged: vegetable soup");

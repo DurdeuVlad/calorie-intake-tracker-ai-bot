@@ -11,4 +11,5 @@ public class FoodItem {
  private BigDecimal quantityGrams; private Integer calories; private BigDecimal proteinGrams; private BigDecimal carbsGrams; private BigDecimal fatGrams;
  protected FoodItem() {}
  public FoodItem(FoodEntry entry,String name,BigDecimal quantityGrams,Integer calories){this.entry=entry;this.name=name;this.quantityGrams=quantityGrams;this.calories=calories;}
+ public FoodItem(FoodEntry entry,String name,BigDecimal quantityGrams,Integer calories,BigDecimal protein,BigDecimal carbs,BigDecimal fat){this(entry,name,quantityGrams,calories);proteinGrams=protein;carbsGrams=carbs;fatGrams=fat;}
 }
