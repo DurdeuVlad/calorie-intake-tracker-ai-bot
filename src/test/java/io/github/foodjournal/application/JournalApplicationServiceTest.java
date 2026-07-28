@@ -12,7 +12,9 @@ import io.github.foodjournal.repository.FoodEntryRepository;
 import io.github.foodjournal.repository.FoodUserRepository;
 import io.github.foodjournal.repository.UserSettingsRepository;
 import io.github.foodjournal.repository.FoodItemRepository;
+import io.github.foodjournal.repository.PrivateFoodRepository;
 import io.github.foodjournal.domain.FoodItem;
+import io.github.foodjournal.domain.PrivateFood;
 import io.github.foodjournal.application.DailyStatusService;
 import java.util.List;
 import java.util.Optional; import java.util.Set;
@@ -96,6 +98,6 @@ class JournalApplicationServiceTest {
     FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
     when(interpreter.interpret("save grandma soup")).thenReturn(new JournalIntent(IntentType.SAVE_PRIVATE_FOOD,"grandma soup",null,null,null,null,null,null,List.of(new JournalIntent.MealItem("Grandma soup",100d,80,4d,10d,2d))));
     assertThat(service.handle(1L,1L,"A","save grandma soup")).isEqualTo("Saved household food: Grandma soup.");
-    verify(privateFoods).save(argThat(food->food.getName().equals("Grandma soup")&&food.getCaloriesPer100g()==80));
+    verify(privateFoods).save(argThat((PrivateFood food)->food.getName().equals("Grandma soup")&&food.getCaloriesPer100g()==80));
   }
 }
