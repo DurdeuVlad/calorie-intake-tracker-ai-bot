@@ -89,4 +89,20 @@ class UpdateServiceTest {
     service.handle(new TelegramUpdate(77L,new TelegramMessage(5L,new TelegramChat(1L),new TelegramUser(1L,"A"),null,new TelegramVoice("voice-file","audio/ogg",3),null,null),null));
     verifyNoInteractions(journal); verify(outbound).save(argThat(message->message.getText().contains("could not transcribe")));
   }
+
+  @Test void routesLargestPhotoExtractionThroughTheJournalWithoutPersistingMedia() {
+    ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class); OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class); JournalApplicationService journal = mock(JournalApplicationService.class); io.github.foodjournal.application.FoodMediaExtractor media = mock(io.github.foodjournal.application.FoodMediaExtractor.class);
+    UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal, mock(io.github.foodjournal.application.VoiceTranscriber.class), media);
+    when(processed.claimIfNew(78L)).thenReturn(1); when(media.extract("large","image/jpeg",io.github.foodjournal.application.FoodMediaType.PHOTO)).thenReturn("two eggs"); when(journal.handleMediaEvidence(1L,1L,"A","two eggs\nUser caption: breakfast")).thenReturn("Logged");
+    service.handle(new TelegramUpdate(78L,new TelegramMessage(5L,new TelegramChat(1L),new TelegramUser(1L,"A"),null,null,java.util.List.of(new TelegramPhoto("small",10,10,10),new TelegramPhoto("large",20,20,20)),null,"breakfast"),null));
+    verify(media).extract("large","image/jpeg",io.github.foodjournal.application.FoodMediaType.PHOTO); verify(journal).handleMediaEvidence(1L,1L,"A","two eggs\nUser caption: breakfast");
+  }
+
+  @Test void documentExtractionFailureDoesNotCallTheJournal() {
+    ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class); OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class); JournalApplicationService journal = mock(JournalApplicationService.class); io.github.foodjournal.application.FoodMediaExtractor media = mock(io.github.foodjournal.application.FoodMediaExtractor.class);
+    UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal, mock(io.github.foodjournal.application.VoiceTranscriber.class), media);
+    when(processed.claimIfNew(79L)).thenReturn(1); when(media.extract("file","text/plain",io.github.foodjournal.application.FoodMediaType.DOCUMENT)).thenThrow(new IllegalArgumentException());
+    service.handle(new TelegramUpdate(79L,new TelegramMessage(5L,new TelegramChat(1L),new TelegramUser(1L,"A"),null,null,null,new TelegramDocument("file","label.txt","text/plain",3)),null));
+    verifyNoInteractions(journal); verify(outbound).save(argThat(message->message.getText().contains("could not analyze that document")));
+  }
 }

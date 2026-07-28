@@ -78,4 +78,16 @@ class JournalApplicationServiceTest {
 
     verify(items, times(2)).save(any(FoodItem.class));
   }
+
+  @Test void marksMediaDerivedEntriesAsAiEstimates() {
+    FoodUser user = new FoodUser(1L, "A");
+    when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
+    configured(user);
+    when(interpreter.interpret(contains("Media-derived food evidence"))).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "oat bar", 180, null, null, null, null, null, List.of(new JournalIntent.MealItem("oat bar", 50d, 180))));
+    when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+    assertThat(service.handleMediaEvidence(1L, 1L, "A", "Oat bar, 180 kcal")).contains("estimates");
+
+    verify(entries).save(argThat(entry -> entry.getNutritionSource().equals("ai_estimate") && entry.getConfidence().equals("estimate")));
+  }
 }
