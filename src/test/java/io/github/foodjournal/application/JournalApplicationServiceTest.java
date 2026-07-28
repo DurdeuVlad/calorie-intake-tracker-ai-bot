@@ -28,11 +28,12 @@ class JournalApplicationServiceTest {
   @Mock UserSettingsRepository settings;
   @Mock FoodEntryRepository entries;
   @Mock FoodItemRepository items;
+  @Mock PrivateFoodRepository privateFoods;
   @Mock IntentInterpreter interpreter;
   @Mock DailyStatusService dailyStatus;
   private JournalApplicationService service;
 
-  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, items, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), dailyStatus); }
+  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, items, privateFoods, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), dailyStatus, NutritionResolver.noop()); }
   private void configured(FoodUser user){UserSettings value=new UserSettings(user,"Europe/Bucharest");value.completeOnboarding();when(settings.findById(user.getId())).thenReturn(Optional.of(value));}
 
   @Test void rejectsInvalidCaloriesWithoutWriting() {
@@ -89,5 +90,12 @@ class JournalApplicationServiceTest {
     assertThat(service.handleMediaEvidence(1L, 1L, "A", "Oat bar, 180 kcal")).contains("estimates");
 
     verify(entries).save(argThat(entry -> entry.getNutritionSource().equals("ai_estimate") && entry.getConfidence().equals("estimate")));
+  }
+
+  @Test void savesAHouseholdFoodForOnlyTheRequestingUser() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    when(interpreter.interpret("save grandma soup")).thenReturn(new JournalIntent(IntentType.SAVE_PRIVATE_FOOD,"grandma soup",null,null,null,null,null,null,List.of(new JournalIntent.MealItem("Grandma soup",100d,80,4d,10d,2d))));
+    assertThat(service.handle(1L,1L,"A","save grandma soup")).isEqualTo("Saved household food: Grandma soup.");
+    verify(privateFoods).save(argThat(food->food.getName().equals("Grandma soup")&&food.getCaloriesPer100g()==80));
   }
 }

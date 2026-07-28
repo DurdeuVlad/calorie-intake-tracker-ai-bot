@@ -20,3 +20,5 @@ CREATE TABLE private_foods (
   created_at TIMESTAMPTZ NOT NULL,
   UNIQUE(user_id, name)
 );
+ALTER TABLE food_items ADD COLUMN nutrition_source VARCHAR(32) NOT NULL DEFAULT 'manual';
+ALTER TABLE food_items ADD COLUMN nutrition_confidence VARCHAR(32) NOT NULL DEFAULT 'unknown';
