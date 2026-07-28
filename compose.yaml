@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: foodjournal
       POSTGRES_USER: foodjournal
@@ -14,6 +15,13 @@ services:
       retries: 10
   app:
     build: .
+    init: true
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/foodjournal
       DATABASE_USERNAME: foodjournal
@@ -22,7 +30,13 @@ services:
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET}
       ALLOWED_TELEGRAM_USER_IDS: ${ALLOWED_TELEGRAM_USER_IDS}
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Europe/Bucharest}
-    ports: ["8080:8080"]
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
+    ports: ["127.0.0.1:8080:8080"]
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       postgres:
         condition: service_healthy

@@ -23,7 +23,7 @@ Java 21, Spring Boot, PostgreSQL, Flyway, Docker, Telegram webhooks, OpenAI, Gem
 ## Quick start
 
 1. Copy `.env.example` to `.env` and supply your own values.
-2. Start PostgreSQL and the application with the documented Compose setup once it is added.
+2. Start PostgreSQL and the application with `docker compose up --build`.
 3. Configure a public HTTPS development tunnel and register the Telegram webhook. Coolify is intentionally deferred until the complete system is accepted.
 
 See [local development](docs/local-development.md), [configuration](docs/configuration.md), and [deployment](docs/deployment-coolify.md).
