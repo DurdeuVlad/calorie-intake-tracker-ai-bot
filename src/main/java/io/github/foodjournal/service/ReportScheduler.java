@@ -1,6 +1,6 @@
 package io.github.foodjournal.service;
-import io.github.foodjournal.domain.*; import io.github.foodjournal.repository.*; import java.time.*; import java.util.*; import org.springframework.scheduling.annotation.Scheduled; import org.springframework.stereotype.Service; import org.springframework.transaction.annotation.Transactional;
-@Service public class ReportScheduler {
+import io.github.foodjournal.domain.*; import io.github.foodjournal.repository.*; import java.time.*; import java.util.*; import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty; import org.springframework.scheduling.annotation.Scheduled; import org.springframework.stereotype.Service; import org.springframework.transaction.annotation.Transactional;
+@Service @ConditionalOnProperty(prefix="food-journal", name="scheduling-enabled", havingValue="true", matchIfMissing=true) public class ReportScheduler {
  private final UserSettingsRepository settings; private final FoodEntryRepository entries; private final ReportDeliveryRepository deliveries; private final OutboundTelegramMessageRepository outbound;
  public ReportScheduler(UserSettingsRepository s,FoodEntryRepository e,ReportDeliveryRepository d,OutboundTelegramMessageRepository o){settings=s;entries=e;deliveries=d;outbound=o;}
  @Scheduled(cron="0 * * * * *") @Transactional public void deliverDueReports(){for(UserSettings s:settings.findAll()){if(!s.isReportsEnabled())continue; ZoneId z;try{z=ZoneId.of(s.getTimezone());}catch(Exception x){continue;} ZonedDateTime now=ZonedDateTime.now(z).withSecond(0).withNano(0);if(now.toLocalTime().equals(s.getMorningReportTime()))send(s,"morning",now.toLocalDate());if(now.toLocalTime().equals(s.getEveningReportTime()))send(s,"evening",now.toLocalDate());}}
