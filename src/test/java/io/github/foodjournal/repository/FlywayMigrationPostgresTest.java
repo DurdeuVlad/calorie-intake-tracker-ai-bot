@@ -50,11 +50,11 @@ class FlywayMigrationPostgresTest {
 
   private boolean hasUniqueConstraint(String table, List<String> columns) {
     Integer count = jdbc.queryForObject("""
-        select count(*) from pg_constraint constraint
-        join pg_class relation on relation.oid = constraint.conrelid
-        where relation.relname = ? and constraint.contype = 'u'
+        select count(*) from pg_constraint c
+        join pg_class relation on relation.oid = c.conrelid
+        where relation.relname = ? and c.contype = 'u'
           and (select string_agg(attribute.attname, ',' order by position.ordinality)
-               from unnest(constraint.conkey) with ordinality as position(attribute_number, ordinality)
+               from unnest(c.conkey) with ordinality as position(attribute_number, ordinality)
                join pg_attribute attribute on attribute.attrelid = relation.oid and attribute.attnum = position.attribute_number)
               = ?
         """, Integer.class, table, String.join(",", columns));
