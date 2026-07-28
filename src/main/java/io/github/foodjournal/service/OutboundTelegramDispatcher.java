@@ -3,5 +3,5 @@ import io.github.foodjournal.telegram.TelegramGateway; import org.springframewor
 @Service @ConditionalOnProperty(prefix="food-journal", name="scheduling-enabled", havingValue="true", matchIfMissing=true) public class OutboundTelegramDispatcher {
  private final OutboundTelegramClaimService claims; private final TelegramGateway telegram;
  public OutboundTelegramDispatcher(OutboundTelegramClaimService c,TelegramGateway t){claims=c;telegram=t;}
- @Scheduled(fixedDelayString="${food-journal.outbox-delay-ms:5000}") public void dispatch(){for(OutboundTelegramClaimService.Delivery message:claims.claimBatch()){try{telegram.sendMessage(message.chatId(),message.text());claims.markSent(message.id());}catch(Exception ignored){claims.scheduleRetry(message.id());}}}
+ @Scheduled(fixedDelayString="${food-journal.outbox-delay-ms:5000}") public void dispatch(){for(OutboundTelegramClaimService.Delivery message:claims.claimBatch()){try{telegram.sendMessage(message.chatId(),message.text());claims.markSent(message.id(),message.leaseToken());}catch(Exception ignored){claims.scheduleRetry(message.id(),message.leaseToken());}}}
 }

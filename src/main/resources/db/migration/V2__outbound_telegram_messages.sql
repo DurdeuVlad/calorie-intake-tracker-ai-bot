@@ -6,6 +6,7 @@ CREATE TABLE outbound_telegram_messages (
   attempts INTEGER NOT NULL DEFAULT 0,
   next_attempt_at TIMESTAMPTZ NOT NULL,
   lease_expires_at TIMESTAMPTZ,
+  lease_token UUID,
   created_at TIMESTAMPTZ NOT NULL,
   sent_at TIMESTAMPTZ
 );

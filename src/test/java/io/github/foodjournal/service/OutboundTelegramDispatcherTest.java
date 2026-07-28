@@ -12,12 +12,13 @@ class OutboundTelegramDispatcherTest {
   @Test void sendsPendingMessagesOutsideTheWebhookTransaction() {
     OutboundTelegramClaimService claims = mock(OutboundTelegramClaimService.class);
     TelegramGateway telegram = mock(TelegramGateway.class);
-    OutboundTelegramClaimService.Delivery message = new OutboundTelegramClaimService.Delivery(7L, 1L, "Logged");
+    java.util.UUID token = java.util.UUID.randomUUID();
+    OutboundTelegramClaimService.Delivery message = new OutboundTelegramClaimService.Delivery(7L, 1L, "Logged", token);
     when(claims.claimBatch()).thenReturn(List.of(message));
 
     new OutboundTelegramDispatcher(claims, telegram).dispatch();
 
     verify(telegram).sendMessage(1L, "Logged");
-    verify(claims).markSent(7L);
+    verify(claims).markSent(7L, token);
   }
 }
