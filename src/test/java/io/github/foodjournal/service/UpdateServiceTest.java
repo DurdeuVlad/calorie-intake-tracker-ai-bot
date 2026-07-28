@@ -61,4 +61,16 @@ class UpdateServiceTest {
 
     verifyNoInteractions(processed, outbound, journal);
   }
+
+  @Test void ignoresNullRootAndMissingChatIdWithoutSideEffects() {
+    ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class);
+    OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class);
+    JournalApplicationService journal = mock(JournalApplicationService.class);
+    UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal);
+
+    service.handle(null);
+    service.handle(new TelegramUpdate(77L, new TelegramMessage(5L, new TelegramChat(null), new TelegramUser(1L, "A"), "I ate soup", null, null, null), null));
+
+    verifyNoInteractions(processed, outbound, journal);
+  }
 }
