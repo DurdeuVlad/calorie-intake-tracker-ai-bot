@@ -42,5 +42,22 @@ class GeminiFoodMediaExtractorTest {
     org.mockito.Mockito.verifyNoInteractions(media);
   }
 
+  @Test
+  void extractsPdfLabelEvidenceAndErasesBytes() {
+    byte[] downloaded = {4, 5, 6};
+    RestClient.Builder builder = RestClient.builder().baseUrl("https://generativelanguage.googleapis.com/v1beta");
+    MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+    server.expect(once(), requestTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=key"))
+        .andExpect(content().string(org.hamcrest.Matchers.containsString("application/pdf")))
+        .andExpect(content().string(org.hamcrest.Matchers.containsString("BAUG")))
+        .andRespond(withSuccess("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Cereal, 120 kcal per serving\"}]}}]}", MediaType.APPLICATION_JSON));
+
+    String extraction = new GeminiFoodMediaExtractor(media(downloaded), builder.build(), "key").extract("document", "application/pdf", FoodMediaType.DOCUMENT);
+
+    assertThat(extraction).isEqualTo("Cereal, 120 kcal per serving");
+    assertThat(downloaded).containsOnly((byte) 0);
+    server.verify();
+  }
+
   private TelegramVoiceMediaClient media(byte[] bytes) { return ignored -> new TransientVoicePayload(bytes); }
 }

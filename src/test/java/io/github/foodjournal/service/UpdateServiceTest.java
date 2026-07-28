@@ -105,4 +105,12 @@ class UpdateServiceTest {
     service.handle(new TelegramUpdate(79L,new TelegramMessage(5L,new TelegramChat(1L),new TelegramUser(1L,"A"),null,null,null,new TelegramDocument("file","label.txt","text/plain",3)),null));
     verifyNoInteractions(journal); verify(outbound).save(argThat(message->message.getText().contains("could not analyze that document")));
   }
+
+  @Test void routesPdfEvidenceToTheAiEstimateJournalBoundary() {
+    ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class); OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class); JournalApplicationService journal = mock(JournalApplicationService.class); io.github.foodjournal.application.FoodMediaExtractor media = mock(io.github.foodjournal.application.FoodMediaExtractor.class);
+    UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal, mock(io.github.foodjournal.application.VoiceTranscriber.class), media);
+    when(processed.claimIfNew(80L)).thenReturn(1); when(media.extract("pdf","application/pdf",io.github.foodjournal.application.FoodMediaType.DOCUMENT)).thenReturn("Cereal, 120 kcal"); when(journal.handleMediaEvidence(1L,1L,"A","Cereal, 120 kcal")).thenReturn("Logged: Cereal. Nutrition values from media are estimates.");
+    service.handle(new TelegramUpdate(80L,new TelegramMessage(5L,new TelegramChat(1L),new TelegramUser(1L,"A"),null,null,null,new TelegramDocument("pdf","label.pdf","application/pdf",100)),null));
+    verify(media).extract("pdf","application/pdf",io.github.foodjournal.application.FoodMediaType.DOCUMENT); verify(journal).handleMediaEvidence(1L,1L,"A","Cereal, 120 kcal"); verify(outbound).save(argThat(message->message.getText().contains("estimates")));
+  }
 }
