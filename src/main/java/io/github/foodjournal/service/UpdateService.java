@@ -9,6 +9,6 @@ import io.github.foodjournal.config.BotProperties; import io.github.foodjournal.
    long id=msg.from().id(); if(!props.allowedTelegramUserIds().contains(id)) return;
    if(processed.claimIfNew(update.update_id()) == 0) return;
    String text=msg.text(); if(text==null||text.isBlank()){ outbound.save(new OutboundTelegramMessage(msg.chat().id(),"I received your media. Media analysis is being configured; no original file was stored.")); return; }
-   String reply=journal.handle(id,msg.from().first_name(),text.trim()); outbound.save(new OutboundTelegramMessage(msg.chat().id(),reply));
+   String reply=journal.handle(id,msg.chat().id(),msg.from().first_name(),text.trim()); outbound.save(new OutboundTelegramMessage(msg.chat().id(),reply));
  }
 }

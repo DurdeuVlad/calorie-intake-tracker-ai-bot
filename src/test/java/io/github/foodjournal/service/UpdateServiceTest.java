@@ -32,7 +32,7 @@ class UpdateServiceTest {
     UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal);
     TelegramUpdate update = new TelegramUpdate(77L, new TelegramMessage(5L, new TelegramChat(1L), new TelegramUser(1L, "A"), "I ate soup", null, null, null), null);
     when(processed.claimIfNew(77L)).thenReturn(1);
-    when(journal.handle(1L, "A", "I ate soup")).thenReturn("Logged");
+    when(journal.handle(1L, 1L, "A", "I ate soup")).thenReturn("Logged");
 
     service.handle(update);
 

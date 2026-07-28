@@ -1,0 +1,7 @@
+package io.github.foodjournal.service;
+import io.github.foodjournal.application.DailyStatusService; import io.github.foodjournal.domain.PinnedDailyStatus; import io.github.foodjournal.repository.PinnedDailyStatusRepository; import io.github.foodjournal.telegram.TelegramGateway; import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty; import org.springframework.scheduling.annotation.Scheduled; import org.springframework.stereotype.Service;
+@Service @ConditionalOnProperty(prefix="food-journal", name="scheduling-enabled", havingValue="true", matchIfMissing=true) public class PinnedDailyStatusDispatcher {
+ private final PinnedDailyStatusRepository statuses; private final DailyStatusService statusService; private final TelegramGateway telegram;
+ public PinnedDailyStatusDispatcher(PinnedDailyStatusRepository s,DailyStatusService d,TelegramGateway t){statuses=s;statusService=d;telegram=t;}
+ @Scheduled(fixedDelayString="${food-journal.outbox-delay-ms:5000}") public void dispatch(){DailyStatusService.Delivery status=statusService.claim();if(status==null)return;Long messageId=status.messageId();try{if(messageId==null){messageId=telegram.sendMessage(status.chatId(),status.text());statusService.rememberMessage(status.id(),status.leaseToken(),messageId);}else telegram.editMessage(status.chatId(),messageId,status.text());telegram.pinMessage(status.chatId(),messageId);statusService.markDelivered(status.id(),status.version(),status.leaseToken(),messageId);}catch(Exception failure){statusService.retry(status.id(),status.leaseToken());}}
+}

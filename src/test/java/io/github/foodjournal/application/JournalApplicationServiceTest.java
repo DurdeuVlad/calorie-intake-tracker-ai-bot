@@ -13,6 +13,7 @@ import io.github.foodjournal.repository.FoodUserRepository;
 import io.github.foodjournal.repository.UserSettingsRepository;
 import io.github.foodjournal.repository.FoodItemRepository;
 import io.github.foodjournal.domain.FoodItem;
+import io.github.foodjournal.application.DailyStatusService;
 import java.util.List;
 import java.util.Optional; import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,46 +29,52 @@ class JournalApplicationServiceTest {
   @Mock FoodEntryRepository entries;
   @Mock FoodItemRepository items;
   @Mock IntentInterpreter interpreter;
+  @Mock DailyStatusService dailyStatus;
   private JournalApplicationService service;
 
-  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, items, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test")); }
+  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, items, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), dailyStatus); }
+  private void configured(FoodUser user){UserSettings value=new UserSettings(user,"Europe/Bucharest");value.completeOnboarding();when(settings.findById(user.getId())).thenReturn(Optional.of(value));}
 
   @Test void rejectsInvalidCaloriesWithoutWriting() {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
+    configured(user);
     when(interpreter.interpret("huge meal")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "huge meal", 10001, null, null, null, null, null, List.of()));
 
-    assertThat(service.handle(1L, "A", "huge meal")).contains("not valid");
+    assertThat(service.handle(1L, 1L, "A", "huge meal")).contains("not valid");
     verify(entries, never()).save(any());
   }
 
   @Test void cannotDeleteAnotherUsersEntry() {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
+    configured(user);
     when(interpreter.interpret("delete 99")).thenReturn(new JournalIntent(IntentType.DELETE_ENTRY, null, null, null, 99L, null, null, null, List.of()));
     when(entries.findByIdAndUser(99L, user)).thenReturn(Optional.empty());
 
-    assertThat(service.handle(1L, "A", "delete 99")).contains("could not find");
+    assertThat(service.handle(1L, 1L, "A", "delete 99")).contains("could not find");
     verify(entries, never()).delete(any());
   }
 
   @Test void persistsValidMealForTheRequestingUserOnly() {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
+    configured(user);
     when(interpreter.interpret("I ate soup")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "vegetable soup", 220, null, null, null, null, null, List.of()));
     when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-    assertThat(service.handle(1L, "A", "I ate soup")).startsWith("Logged: vegetable soup");
+    assertThat(service.handle(1L, 1L, "A", "I ate soup")).startsWith("Logged: vegetable soup");
     verify(entries).save(argThat(entry -> entry.getUser() == user && entry.getCalories() == 220));
   }
 
   @Test void persistsStructuredItemsWithTheMeal() {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
+    configured(user);
     when(interpreter.interpret("I ate soup and bread")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "soup and bread", 320, null, null, null, null, null, List.of(new JournalIntent.MealItem("soup", 300d, 220), new JournalIntent.MealItem("bread", 40d, 100))));
     when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-    service.handle(1L, "A", "I ate soup and bread");
+    service.handle(1L, 1L, "A", "I ate soup and bread");
 
     verify(items, times(2)).save(any(FoodItem.class));
   }
