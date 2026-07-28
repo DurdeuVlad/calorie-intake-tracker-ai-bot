@@ -1,6 +1,6 @@
 # Deferred Coolify deployment
 
-Coolify is deliberately disconnected during development. This document becomes actionable only after the complete product (text, voice, images, documents, nutrition, reports, and operations) passes final acceptance.
+Coolify is deliberately disconnected during development. This document becomes actionable only after the complete product (text, voice, images, documents, nutrition, reports, and operations) passes final acceptance and the user explicitly authorizes the [cutover](cutover-runbook.md).
 
 1. Connect Coolify to the Git repository and deploy the protected `master` branch only after final acceptance is green.
 2. Configure a PostgreSQL service or private database with a persistent volume and a backup policy.

@@ -14,7 +14,7 @@ The legacy system is a large n8n Telegram food-journal flow. It accepts meal mes
 
 ## Migration boundary
 
-Do not commit the n8n JSON export, credentials, raw Telegram updates, or user data. Legacy import is deferred until the three legacy table schemas and a separately secured data export are available. Build an import tool only after mapping identifiers, timezones, deduplication policy, nutrition provenance, and rollback procedure.
+Do not commit the n8n JSON export, credentials, raw Telegram updates, or user data. Legacy import is deferred until the three legacy table schemas and a separately secured data export are available. The required evidence and mapping gates are tracked in the private-facing [legacy import assessment template](legacy-import-mapping.md). Build an import tool only after mapping identifiers, timezones, deduplication policy, nutrition provenance, and rollback procedure.
 
 ## Known risks to resolve before cutover
 
