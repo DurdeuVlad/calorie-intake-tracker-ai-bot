@@ -26,6 +26,7 @@ public class PinnedDailyStatus {
   public void claim(){status=Status.IN_PROGRESS;leaseToken=UUID.randomUUID();leaseExpiresAt=Instant.now().plusSeconds(60);}
   public UUID getLeaseToken(){return leaseToken;}
   public void delivered(long version,UUID token,Long messageId){if(token.equals(leaseToken)&&version==desiredVersion){deliveredVersion=version;telegramMessageId=messageId;status=Status.PENDING;leaseToken=null;leaseExpiresAt=null;updatedAt=Instant.now();}}
+  public void rememberMessage(UUID token,Long messageId){if(token.equals(leaseToken)){telegramMessageId=messageId;updatedAt=Instant.now();}}
   public void retry(UUID token){if(token.equals(leaseToken)){status=Status.PENDING;leaseToken=null;leaseExpiresAt=null;}}
   public void clearTelegramMessage(){telegramMessageId=null;}
 }
