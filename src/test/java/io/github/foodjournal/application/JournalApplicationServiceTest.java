@@ -11,6 +11,7 @@ import io.github.foodjournal.config.BotProperties;
 import io.github.foodjournal.repository.FoodEntryRepository;
 import io.github.foodjournal.repository.FoodUserRepository;
 import io.github.foodjournal.repository.UserSettingsRepository;
+import io.github.foodjournal.repository.FoodItemRepository;
 import java.util.List;
 import java.util.Optional; import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,10 +25,11 @@ class JournalApplicationServiceTest {
   @Mock FoodUserRepository users;
   @Mock UserSettingsRepository settings;
   @Mock FoodEntryRepository entries;
+  @Mock FoodItemRepository items;
   @Mock IntentInterpreter interpreter;
   private JournalApplicationService service;
 
-  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test")); }
+  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, items, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test")); }
 
   @Test void rejectsInvalidCaloriesWithoutWriting() {
     FoodUser user = new FoodUser(1L, "A");
