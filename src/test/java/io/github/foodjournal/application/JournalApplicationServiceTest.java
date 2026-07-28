@@ -18,6 +18,7 @@ import io.github.foodjournal.domain.PrivateFood;
 import io.github.foodjournal.application.DailyStatusService;
 import java.util.List;
 import java.util.Optional; import java.util.Set;
+import java.time.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -126,6 +127,20 @@ class JournalApplicationServiceTest {
     when(interpreter.interpret("show yesterday")).thenReturn(new JournalIntent(IntentType.QUERY_JOURNAL,null,null,null,null,null,null,null,List.of())); when(entries.findByUserAndEatenAtBetweenOrderByEatenAtAsc(eq(user),any(),any())).thenReturn(List.of());
     assertThat(service.handle(1L,1L,"A","show yesterday")).isEqualTo("No matching entries found.");
     verify(entries).findByUserAndEatenAtBetweenOrderByEatenAtAsc(eq(user),any(),any()); verify(entries,never()).searchByUserAndTerm(any(),any());
+  }
+
+  @Test void resolvesLastWeekAsThePreviousCalendarWeek() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    when(interpreter.interpret("show last week")).thenReturn(new JournalIntent(IntentType.QUERY_JOURNAL,null,null,null,null,null,null,null,List.of())); when(entries.findByUserAndEatenAtBetweenOrderByEatenAtAsc(eq(user),any(),any())).thenReturn(List.of());
+    service.handle(1L,1L,"A","show last week");
+    var start=org.mockito.ArgumentCaptor.forClass(Instant.class); var end=org.mockito.ArgumentCaptor.forClass(Instant.class); verify(entries).findByUserAndEatenAtBetweenOrderByEatenAtAsc(eq(user),start.capture(),end.capture()); ZoneId zone=ZoneId.of("Europe/Bucharest"); LocalDate weekStart=LocalDate.now(zone).minusDays(LocalDate.now(zone).getDayOfWeek().getValue()-1); assertThat(start.getValue()).isEqualTo(weekStart.minusWeeks(1).atStartOfDay(zone).toInstant()); assertThat(end.getValue()).isEqualTo(weekStart.atStartOfDay(zone).toInstant());
+  }
+
+  @Test void filtersACombinedFoodAndRomanianPeriodQuery() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    FoodEntry soup=new FoodEntry(user,"soup",Instant.now(),100,"manual","unknown"); FoodEntry pizza=new FoodEntry(user,"pizza",Instant.now(),200,"manual","unknown"); when(interpreter.interpret("arată supă ieri")).thenReturn(new JournalIntent(IntentType.QUERY_JOURNAL,null,null,"soup",null,null,null,null,List.of())); when(entries.findByUserAndEatenAtBetweenOrderByEatenAtAsc(eq(user),any(),any())).thenReturn(List.of(soup,pizza));
+    String response=service.handle(1L,1L,"A","arată supă ieri");
+    assertThat(response).contains("soup").doesNotContain("pizza"); verify(entries,never()).searchByUserAndTerm(any(),any());
   }
 
   @Test void editsOnlyAnEntryOwnedByTheRequestingUserAndRefreshesStatus() {
