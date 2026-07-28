@@ -35,7 +35,7 @@ class JournalApplicationServiceTest {
   @Test void rejectsInvalidCaloriesWithoutWriting() {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
-    when(interpreter.interpret("huge meal")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "huge meal", 10001, null, null, null, null, List.of()));
+    when(interpreter.interpret("huge meal")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "huge meal", 10001, null, null, null, null, null, List.of()));
 
     assertThat(service.handle(1L, "A", "huge meal")).contains("not valid");
     verify(entries, never()).save(any());
@@ -44,7 +44,7 @@ class JournalApplicationServiceTest {
   @Test void cannotDeleteAnotherUsersEntry() {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
-    when(interpreter.interpret("delete 99")).thenReturn(new JournalIntent(IntentType.DELETE_ENTRY, null, null, null, 99L, null, null, List.of()));
+    when(interpreter.interpret("delete 99")).thenReturn(new JournalIntent(IntentType.DELETE_ENTRY, null, null, null, 99L, null, null, null, List.of()));
     when(entries.findByIdAndUser(99L, user)).thenReturn(Optional.empty());
 
     assertThat(service.handle(1L, "A", "delete 99")).contains("could not find");
@@ -54,7 +54,7 @@ class JournalApplicationServiceTest {
   @Test void persistsValidMealForTheRequestingUserOnly() {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
-    when(interpreter.interpret("I ate soup")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "vegetable soup", 220, null, null, null, null, List.of()));
+    when(interpreter.interpret("I ate soup")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "vegetable soup", 220, null, null, null, null, null, List.of()));
     when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     assertThat(service.handle(1L, "A", "I ate soup")).startsWith("Logged: vegetable soup");
@@ -64,7 +64,7 @@ class JournalApplicationServiceTest {
   @Test void persistsStructuredItemsWithTheMeal() {
     FoodUser user = new FoodUser(1L, "A");
     when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
-    when(interpreter.interpret("I ate soup and bread")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "soup and bread", 320, null, null, null, null, List.of(new JournalIntent.MealItem("soup", 300d, 220), new JournalIntent.MealItem("bread", 40d, 100))));
+    when(interpreter.interpret("I ate soup and bread")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "soup and bread", 320, null, null, null, null, null, List.of(new JournalIntent.MealItem("soup", 300d, 220), new JournalIntent.MealItem("bread", 40d, 100))));
     when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     service.handle(1L, "A", "I ate soup and bread");
