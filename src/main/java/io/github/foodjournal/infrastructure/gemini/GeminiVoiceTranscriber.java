@@ -3,11 +3,11 @@ package io.github.foodjournal.infrastructure.gemini;
 import io.github.foodjournal.application.TelegramVoiceMediaClient;
 import io.github.foodjournal.application.TransientVoicePayload;
 import io.github.foodjournal.application.VoiceTranscriber;
+import io.github.foodjournal.config.BotProperties;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -20,8 +20,8 @@ public class GeminiVoiceTranscriber implements VoiceTranscriber {
 
   @Autowired
   public GeminiVoiceTranscriber(TelegramVoiceMediaClient mediaClient, RestClient.Builder builder,
-      @Value("${GEMINI_API_KEY:}") String apiKey) {
-    this(mediaClient, builder.baseUrl("https://generativelanguage.googleapis.com/v1beta").build(), apiKey);
+      BotProperties properties) {
+    this(mediaClient, builder.baseUrl("https://generativelanguage.googleapis.com/v1beta").build(), properties.geminiApiKey());
   }
 
   GeminiVoiceTranscriber(TelegramVoiceMediaClient mediaClient, RestClient gemini, String apiKey) {

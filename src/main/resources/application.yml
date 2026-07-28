@@ -38,3 +38,5 @@ food-journal:
   default-timezone: ${DEFAULT_TIMEZONE:Europe/Bucharest}
   openai-api-key: ${OPENAI_API_KEY:}
   openai-model: ${OPENAI_MODEL:gpt-5.4-mini}
+  gemini-api-key: ${GEMINI_API_KEY:}
+  open-food-facts-base-url: ${OPEN_FOOD_FACTS_BASE_URL:https://world.openfoodfacts.org/api/v2}

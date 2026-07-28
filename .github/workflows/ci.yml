@@ -28,10 +28,13 @@ jobs:
           TELEGRAM_BOT_TOKEN: ci-token-not-a-secret
           TELEGRAM_WEBHOOK_SECRET: ci-webhook-secret
           ALLOWED_TELEGRAM_USER_IDS: '1'
+          GEMINI_API_KEY: ci-gemini-key
+          OPEN_FOOD_FACTS_BASE_URL: https://world.openfoodfacts.org/api/v2
         run: |
+          docker compose config | grep -q 'GEMINI_API_KEY: ci-gemini-key'
           docker compose up --build --detach
           for attempt in {1..30}; do
-            if curl --fail --silent http://localhost:8080/health && docker compose exec -T app wget -q -O - http://localhost:8081/actuator/health/readiness; then exit 0; fi
+            if curl --fail --silent http://localhost:8080/health && docker compose exec -T app sh -c 'wget -q -O - "http://localhost:${MANAGEMENT_PORT}/actuator/health/readiness"'; then exit 0; fi
             sleep 2
           done
           docker compose logs
