@@ -12,6 +12,7 @@ import io.github.foodjournal.repository.FoodEntryRepository;
 import io.github.foodjournal.repository.FoodUserRepository;
 import io.github.foodjournal.repository.UserSettingsRepository;
 import io.github.foodjournal.repository.FoodItemRepository;
+import io.github.foodjournal.domain.FoodItem;
 import java.util.List;
 import java.util.Optional; import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,5 +59,16 @@ class JournalApplicationServiceTest {
 
     assertThat(service.handle(1L, "A", "I ate soup")).startsWith("Logged: vegetable soup");
     verify(entries).save(argThat(entry -> entry.getUser() == user && entry.getCalories() == 220));
+  }
+
+  @Test void persistsStructuredItemsWithTheMeal() {
+    FoodUser user = new FoodUser(1L, "A");
+    when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));
+    when(interpreter.interpret("I ate soup and bread")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "soup and bread", 320, null, null, null, null, List.of(new JournalIntent.MealItem("soup", 300d, 220), new JournalIntent.MealItem("bread", 40d, 100))));
+    when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+    service.handle(1L, "A", "I ate soup and bread");
+
+    verify(items, times(2)).save(any(FoodItem.class));
   }
 }
