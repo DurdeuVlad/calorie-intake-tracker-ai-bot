@@ -31,7 +31,7 @@ jobs:
         run: |
           docker compose up --build --detach
           for attempt in {1..30}; do
-            if curl --fail --silent http://localhost:8080/health; then exit 0; fi
+            if curl --fail --silent http://localhost:8080/health && docker compose exec -T app wget -q -O - http://localhost:8081/actuator/health/readiness; then exit 0; fi
             sleep 2
           done
           docker compose logs

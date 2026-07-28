@@ -1,0 +1,8 @@
+.git
+.github
+.env
+target
+backups
+*.log
+README.md
+docs
