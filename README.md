@@ -32,6 +32,10 @@ See [local development](docs/local-development.md), [configuration](docs/configu
 
 Rotate any Telegram token that appeared in an n8n export before doing anything else. Never commit `.env`, production data, Telegram updates, or n8n exports. See [SECURITY.md](SECURITY.md).
 
+## Admin dashboard and API
+
+Configure `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD`, and a base64 32-byte `ADMIN_TRACE_ENCRYPTION_KEY`, then sign in at `/admin`. API keys created there use `X-API-Key` or `Authorization: Bearer` and have `observability:read` and/or `journal:export` scopes. Detailed traces expire after 14 days by default.
+
 ## Documentation
 
 - [Product and use cases](docs/product.md)

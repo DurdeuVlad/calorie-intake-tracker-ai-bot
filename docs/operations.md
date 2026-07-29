@@ -6,6 +6,10 @@ The public application endpoint exposes `GET /health`, which returns only `ok`. 
 
 Docker uses readiness for its health check. A container is ready only after the application and database health contributors are healthy. The service also uses graceful shutdown with a 30-second phase timeout; stop the application before PostgreSQL during planned maintenance.
 
+## Admin observability
+
+`/admin` requires the local bootstrap administrator and `/api/v1` requires a scoped API key; keep both behind HTTPS. Detailed traces expire after 14 days and exclude prompts, chain-of-thought, raw media, and credentials. Without `ADMIN_TRACE_ENCRYPTION_KEY`, private input/reply retention fails closed while safe metadata remains available.
+
 Collect container stdout/stderr and the Prometheus endpoint privately. Alert on startup or Flyway failures, readiness failures, webhook verification failures, rejected senders, AI-provider and Open Food Facts failures, duplicate-update rates, report delivery failures, outbox retry age, and database health. Do not log tokens, raw media, or full private messages.
 
 Compose retains at most three 10 MB JSON log files per application container. This is only a local guardrail, not a replacement for centralized log retention.

@@ -42,3 +42,9 @@ food-journal:
   gemini-api-key: ${GEMINI_API_KEY:}
   gemini-model: ${GEMINI_MODEL:gemini-3.6-flash}
   open-food-facts-base-url: ${OPEN_FOOD_FACTS_BASE_URL:https://world.openfoodfacts.org/api/v2}
+  admin:
+    bootstrap-email: ${ADMIN_BOOTSTRAP_EMAIL:}
+    bootstrap-password: ${ADMIN_BOOTSTRAP_PASSWORD:}
+    require-https: ${ADMIN_REQUIRE_HTTPS:true}
+    trace-encryption-key: ${ADMIN_TRACE_ENCRYPTION_KEY:}
+    trace-retention-days: ${ADMIN_TRACE_RETENTION_DAYS:14}
