@@ -34,5 +34,12 @@ class JournalAgentTest {
     verify(tools, times(10)).execute(any(), any(), anyList());
   }
 
+  @Test void propagatesModelFailureSoTheWebhookTransactionCanRollback() {
+    JournalAgentModel model = mock(JournalAgentModel.class);
+    when(model.next(any(), anyList())).thenThrow(new IllegalStateException("provider down"));
+    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> new JournalAgent(model, mock(JournalToolExecutor.class), props()).run(new AgentContext(new FoodUser(1L, "Vlad"), 1L, true, "test"))))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
   private BotProperties props() { return new BotProperties("t", "s", Set.of(1L), "Europe/Bucharest", "", "test"); }
 }
