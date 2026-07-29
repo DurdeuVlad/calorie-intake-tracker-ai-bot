@@ -12,6 +12,7 @@
 | `GEMINI_MODEL` | no | Gemini multimodal model; defaults to `gemini-3.6-flash` |
 | `DEFAULT_TIMEZONE` | no | IANA timezone used until a user completes onboarding; defaults to `Europe/Bucharest` |
 | `OPENAI_MODEL` | no | OpenAI chat-completions model; defaults to `gpt-5.4-mini` |
+| `AGENT_MAX_TOOL_CALLS` | no | maximum tool calls in one agent run; capped at `10` |
 | `OPEN_FOOD_FACTS_BASE_URL` | no | Open Food Facts API base URL, including `/api/v2`; defaults to the public API |
 | `MANAGEMENT_PORT` | no | local-only Actuator port; defaults to `8081` |
 | `FOOD_JOURNAL_SCHEDULING_ENABLED` | no | set `false` to disable outbox and report schedulers; defaults to `true` |

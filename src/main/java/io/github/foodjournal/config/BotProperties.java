@@ -15,6 +15,7 @@ public record BotProperties(
     String defaultTimezone,
     String openaiApiKey,
     String openaiModel,
+    int agentMaxToolCalls,
     String geminiApiKey,
     String geminiModel,
     String openFoodFactsBaseUrl) {
@@ -22,6 +23,7 @@ public record BotProperties(
     allowedTelegramUserIds = allowedTelegramUserIds == null ? Set.of() : Set.copyOf(allowedTelegramUserIds);
     defaultTimezone = defaultTimezone == null ? "Europe/Bucharest" : defaultTimezone;
     openaiModel = openaiModel == null ? "gpt-5.4-mini" : openaiModel;
+    agentMaxToolCalls = agentMaxToolCalls <= 0 ? 10 : Math.min(agentMaxToolCalls, 10);
     geminiApiKey = geminiApiKey == null ? "" : geminiApiKey;
     geminiModel = geminiModel == null || geminiModel.isBlank() ? "gemini-3.6-flash" : geminiModel;
     openFoodFactsBaseUrl = openFoodFactsBaseUrl == null || openFoodFactsBaseUrl.isBlank()
@@ -31,6 +33,6 @@ public record BotProperties(
   public BotProperties(String telegramToken, String webhookSecret, Set<Long> allowedTelegramUserIds,
       String defaultTimezone, String openaiApiKey, String openaiModel) {
     this(telegramToken, webhookSecret, allowedTelegramUserIds, defaultTimezone, openaiApiKey,
-        openaiModel, "", "gemini-3.6-flash", "https://world.openfoodfacts.org/api/v2");
+        openaiModel, 10, "", "gemini-3.6-flash", "https://world.openfoodfacts.org/api/v2");
   }
 }
