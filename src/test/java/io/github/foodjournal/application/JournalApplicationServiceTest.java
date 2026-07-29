@@ -154,4 +154,16 @@ class JournalApplicationServiceTest {
     when(interpreter.interpret("delete entry 77")).thenReturn(new JournalIntent(IntentType.DELETE_ENTRY,null,null,null,77L,null,null,null,List.of())); when(entries.findByIdAndUser(77L,user)).thenReturn(Optional.empty());
     assertThat(service.handle(1L,1L,"A","delete entry 77")).isEqualTo("I could not find that entry."); verify(entries,never()).delete(any()); verify(dailyStatus,never()).refresh(any(),anyLong());
   }
+
+  @Test void helpListsTheAvailableCommandsAndSafeExamples() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    String reply = service.handle(1L, 1L, "A", "/help");
+    assertThat(reply).contains("/start", "/cancel", "/privacy", "kcal/100 g").doesNotContain("tool JSON");
+    verifyNoInteractions(interpreter);
+  }
+
+  @Test void cancelClearsThePendingMealDraft() {
+    FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
+    assertThat(service.handle(1L, 1L, "A", "/cancel")).contains("anulat");
+  }
 }
