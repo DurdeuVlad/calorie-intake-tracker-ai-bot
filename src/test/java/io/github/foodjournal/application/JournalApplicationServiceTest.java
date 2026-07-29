@@ -13,6 +13,8 @@ import io.github.foodjournal.repository.FoodUserRepository;
 import io.github.foodjournal.repository.UserSettingsRepository;
 import io.github.foodjournal.repository.FoodItemRepository;
 import io.github.foodjournal.repository.PrivateFoodRepository;
+import io.github.foodjournal.repository.PendingFoodDraftRepository;
+import io.github.foodjournal.repository.PendingAgentActionRepository;
 import io.github.foodjournal.domain.FoodItem;
 import io.github.foodjournal.domain.PrivateFood;
 import io.github.foodjournal.application.DailyStatusService;
@@ -34,9 +36,11 @@ class JournalApplicationServiceTest {
   @Mock PrivateFoodRepository privateFoods;
   @Mock IntentInterpreter interpreter;
   @Mock DailyStatusService dailyStatus;
+  @Mock PendingFoodDraftRepository drafts;
+  @Mock PendingAgentActionRepository pendingActions;
   private JournalApplicationService service;
 
-  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, items, privateFoods, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), dailyStatus, NutritionResolver.noop()); }
+  @BeforeEach void setUp() { service = new JournalApplicationService(users, settings, entries, items, privateFoods, interpreter, new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), dailyStatus, NutritionResolver.noop(), drafts, pendingActions, null); }
   private void configured(FoodUser user){UserSettings value=new UserSettings(user,"Europe/Bucharest");value.completeOnboarding();when(settings.findById(user.getId())).thenReturn(Optional.of(value));}
 
   @Test void rejectsInvalidCaloriesWithoutWriting() {
@@ -162,8 +166,10 @@ class JournalApplicationServiceTest {
     verifyNoInteractions(interpreter);
   }
 
-  @Test void cancelClearsThePendingMealDraft() {
+  @Test void cancelClearsThePendingMealDraftAndAgentConfirmation() {
     FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
     assertThat(service.handle(1L, 1L, "A", "/cancel")).contains("anulat");
+    verify(drafts).deleteByUser(user);
+    verify(pendingActions).deleteById(user.getId());
   }
 }
