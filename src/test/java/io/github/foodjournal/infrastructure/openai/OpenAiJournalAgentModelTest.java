@@ -16,6 +16,13 @@ class OpenAiJournalAgentModelTest {
     assertThat(prompt).contains("cate calorii azi?", "how many calories today?", "always call get_today_summary", "Never call search_entries for a daily-total question");
   }
 
+  @Test void helpfulPromptUsesContextAndNutritionBeforeAskingForMoreWork() {
+    String prompt = model.instructions(true);
+    assertThat(prompt).contains("Reduce the user's effort", "same as before",
+        "get_private_food, resolve_nutrition, lookup_food", "one concrete, low-effort question",
+        "66 kcal x 4.5", "297 kcal", "banana");
+  }
+
   @Test void toolDefinitionsExposeTypedArgumentsForSensorsAndActions() {
     Map<String, Map<String,Object>> functions = new HashMap<>();
     for (Map<String,Object> tool : model.toolDefinitions()) {
