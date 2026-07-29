@@ -69,5 +69,5 @@ public class JournalApplicationService {
   private boolean needsDraft(JournalIntent intent,String response){return intent==null||intent.type()==IntentType.CHAT||response.contains("Spune-mi")||response.contains("Tell me")||response.contains("Nu pot calcula")||response.contains("cannot calculate");}
   private void saveDraft(FoodUser user,String raw){if(drafts==null)return;drafts.findById(user.getId()).ifPresentOrElse(d->d.replace(raw,Instant.now()),()->drafts.save(new PendingFoodDraft(user,raw,Instant.now())));}
   private void clearDraft(FoodUser user){if(drafts!=null)drafts.deleteByUser(user);}
-  public void purgeExpiredDrafts(){if(drafts!=null)drafts.deleteByExpiresAtBefore(Instant.now());}
+  @Transactional public void purgeExpiredDrafts(){if(drafts!=null)drafts.deleteByExpiresAtBefore(Instant.now());}
 }
