@@ -29,7 +29,7 @@ class FlywayMigrationPostgresTest {
   @Autowired JdbcTemplate jdbc;
 
   @Test void freshPostgresAppliesAllMigrationsAndPreservesJournalInvariants() {
-    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
+    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("9");
     List<String> tables = jdbc.queryForList("""
         select table_name from information_schema.tables
         where table_schema = 'public' and table_type = 'BASE TABLE'
@@ -47,6 +47,7 @@ class FlywayMigrationPostgresTest {
     assertThat(columnExists("food_items", "nutrition_source")).isTrue();
     assertThat(columnExists("food_items", "nutrition_confidence")).isTrue();
     assertThat(columnExists("pinned_daily_status", "lease_token")).isTrue();
+    assertThat(columnExists("user_settings", "preferred_language")).isTrue();
   }
 
   private boolean hasUniqueConstraint(String table, List<String> columns) {

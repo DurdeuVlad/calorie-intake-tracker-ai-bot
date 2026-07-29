@@ -15,6 +15,7 @@ public class UserSettings {
   private Long pinnedMessageId;
   @Column(nullable=false) private boolean onboardingCompleted=false;
   @Column(nullable=false) private String onboardingStage="TIMEZONE";
+  @Column(nullable=false) private String preferredLanguage="ro";
   protected UserSettings() {}
   public UserSettings(FoodUser user, String timezone) { this.user=user; this.timezone=timezone; }
   public String getTimezone(){return timezone;} public Integer getCalorieTarget(){return calorieTarget;}
@@ -23,4 +24,5 @@ public class UserSettings {
   public Long getPinnedMessageId(){return pinnedMessageId;} public void setPinnedMessageId(Long value){pinnedMessageId=value;}
   public boolean isOnboardingCompleted(){return onboardingCompleted;} public void completeOnboarding(){onboardingCompleted=true;}
   public String getOnboardingStage(){return onboardingStage;} public void requireCalorieTarget(){onboardingStage="CALORIE_TARGET";} public void skipCalorieTarget(){onboardingStage="COMPLETE";onboardingCompleted=true;}
+  public String getPreferredLanguage(){return preferredLanguage;} public void setPreferredLanguage(String language){preferredLanguage="en".equals(language)?"en":"ro";}
 }
