@@ -9,6 +9,7 @@ import java.time.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 @Service
 public class JournalToolExecutor {
@@ -25,8 +26,8 @@ public class JournalToolExecutor {
       case "create_food_entry" -> create(c,a); case "save_private_food" -> savePrivate(c,a); case "update_settings" -> updateSettings(c,a);
       case "prepare_entry_edit" -> prepare(c,a,"EDIT"); case "prepare_entry_delete" -> prepare(c,a,"DELETE");
       case "get_pending_action" -> getPending(c); case "confirm_pending_action" -> confirm(c); default -> AgentToolResult.failure("VALIDATION_ERROR","That tool is not available.");
-    }; } catch (IllegalArgumentException e) { return AgentToolResult.failure("VALIDATION_ERROR", "The supplied details are invalid."); }
-      catch (Exception e) { return AgentToolResult.failure("TEMPORARY_FAILURE", "That operation could not be completed now."); }
+    }; } catch (IllegalArgumentException e) { TransactionAspectSupport.currentTransactionStatus().setRollbackOnly(); return AgentToolResult.failure("VALIDATION_ERROR", "The supplied details are invalid."); }
+      catch (Exception e) { TransactionAspectSupport.currentTransactionStatus().setRollbackOnly(); return AgentToolResult.failure("TEMPORARY_FAILURE", "That operation could not be completed now."); }
   }
   private AgentToolResult planTodos(Map<String,Object>a,List<String> todos){Object raw=a.get("todos");if(!(raw instanceof List<?> list))return AgentToolResult.failure("VALIDATION_ERROR","Provide a short todo list.");todos.clear();for(Object value:list){if(value!=null&&!String.valueOf(value).isBlank()&&todos.size()<6)todos.add(String.valueOf(value));}return AgentToolResult.ok(Map.of("todos",List.copyOf(todos)));}
   private AgentToolResult completeTodo(Map<String,Object>a,List<String> todos){String todo=str(a,"todo");if(todo==null||!todos.remove(todo))return AgentToolResult.failure("NOT_FOUND","That todo is not in the current run.");return AgentToolResult.ok(Map.of("todos",List.copyOf(todos)));}
