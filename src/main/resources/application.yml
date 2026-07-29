@@ -8,6 +8,12 @@ spring:
 server:
   forward-headers-strategy: framework
   shutdown: graceful
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: ${ADMIN_SESSION_COOKIE_SECURE:true}
+        same-site: lax
 spring.lifecycle.timeout-per-shutdown-phase: 30s
 management:
   server:

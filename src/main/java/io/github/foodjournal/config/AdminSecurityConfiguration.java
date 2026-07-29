@@ -29,7 +29,8 @@ public class AdminSecurityConfiguration {
   @Bean SecurityFilterChain securityFilterChain(HttpSecurity http, ApiKeyAuthenticationFilter apiKeys, LoginRateLimitFilter rateLimit,
       AdminProperties properties, LoginAttemptService attempts, AdminUserRepository users, AdminAuditService audit) throws Exception {
     http.csrf(csrf -> csrf.ignoringRequestMatchers("/telegram/webhook", "/api/v1/**"))
-        .authorizeHttpRequests(auth -> auth.requestMatchers("/telegram/webhook", "/actuator/**", "/login").permitAll()
+        .authorizeHttpRequests(auth -> auth.requestMatchers("/telegram/webhook", "/login").permitAll()
+            .requestMatchers("/actuator/**").denyAll()
             .requestMatchers("/admin/**").hasRole("ADMIN").requestMatchers("/api/v1/**").hasRole("API_KEY").anyRequest().permitAll())
         .formLogin(login -> login.permitAll().successHandler(successHandler(attempts, users, audit)).failureHandler(failureHandler(attempts, audit)))
         .sessionManagement(session -> session.sessionFixation().migrateSession())

@@ -2,6 +2,7 @@ package io.github.foodjournal.application;
 
 import java.util.*;
 import io.github.foodjournal.application.observability.ObservabilityService;
+import io.github.foodjournal.application.observability.AgentRunRequestContext;
 import io.github.foodjournal.domain.AgentRun;
 import io.github.foodjournal.domain.AgentTracePayload;
 import io.github.foodjournal.domain.IntegrationEvent;
@@ -14,17 +15,17 @@ import org.springframework.stereotype.Service;
 public class JournalAgent {
   private final JournalAgentModel model;
   private final JournalToolExecutor tools;
-  private final int maxCalls; private final MeterRegistry metrics; private final ConversationMemoryService memory; private final ObservabilityService observability;
+  private final int maxCalls; private final MeterRegistry metrics; private final ConversationMemoryService memory; private final ObservabilityService observability; private final AgentRunRequestContext requestContext;
 
   public JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties, MeterRegistry metrics, ConversationMemoryService memory) {
-    this(model,tools,properties,metrics,memory,(ObservabilityService)null);
+    this(model,tools,properties,metrics,memory,(ObservabilityService)null,null);
   }
-  @Autowired public JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties, MeterRegistry metrics, ConversationMemoryService memory, org.springframework.beans.factory.ObjectProvider<ObservabilityService> observability) { this(model,tools,properties,metrics,memory,observability.getIfAvailable()); }
-  private JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties, MeterRegistry metrics, ConversationMemoryService memory, ObservabilityService observability) { this.model=model;this.tools=tools;this.maxCalls=properties.agentMaxToolCalls();this.metrics=metrics;this.memory=memory;this.observability=observability; }
+  @Autowired public JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties, MeterRegistry metrics, ConversationMemoryService memory, org.springframework.beans.factory.ObjectProvider<ObservabilityService> observability, AgentRunRequestContext requestContext) { this(model,tools,properties,metrics,memory,observability.getIfAvailable(),requestContext); }
+  private JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties, MeterRegistry metrics, ConversationMemoryService memory, ObservabilityService observability, AgentRunRequestContext requestContext) { this.model=model;this.tools=tools;this.maxCalls=properties.agentMaxToolCalls();this.metrics=metrics;this.memory=memory;this.observability=observability;this.requestContext=requestContext; }
   public JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties) { this(model,tools,properties,null,null); }
 
   public String run(AgentContext context) {
-    UUID runId=UUID.randomUUID(); safe(() -> { observability.startRun(runId,null,context.user(),"TEXT",null); observability.storePrivatePayload(runId,AgentTracePayload.Type.INPUT,context.message()); });
+    UUID runId=UUID.randomUUID(); AgentRunRequestContext.State request=requestContext==null?null:requestContext.current(); if(requestContext!=null)requestContext.attach(runId); safe(() -> { observability.startRun(runId,request==null?null:request.updateId(),context.user(),request==null?"TEXT":request.inputType(),null); observability.storePrivatePayload(runId,AgentTracePayload.Type.INPUT,context.message()); });
     count("food_journal_agent_runs_total");
     List<JournalAgentModel.AgentExchange> exchanges = new ArrayList<>();
     List<String> todos = new ArrayList<>();

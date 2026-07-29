@@ -32,3 +32,11 @@ CREATE TABLE admin_audit_events (
   metadata TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX idx_admin_audit_events_occurred_at ON admin_audit_events(occurred_at DESC);
+CREATE FUNCTION prevent_admin_audit_event_mutation() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'admin_audit_events are immutable';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER admin_audit_events_immutable
+  BEFORE UPDATE OR DELETE ON admin_audit_events
+  FOR EACH ROW EXECUTE FUNCTION prevent_admin_audit_event_mutation();
