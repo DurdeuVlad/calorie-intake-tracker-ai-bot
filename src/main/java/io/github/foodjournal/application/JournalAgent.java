@@ -27,7 +27,7 @@ public class JournalAgent {
       if (reply.toolCalls() == null || reply.toolCalls().isEmpty()) return safeReply(reply.text(), context);
       for (JournalAgentModel.ToolCall call : reply.toolCalls()) {
         if (calls++ >= maxCalls) { count("food_journal_agent_loop_limit_total"); return limit(context); }
-        AgentToolResult raw=tools.execute(context, call, todos); Map<String,Object> data=new LinkedHashMap<>(raw.data()); data.put("todos",List.copyOf(todos)); AgentToolResult result=new AgentToolResult(raw.ok(),raw.code(),Map.copyOf(data),raw.userHint()); count("food_journal_agent_tool_calls_total"); if(!result.ok()) count("food_journal_agent_tool_failures_total");
+        AgentToolResult raw; try { raw=tools.execute(context, call, todos); } catch (AgentToolFailure failure) { raw=failure.result(); } catch (RuntimeException failure) { raw=AgentToolResult.failure("TEMPORARY_FAILURE","That operation could not be completed now."); } Map<String,Object> data=new LinkedHashMap<>(raw.data()); data.put("todos",List.copyOf(todos)); AgentToolResult result=new AgentToolResult(raw.ok(),raw.code(),Map.copyOf(data),raw.userHint()); count("food_journal_agent_tool_calls_total"); if(!result.ok()) count("food_journal_agent_tool_failures_total");
         exchanges.add(new JournalAgentModel.AgentExchange(call, result));
       }
     }
