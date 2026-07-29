@@ -10,19 +10,20 @@ import org.springframework.stereotype.Service;
 public class JournalAgent {
   private final JournalAgentModel model;
   private final JournalToolExecutor tools;
-  private final int maxCalls; private final MeterRegistry metrics;
+  private final int maxCalls; private final MeterRegistry metrics; private final ConversationMemoryService memory;
 
-  @Autowired public JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties, MeterRegistry metrics) {
-    this.model = model; this.tools = tools; this.maxCalls = properties.agentMaxToolCalls(); this.metrics=metrics;
+  @Autowired public JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties, MeterRegistry metrics, ConversationMemoryService memory) {
+    this.model = model; this.tools = tools; this.maxCalls = properties.agentMaxToolCalls(); this.metrics=metrics; this.memory=memory;
   }
-  public JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties) { this(model,tools,properties,null); }
+  public JournalAgent(JournalAgentModel model, JournalToolExecutor tools, io.github.foodjournal.config.BotProperties properties) { this(model,tools,properties,null,null); }
 
   public String run(AgentContext context) {
     count("food_journal_agent_runs_total");
     List<JournalAgentModel.AgentExchange> exchanges = new ArrayList<>();
     List<String> todos = new ArrayList<>();
+    List<io.github.foodjournal.domain.ConversationMemory> recent=memory==null?List.of():memory.recent(context.user());
     for (int calls = 0; calls < maxCalls; ) {
-      JournalAgentModel.AgentReply reply = model.next(context, List.copyOf(exchanges));
+      JournalAgentModel.AgentReply reply = model.next(context, recent, List.copyOf(exchanges));
       if (reply == null) return unavailable(context);
       if (reply.toolCalls() == null || reply.toolCalls().isEmpty()) return safeReply(reply.text(), context);
       for (JournalAgentModel.ToolCall call : reply.toolCalls()) {

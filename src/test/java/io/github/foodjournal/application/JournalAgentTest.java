@@ -15,9 +15,9 @@ class JournalAgentTest {
     JournalToolExecutor tools = mock(JournalToolExecutor.class);
     AgentContext context = new AgentContext(new FoodUser(1L, "Vlad"), 1L, true, "total azi?");
     JournalAgentModel.ToolCall call = new JournalAgentModel.ToolCall("c1", "get_today_summary", "{}");
-    when(model.next(eq(context), argThat(List::isEmpty))).thenReturn(new JournalAgentModel.AgentReply(null, List.of(call)));
+    when(model.next(eq(context), anyList(), argThat(List::isEmpty))).thenReturn(new JournalAgentModel.AgentReply(null, List.of(call)));
     when(tools.execute(eq(context), eq(call), anyList())).thenReturn(AgentToolResult.ok(Map.of("calories", 425)));
-    when(model.next(eq(context), argThat(history -> history.size() == 1 && history.getFirst().result().ok()))).thenReturn(new JournalAgentModel.AgentReply("Total azi: 425 kcal.", List.of()));
+    when(model.next(eq(context), anyList(), argThat(history -> history.size() == 1 && history.getFirst().result().ok()))).thenReturn(new JournalAgentModel.AgentReply("Total azi: 425 kcal.", List.of()));
     String reply = new JournalAgent(model, tools, props()).run(context);
     assertThat(reply).isEqualTo("Total azi: 425 kcal.");
     verify(tools).execute(eq(context), eq(call), anyList());
@@ -28,7 +28,7 @@ class JournalAgentTest {
     JournalToolExecutor tools = mock(JournalToolExecutor.class);
     AgentContext context = new AgentContext(new FoodUser(1L, "Vlad"), 1L, true, "test");
     JournalAgentModel.ToolCall call = new JournalAgentModel.ToolCall("c", "get_settings", "{}");
-    when(model.next(eq(context), anyList())).thenReturn(new JournalAgentModel.AgentReply(null, List.of(call, call)));
+    when(model.next(eq(context), anyList(), anyList())).thenReturn(new JournalAgentModel.AgentReply(null, List.of(call, call)));
     when(tools.execute(any(), any(), anyList())).thenReturn(AgentToolResult.ok(Map.of()));
     assertThat(new JournalAgent(model, tools, props()).run(context)).contains("detaliu");
     verify(tools, times(10)).execute(any(), any(), anyList());
@@ -36,7 +36,7 @@ class JournalAgentTest {
 
   @Test void propagatesModelFailureSoTheWebhookTransactionCanRollback() {
     JournalAgentModel model = mock(JournalAgentModel.class);
-    when(model.next(any(), anyList())).thenThrow(new IllegalStateException("provider down"));
+    when(model.next(any(), anyList(), anyList())).thenThrow(new IllegalStateException("provider down"));
     assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> new JournalAgent(model, mock(JournalToolExecutor.class), props()).run(new AgentContext(new FoodUser(1L, "Vlad"), 1L, true, "test"))))
         .isInstanceOf(IllegalStateException.class);
   }
