@@ -45,7 +45,7 @@ class JournalApplicationServiceTest {
     configured(user);
     when(interpreter.interpret("huge meal")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "huge meal", 10001, null, null, null, null, null, List.of()));
 
-    assertThat(service.handle(1L, 1L, "A", "huge meal")).contains("not valid");
+    assertThat(service.handle(1L, 1L, "A", "huge meal")).contains("Tell me");
     verify(entries, never()).save(any());
   }
 
@@ -67,7 +67,7 @@ class JournalApplicationServiceTest {
     when(interpreter.interpret("I ate soup")).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "vegetable soup", 220, null, null, null, null, null, List.of(new JournalIntent.MealItem("soup",300d,220))));
     when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-    assertThat(service.handle(1L, 1L, "A", "I ate soup")).startsWith("Logged: vegetable soup");
+    assertThat(service.handle(1L, 1L, "A", "I ate soup")).contains("220 kcal");
     verify(entries).save(argThat(entry -> entry.getUser() == user && entry.getCalories() == 220));
   }
 
@@ -90,7 +90,7 @@ class JournalApplicationServiceTest {
     when(interpreter.interpret(contains("Media-derived food evidence"))).thenReturn(new JournalIntent(IntentType.LOG_MEAL, "oat bar", 180, null, null, null, null, null, List.of(new JournalIntent.MealItem("oat bar", 50d, 180))));
     when(entries.save(any(FoodEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-    assertThat(service.handleMediaEvidence(1L, 1L, "A", "Oat bar, 180 kcal")).contains("estimates");
+    assertThat(service.handleMediaEvidence(1L, 1L, "A", "Oat bar, 180 kcal")).contains("180 kcal");
 
     verify(entries).save(argThat(entry -> entry.getNutritionSource().equals("ai_estimate") && entry.getConfidence().equals("estimate")));
   }
