@@ -2,11 +2,14 @@ package io.github.foodjournal.infrastructure.gemini;
 
 import io.github.foodjournal.application.TelegramVoiceMediaClient;
 import io.github.foodjournal.application.TransientVoicePayload;
+import io.github.foodjournal.application.MediaProcessingException;
 import io.github.foodjournal.config.BotProperties;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 
 @Component
 public class TelegramHttpVoiceMediaClient implements TelegramVoiceMediaClient {
@@ -26,17 +29,24 @@ public class TelegramHttpVoiceMediaClient implements TelegramVoiceMediaClient {
   @Override
   public TransientVoicePayload download(String telegramFileId) {
     if (telegramFileId == null || telegramFileId.isBlank()) {
-      throw new IllegalArgumentException("Missing Telegram voice file ID");
+      throw new MediaProcessingException(MediaProcessingException.Category.INVALID_MEDIA, "Missing media file ID");
     }
-    Map<?, ?> response = telegram.get().uri(uri -> uri.path("/bot/{token}/getFile")
-        .queryParam("file_id", telegramFileId).build(properties.telegramToken()))
-        .retrieve().body(Map.class);
-    Object result = response == null ? null : response.get("result");
-    if (!(result instanceof Map<?, ?> file) || !(file.get("file_path") instanceof String path)) {
-      throw new IllegalStateException("Telegram file unavailable");
+    try {
+      Map<?, ?> response = telegram.get().uri(uri -> uri.path("/bot/{token}/getFile")
+          .queryParam("file_id", telegramFileId).build(properties.telegramToken()))
+          .retrieve().body(Map.class);
+      Object result = response == null ? null : response.get("result");
+      if (!(result instanceof Map<?, ?> file) || !(file.get("file_path") instanceof String path) || path.isBlank()) {
+        throw new MediaProcessingException(MediaProcessingException.Category.TELEGRAM_DOWNLOAD, "Telegram media is unavailable");
+      }
+      byte[] bytes = telegram.get().uri("/file/bot{token}/{path}", properties.telegramToken(), path)
+          .retrieve().body(byte[].class);
+      if (bytes == null) throw new MediaProcessingException(MediaProcessingException.Category.TELEGRAM_DOWNLOAD, "Telegram media is unavailable");
+      return new TransientVoicePayload(bytes);
+    } catch (MediaProcessingException expected) {
+      throw expected;
+    } catch (RestClientResponseException | ResourceAccessException failure) {
+      throw new MediaProcessingException(MediaProcessingException.Category.TELEGRAM_DOWNLOAD, "Telegram media download failed", failure);
     }
-    return new TransientVoicePayload(telegram.get()
-        .uri("/file/bot{token}/{path}", properties.telegramToken(), path)
-        .retrieve().body(byte[].class));
   }
 }

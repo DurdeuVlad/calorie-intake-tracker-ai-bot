@@ -9,6 +9,7 @@
 | `ALLOWED_TELEGRAM_USER_IDS` | yes | comma-separated Telegram numeric user IDs |
 | `OPENAI_API_KEY` | yes for natural language | OpenAI credential |
 | `GEMINI_API_KEY` | yes for voice/image/document | Gemini credential |
+| `GEMINI_MODEL` | no | Gemini multimodal model; defaults to `gemini-3.6-flash` |
 | `DEFAULT_TIMEZONE` | no | IANA timezone used until a user completes onboarding; defaults to `Europe/Bucharest` |
 | `OPENAI_MODEL` | no | OpenAI chat-completions model; defaults to `gpt-5.4-mini` |
 | `OPEN_FOOD_FACTS_BASE_URL` | no | Open Food Facts API base URL, including `/api/v2`; defaults to the public API |
