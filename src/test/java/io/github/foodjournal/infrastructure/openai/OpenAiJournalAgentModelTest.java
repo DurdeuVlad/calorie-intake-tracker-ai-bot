@@ -27,6 +27,10 @@ class OpenAiJournalAgentModelTest {
     assertThat(model.instructions(true)).contains("noteaza doar o data", "correction request", "Never call create_food_entry", "prepare_entry_delete");
   }
 
+  @Test void promptRequiresPlainSelfContainedTelegramReplies() {
+    assertThat(model.instructions(true)).contains("Telegram is plain text", "never use Markdown or HTML", "do not append generic offers");
+  }
+
   @Test void toolDefinitionsExposeTypedArgumentsForSensorsAndActions() {
     Map<String, Map<String,Object>> functions = new HashMap<>();
     for (Map<String,Object> tool : model.toolDefinitions()) {
