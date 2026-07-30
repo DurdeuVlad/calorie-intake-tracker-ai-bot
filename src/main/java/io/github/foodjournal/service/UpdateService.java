@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
  @Transactional public void enqueue(TelegramUpdate update){TelegramMessage msg=validMessage(update);if(msg==null||inbox==null||json==null)return;if(processed.claimIfNew(update.update_id())==0)return;try{inbox.save(new TelegramInboxUpdate(update.update_id(),msg.from().id(),msg.chat().id(),json.writeValueAsString(update)));}catch(Exception failure){throw new IllegalStateException("Could not enqueue Telegram update",failure);}}
  /** Legacy/direct entry point retained for focused tests; production controller uses enqueue. */
  @Transactional public void handle(TelegramUpdate update){process(update,true,null);}
- @Transactional public void processQueued(TelegramUpdate update,long sourceUpdateId){process(update,false,sourceUpdateId);}
+ @Transactional public void processQueued(TelegramUpdate update,long sourceUpdateId,java.util.UUID leaseToken){if(inbox==null)return;TelegramInboxUpdate row=inbox.lockByUpdateId(sourceUpdateId).orElseThrow();if(row.getStatus()!=TelegramInboxUpdate.Status.IN_PROGRESS||!leaseToken.equals(row.getLeaseToken()))return;process(update,false,sourceUpdateId);row.complete(leaseToken);}
  private void process(TelegramUpdate update,boolean claim,Long sourceUpdateId){
    TelegramMessage msg=validMessage(update);if(msg==null)return;if(claim&&processed.claimIfNew(update.update_id())==0)return;
    String text=msg.text(); if((text==null||text.isBlank())&&msg.voice()!=null){try{text=voice.transcribe(msg.voice().file_id(),msg.voice().mime_type());}catch(Exception failure){reply(msg.chat().id(),"I could not transcribe that voice note. Please try again or send text.",sourceUpdateId);return;}}

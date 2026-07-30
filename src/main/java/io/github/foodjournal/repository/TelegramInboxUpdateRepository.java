@@ -2,9 +2,13 @@ package io.github.foodjournal.repository;
 
 import io.github.foodjournal.domain.TelegramInboxUpdate;
 import java.util.*;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.*;
 
 public interface TelegramInboxUpdateRepository extends JpaRepository<TelegramInboxUpdate,Long> {
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select row from TelegramInboxUpdate row where row.updateId = :updateId")
+  Optional<TelegramInboxUpdate> lockByUpdateId(@org.springframework.data.repository.query.Param("updateId") long updateId);
   @Query(value="""
       select * from telegram_update_inbox candidate
       where ((candidate.status = 'PENDING' and candidate.next_attempt_at <= current_timestamp)
