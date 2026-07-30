@@ -38,7 +38,7 @@ class OpenAiJournalAgentModelTest {
       functions.put((String) function.get("name"), function);
     }
     assertThat(schema(functions,"get_today_summary").get("additionalProperties")).isEqualTo(false);
-    assertThat(required(functions,"search_entries")).containsExactly("query");
+    assertThat(required(functions,"search_entries")).isEmpty();
     assertThat(required(functions,"get_entry")).containsExactly("entryId");
     assertThat(required(functions,"create_food_entry")).containsExactly("items");
     assertThat(required(functions,"prepare_entry_delete")).containsExactly("entryId");
