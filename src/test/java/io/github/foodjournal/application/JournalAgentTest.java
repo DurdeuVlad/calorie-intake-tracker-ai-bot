@@ -41,5 +41,19 @@ class JournalAgentTest {
         .isInstanceOf(IllegalStateException.class);
   }
 
+  @Test void romanianFirstBrandConversationSearchesThenLogsAnEstimate() {
+    JournalAgentModel model=mock(JournalAgentModel.class); JournalToolExecutor tools=mock(JournalToolExecutor.class);
+    AgentContext context=new AgentContext(new FoodUser(1L,"Vlad"),1L,true,"cauta prima marca si e ok");
+    JournalAgentModel.ToolCall search=new JournalAgentModel.ToolCall("s","search_packaged_food","{\"name\":\"crenvusti\"}");
+    JournalAgentModel.ToolCall create=new JournalAgentModel.ToolCall("c","create_food_entry","{\"items\":[{\"name\":\"Brand A\",\"grams\":50,\"caloriesPer100g\":250,\"nutritionMode\":\"PACKAGED_MATCH\"}]}");
+    when(model.next(eq(context),anyList(),argThat(List::isEmpty))).thenReturn(new JournalAgentModel.AgentReply(null,List.of(search)));
+    when(tools.execute(eq(context),eq(search),anyList())).thenReturn(AgentToolResult.ok(Map.of("products",List.of(Map.of("name","Brand A","caloriesPer100g",250,"barcode","12345678")))));
+    when(model.next(eq(context),anyList(),argThat(history->history.size()==1))).thenReturn(new JournalAgentModel.AgentReply(null,List.of(create)));
+    when(tools.execute(eq(context),eq(create),anyList())).thenReturn(AgentToolResult.ok(Map.of("estimated",true,"today",Map.of("calories",125))));
+    when(model.next(eq(context),anyList(),argThat(history->history.size()==2))).thenReturn(new JournalAgentModel.AgentReply("Am estimat 125 kcal; valoarea poate fi greșită.",List.of()));
+    assertThat(new JournalAgent(model,tools,props()).run(context)).contains("Am estimat", "125 kcal");
+    verify(tools).execute(eq(context),eq(search),anyList()); verify(tools).execute(eq(context),eq(create),anyList());
+  }
+
   private BotProperties props() { return new BotProperties("t", "s", Set.of(1L), "Europe/Bucharest", "", "test"); }
 }
