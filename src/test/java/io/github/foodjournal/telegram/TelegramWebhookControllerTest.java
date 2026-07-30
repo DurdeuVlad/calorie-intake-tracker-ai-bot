@@ -27,6 +27,6 @@ class TelegramWebhookControllerTest {
     var result = controller.webhook("expected", update);
 
     org.assertj.core.api.Assertions.assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-    verify(service).handle(update);
+    verify(service).enqueue(update);
   }
 }
