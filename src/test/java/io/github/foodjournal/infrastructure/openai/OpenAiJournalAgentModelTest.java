@@ -23,6 +23,10 @@ class OpenAiJournalAgentModelTest {
         "66 kcal x 4.5", "297 kcal", "banana");
   }
 
+  @Test void correctionPromptNeverTreatsOnlyOnceAsANewMeal() {
+    assertThat(model.instructions(true)).contains("noteaza doar o data", "correction request", "Never call create_food_entry", "prepare_entry_delete");
+  }
+
   @Test void toolDefinitionsExposeTypedArgumentsForSensorsAndActions() {
     Map<String, Map<String,Object>> functions = new HashMap<>();
     for (Map<String,Object> tool : model.toolDefinitions()) {
