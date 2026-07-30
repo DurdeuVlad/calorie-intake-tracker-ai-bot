@@ -10,36 +10,9 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class JournalAgentTest {
-  @Test void makesToolsResultsAvailableBeforeReturningFinalReply() {
-    JournalAgentModel model = mock(JournalAgentModel.class);
-    JournalToolExecutor tools = mock(JournalToolExecutor.class);
-    AgentContext context = new AgentContext(new FoodUser(1L, "Vlad"), 1L, true, "total azi?");
-    JournalAgentModel.ToolCall call = new JournalAgentModel.ToolCall("c1", "get_today_summary", "{}");
-    when(model.next(eq(context), anyList(), argThat(List::isEmpty))).thenReturn(new JournalAgentModel.AgentReply(null, List.of(call)));
-    when(tools.execute(eq(context), eq(call), anyList())).thenReturn(AgentToolResult.ok(Map.of("calories", 425)));
-    when(model.next(eq(context), anyList(), argThat(history -> history.size() == 1 && history.getFirst().result().ok()))).thenReturn(new JournalAgentModel.AgentReply("Total azi: 425 kcal.", List.of()));
-    String reply = new JournalAgent(model, tools, props()).run(context);
-    assertThat(reply).isEqualTo("Total azi: 425 kcal.");
-    verify(tools).execute(eq(context), eq(call), anyList());
-  }
-
-  @Test void stopsBeforeAnEleventhToolCall() {
-    JournalAgentModel model = mock(JournalAgentModel.class);
-    JournalToolExecutor tools = mock(JournalToolExecutor.class);
-    AgentContext context = new AgentContext(new FoodUser(1L, "Vlad"), 1L, true, "test");
-    JournalAgentModel.ToolCall call = new JournalAgentModel.ToolCall("c", "get_settings", "{}");
-    when(model.next(eq(context), anyList(), anyList())).thenReturn(new JournalAgentModel.AgentReply(null, List.of(call, call)));
-    when(tools.execute(any(), any(), anyList())).thenReturn(AgentToolResult.ok(Map.of()));
-    assertThat(new JournalAgent(model, tools, props()).run(context)).contains("detaliu");
-    verify(tools, times(10)).execute(any(), any(), anyList());
-  }
-
-  @Test void propagatesModelFailureSoTheWebhookTransactionCanRollback() {
-    JournalAgentModel model = mock(JournalAgentModel.class);
-    when(model.next(any(), anyList(), anyList())).thenThrow(new IllegalStateException("provider down"));
-    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> new JournalAgent(model, mock(JournalToolExecutor.class), props()).run(new AgentContext(new FoodUser(1L, "Vlad"), 1L, true, "test"))))
-        .isInstanceOf(IllegalStateException.class);
-  }
-
-  private BotProperties props() { return new BotProperties("t", "s", Set.of(1L), "Europe/Bucharest", "", "test"); }
+  @Test void makesToolsResultsAvailableBeforeReturningFinalReply(){JournalAgentModel model=mock(JournalAgentModel.class);JournalToolExecutor tools=mock(JournalToolExecutor.class);AgentContext context=new AgentContext(new FoodUser(1,"Vlad"),1,true,"total azi?");JournalAgentModel.ToolCall call=new JournalAgentModel.ToolCall("c1","get_today_summary","{}");when(model.next(eq(context),anyList(),argThat(List::isEmpty))).thenReturn(new JournalAgentModel.AgentReply(null,List.of(call)));when(tools.execute(eq(context),eq(call),anyList())).thenReturn(AgentToolResult.ok(Map.of("calories",425)));when(model.next(eq(context),anyList(),argThat(history->history.size()==1&&history.getFirst().result().ok()))).thenReturn(new JournalAgentModel.AgentReply("Total azi: 425 kcal.",List.of()));assertThat(new JournalAgent(model,tools,props()).run(context)).isEqualTo("Total azi: 425 kcal.");verify(tools).execute(eq(context),eq(call),anyList());}
+  @Test void stopsBeforeAnEleventhToolCall(){JournalAgentModel model=mock(JournalAgentModel.class);JournalToolExecutor tools=mock(JournalToolExecutor.class);AgentContext context=new AgentContext(new FoodUser(1,"Vlad"),1,true,"test");JournalAgentModel.ToolCall call=new JournalAgentModel.ToolCall("c","get_settings","{}");when(model.next(eq(context),anyList(),anyList())).thenReturn(new JournalAgentModel.AgentReply(null,List.of(call,call)));when(tools.execute(any(),any(),anyList())).thenReturn(AgentToolResult.ok(Map.of()));assertThat(new JournalAgent(model,tools,props()).run(context)).contains("detaliu");verify(tools,times(10)).execute(any(),any(),anyList());}
+  @Test void propagatesModelFailureSoTheWebhookTransactionCanRollback(){JournalAgentModel model=mock(JournalAgentModel.class);when(model.next(any(),anyList(),anyList())).thenThrow(new IllegalStateException("provider down"));assertThat(org.assertj.core.api.Assertions.catchThrowable(()->new JournalAgent(model,mock(JournalToolExecutor.class),props()).run(new AgentContext(new FoodUser(1,"Vlad"),1,true,"test")))).isInstanceOf(IllegalStateException.class);}
+  @Test void romanianFirstBrandFollowUpReadsThenConsumesServerOwnedQuote(){JournalAgentModel model=mock(JournalAgentModel.class);JournalToolExecutor tools=mock(JournalToolExecutor.class);AgentContext context=new AgentContext(new FoodUser(1,"Vlad"),1,true,"cauta prima marca si e ok");String quoteId="00000000-0000-0000-0000-000000000042";JournalAgentModel.ToolCall pending=new JournalAgentModel.ToolCall("p","get_pending_nutrition_quotes","{}");JournalAgentModel.ToolCall select=new JournalAgentModel.ToolCall("s","select_packaged_food","{\"quoteId\":\""+quoteId+"\"}");JournalAgentModel.ToolCall create=new JournalAgentModel.ToolCall("c","create_food_entry","{\"items\":[{\"nutritionMode\":\"PACKAGED_MATCH\",\"quoteId\":\""+quoteId+"\"}]}");when(model.next(eq(context),anyList(),argThat(List::isEmpty))).thenReturn(new JournalAgentModel.AgentReply(null,List.of(pending)));when(tools.execute(eq(context),eq(pending),anyList())).thenReturn(AgentToolResult.ok(Map.of("quotes",List.of(Map.of("quoteId",quoteId,"name","Brand A","caloriesPer100g",250)))));when(model.next(eq(context),anyList(),argThat(h->h.size()==1))).thenReturn(new JournalAgentModel.AgentReply(null,List.of(select)));when(tools.execute(eq(context),eq(select),anyList())).thenReturn(AgentToolResult.ok(Map.of("quoteId",quoteId,"item",Map.of("totalCalories",125))));when(model.next(eq(context),anyList(),argThat(h->h.size()==2))).thenReturn(new JournalAgentModel.AgentReply(null,List.of(create)));when(tools.execute(eq(context),eq(create),anyList())).thenReturn(AgentToolResult.ok(Map.of("estimated",true,"today",Map.of("calories",125))));when(model.next(eq(context),anyList(),argThat(h->h.size()==3))).thenReturn(new JournalAgentModel.AgentReply("Am estimat 125 kcal; valoarea poate fi gresita.",List.of()));assertThat(new JournalAgent(model,tools,props()).run(context)).contains("Am estimat","125 kcal");verify(tools).execute(eq(context),eq(pending),anyList());verify(tools).execute(eq(context),eq(select),anyList());verify(tools).execute(eq(context),eq(create),anyList());}
+  private BotProperties props(){return new BotProperties("t","s",Set.of(1L),"Europe/Bucharest","","test");}
 }
