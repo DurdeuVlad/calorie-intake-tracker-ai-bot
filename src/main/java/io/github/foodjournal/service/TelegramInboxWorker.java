@@ -2,11 +2,11 @@ package io.github.foodjournal.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.foodjournal.telegram.TelegramUpdate;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-@Service @ConditionalOnProperty(prefix="food-journal",name="scheduling-enabled",havingValue="true",matchIfMissing=true)
+/** Required message-processing loop; it must not depend on optional report scheduling. */
+@Service
 public class TelegramInboxWorker {
  private final TelegramInboxClaimService claims; private final UpdateService updates; private final ObjectMapper json;
  public TelegramInboxWorker(TelegramInboxClaimService claims,UpdateService updates,ObjectMapper json){this.claims=claims;this.updates=updates;this.json=json;}
