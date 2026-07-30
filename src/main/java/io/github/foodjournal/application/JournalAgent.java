@@ -21,6 +21,7 @@ public class JournalAgent {
     count("food_journal_agent_runs_total");
     List<JournalAgentModel.AgentExchange> exchanges = new ArrayList<>();
     List<String> todos = new ArrayList<>();
+    boolean entryCreated = false;
     List<io.github.foodjournal.domain.ConversationMemory> recent=memory==null?List.of():memory.recent(context.user());
     for (int calls = 0; calls < maxCalls; ) {
       JournalAgentModel.AgentReply reply = model.next(context, recent, List.copyOf(exchanges));
@@ -28,7 +29,7 @@ public class JournalAgent {
       if (reply.toolCalls() == null || reply.toolCalls().isEmpty()) return safeReply(reply.text(), context);
       for (JournalAgentModel.ToolCall call : reply.toolCalls()) {
         if (calls++ >= maxCalls) { count("food_journal_agent_loop_limit_total"); return limit(context); }
-        AgentToolResult raw; try { raw=tools.execute(context, call, todos); } catch (AgentToolFailure failure) { raw=failure.result(); } catch (RuntimeException failure) { raw=AgentToolResult.failure("TEMPORARY_FAILURE","That operation could not be completed now."); } Map<String,Object> data=new LinkedHashMap<>(raw.data()); data.put("todos",List.copyOf(todos)); AgentToolResult result=new AgentToolResult(raw.ok(),raw.code(),Map.copyOf(data),raw.userHint()); count("food_journal_agent_tool_calls_total"); if(!result.ok()) count("food_journal_agent_tool_failures_total");
+        AgentToolResult raw; if(entryCreated && "create_food_entry".equals(call.name())) raw=AgentToolResult.failure("CONFLICT","A meal was already logged for this message; verify it before replying."); else try { raw=tools.execute(context, call, todos); } catch (AgentToolFailure failure) { raw=failure.result(); } catch (RuntimeException failure) { raw=AgentToolResult.failure("TEMPORARY_FAILURE","That operation could not be completed now."); } if("create_food_entry".equals(call.name())&&raw.ok())entryCreated=true; Map<String,Object> data=new LinkedHashMap<>(raw.data()); data.put("todos",List.copyOf(todos)); AgentToolResult result=new AgentToolResult(raw.ok(),raw.code(),Map.copyOf(data),raw.userHint()); count("food_journal_agent_tool_calls_total"); if(!result.ok()) count("food_journal_agent_tool_failures_total");
         exchanges.add(new JournalAgentModel.AgentExchange(call, result));
       }
     }

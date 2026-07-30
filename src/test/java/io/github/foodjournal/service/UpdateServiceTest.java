@@ -6,11 +6,20 @@ import io.github.foodjournal.application.JournalApplicationService;
 import io.github.foodjournal.config.BotProperties;
 import io.github.foodjournal.repository.ProcessedTelegramUpdateRepository;
 import io.github.foodjournal.repository.OutboundTelegramMessageRepository;
+import io.github.foodjournal.repository.TelegramInboxUpdateRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.foodjournal.telegram.*;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class UpdateServiceTest {
+  @Test void enqueuesClaimedUpdateWithoutCallingTheAgent() {
+    ProcessedTelegramUpdateRepository processed=mock(ProcessedTelegramUpdateRepository.class); TelegramInboxUpdateRepository inbox=mock(TelegramInboxUpdateRepository.class); JournalApplicationService journal=mock(JournalApplicationService.class);
+    UpdateService service=new UpdateService(new BotProperties("token","secret",Set.of(1L),"Europe/Bucharest","","test"),processed,mock(OutboundTelegramMessageRepository.class),journal,mock(io.github.foodjournal.application.VoiceTranscriber.class),(file,mime,type)->"",null,null,inbox,new ObjectMapper());
+    TelegramUpdate update=new TelegramUpdate(90L,new TelegramMessage(1L,new TelegramChat(1L),new TelegramUser(1L,"A"),"hello",null,null,null),null); when(processed.claimIfNew(90L)).thenReturn(1);
+    service.enqueue(update);
+    verify(inbox).save(argThat(row->row.getUpdateId()==90L&&row.getTelegramUserId()==1L)); verifyNoInteractions(journal);
+  }
   @Test void ignoresDuplicateUpdateBeforeCallingApplicationService() {
     ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class);
     OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class);
