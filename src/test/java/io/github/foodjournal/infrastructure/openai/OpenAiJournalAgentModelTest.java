@@ -24,8 +24,8 @@ class OpenAiJournalAgentModelTest {
   @Test void helpfulPromptUsesContextAndNutritionBeforeAskingForMoreWork() {
     String prompt = model.instructions(true);
     assertThat(prompt).contains("Reduce the user's effort", "same as before",
-        "get_private_food, resolve_nutrition, lookup_food", "one concrete, low-effort question",
-        "66 kcal x 4.5", "297 kcal", "banana");
+        "get_private_food, resolve_nutrition, lookup_food", "ask one focused portion question before estimating",
+        "A food-free calculation is not a meal", "Clearly label estimates as uncertain");
   }
 
   @Test void correctionPromptNeverTreatsOnlyOnceAsANewMeal() {
@@ -35,6 +35,11 @@ class OpenAiJournalAgentModelTest {
   @Test void promptRequiresPlainSelfContainedTelegramReplies() {
     assertThat(model.instructions(true)).contains("Telegram is plain text", "never use Markdown or HTML", "do not append generic offers");
   }
+
+  @Test void promptTreatsMemoryAsContextRatherThanAnUnfinishedTaskQueue() {
+    assertThat(model.instructions(true)).contains("Conversation memory is background context", "The current user message is authoritative", "Never resume a stale meal");
+  }
+
 
   @Test void toolDefinitionsExposeTypedArgumentsForSensorsAndActions() {
     Map<String, Map<String,Object>> functions = new HashMap<>();

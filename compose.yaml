@@ -8,11 +8,13 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-foodjournal}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-dev-db.sh:/docker-entrypoint-initdb.d/init-dev-db.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U foodjournal -d foodjournal"]
       interval: 5s
       timeout: 3s
       retries: 10
+    ports: ["127.0.0.1:5432:5432"]
   app:
     build: .
     init: true

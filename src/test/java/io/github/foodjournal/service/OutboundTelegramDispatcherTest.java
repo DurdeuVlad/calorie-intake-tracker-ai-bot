@@ -13,7 +13,7 @@ class OutboundTelegramDispatcherTest {
     OutboundTelegramClaimService claims = mock(OutboundTelegramClaimService.class);
     TelegramGateway telegram = mock(TelegramGateway.class);
     java.util.UUID token = java.util.UUID.randomUUID();
-    OutboundTelegramClaimService.Delivery message = new OutboundTelegramClaimService.Delivery(7L, 1L, "Logged", token);
+    OutboundTelegramClaimService.Delivery message = new OutboundTelegramClaimService.Delivery(7L, 1L, "Logged", 99L, token);
     when(claims.claimBatch()).thenReturn(List.of(message));
 
     new OutboundTelegramDispatcher(claims, telegram).dispatch();
@@ -22,7 +22,7 @@ class OutboundTelegramDispatcherTest {
     verify(claims).markSent(7L, token);
   }
   @Test void sendsAnOversizedMessageOnceAtTelegramLimit() {
-    OutboundTelegramClaimService claims=mock(OutboundTelegramClaimService.class);TelegramGateway telegram=mock(TelegramGateway.class);java.util.UUID token=java.util.UUID.randomUUID();when(claims.claimBatch()).thenReturn(List.of(new OutboundTelegramClaimService.Delivery(8L,1L,"a".repeat(5000),token)));
+    OutboundTelegramClaimService claims=mock(OutboundTelegramClaimService.class);TelegramGateway telegram=mock(TelegramGateway.class);java.util.UUID token=java.util.UUID.randomUUID();when(claims.claimBatch()).thenReturn(List.of(new OutboundTelegramClaimService.Delivery(8L,1L,"a".repeat(5000),99L,token)));
     new OutboundTelegramDispatcher(claims,telegram).dispatch();
     verify(telegram).sendMessage(eq(1L),argThat(text->text.length()==4096&&text.endsWith("[Message truncated]")));verify(claims).markSent(8L,token);
   }

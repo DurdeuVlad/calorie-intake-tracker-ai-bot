@@ -29,13 +29,13 @@ class FlywayMigrationPostgresTest {
   @Autowired JdbcTemplate jdbc;
 
   @Test void freshPostgresAppliesAllMigrationsAndPreservesJournalInvariants() {
-    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("11");
+    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("12");
     List<String> tables = jdbc.queryForList("""
         select table_name from information_schema.tables
         where table_schema = 'public' and table_type = 'BASE TABLE'
         """, String.class);
     assertThat(tables).contains("food_users", "user_settings", "food_entries", "food_items",
-        "processed_telegram_updates", "report_deliveries", "outbound_telegram_messages",
+        "processed_telegram_updates", "report_deliveries", "outbound_telegram_messages", "journal_undo_actions",
         "pinned_daily_status", "nutrition_source_cache", "private_foods", "pending_food_drafts", "pending_agent_actions", "pending_nutrition_quotes", "telegram_update_inbox", "conversation_memory",
         "flyway_schema_history");
 
@@ -48,6 +48,7 @@ class FlywayMigrationPostgresTest {
     assertThat(columnExists("food_items", "nutrition_confidence")).isTrue();
     assertThat(columnExists("pinned_daily_status", "lease_token")).isTrue();
     assertThat(columnExists("user_settings", "preferred_language")).isTrue();
+    assertThat(columnExists("food_entries", "deleted_at")).isTrue();
   }
 
   private boolean hasUniqueConstraint(String table, List<String> columns) {

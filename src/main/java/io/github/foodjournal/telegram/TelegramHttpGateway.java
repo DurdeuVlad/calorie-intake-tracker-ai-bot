@@ -1,6 +1,6 @@
 package io.github.foodjournal.telegram;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties; import io.github.foodjournal.config.BotProperties; import java.net.http.HttpClient; import java.time.Duration; import java.util.Map; import org.springframework.http.client.JdkClientHttpRequestFactory; import org.springframework.stereotype.Component; import org.springframework.web.client.RestClient;
-@Component public class TelegramHttpGateway implements TelegramGateway {
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties; import io.github.foodjournal.config.BotProperties; import java.net.http.HttpClient; import java.time.Duration; import java.util.Map; import org.springframework.context.annotation.Profile; import org.springframework.http.client.JdkClientHttpRequestFactory; import org.springframework.stereotype.Component; import org.springframework.web.client.RestClient;
+@Component @Profile("!terminal") public class TelegramHttpGateway implements TelegramGateway {
  private final RestClient client; private final BotProperties props;
  public TelegramHttpGateway(RestClient.Builder b, BotProperties props){JdkClientHttpRequestFactory factory=new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build());factory.setReadTimeout(Duration.ofSeconds(10));this.client=b.requestFactory(factory).baseUrl("https://api.telegram.org").build();this.props=props;}
  public long sendMessage(long chatId,String text){return call("sendMessage",Map.of("chat_id",chatId,"text",text),true);}
