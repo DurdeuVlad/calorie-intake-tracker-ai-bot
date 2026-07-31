@@ -1,52 +1,41 @@
 package io.github.foodjournal.infrastructure.gemini;
 
-import io.github.foodjournal.application.TelegramVoiceMediaClient;
-import io.github.foodjournal.application.TransientVoicePayload;
-import io.github.foodjournal.application.VoiceTranscriber;
+import io.github.foodjournal.application.VoiceTranscriptionProvider;
 import io.github.foodjournal.application.MediaProcessingException;
 import io.github.foodjournal.config.BotProperties;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.ResourceAccessException;
 
 @Component
-public class GeminiVoiceTranscriber implements VoiceTranscriber {
-  private static final int MAX_VOICE_BYTES = 20_000_000;
-  private final TelegramVoiceMediaClient mediaClient;
+public class GeminiVoiceTranscriber implements VoiceTranscriptionProvider {
   private final RestClient gemini;
   private final String apiKey;
   private final String model;
 
-  @Autowired
-  public GeminiVoiceTranscriber(TelegramVoiceMediaClient mediaClient, RestClient.Builder builder,
-      BotProperties properties) {
-    this(mediaClient, builder.baseUrl("https://generativelanguage.googleapis.com/v1beta").build(), properties.geminiApiKey(), properties.geminiModel());
+  public GeminiVoiceTranscriber(RestClient.Builder builder, BotProperties properties) {
+    this(builder.baseUrl("https://generativelanguage.googleapis.com/v1beta").build(), properties.geminiApiKey(), properties.geminiModel());
   }
 
-  GeminiVoiceTranscriber(TelegramVoiceMediaClient mediaClient, RestClient gemini, String apiKey) {
-    this(mediaClient, gemini, apiKey, "gemini-3.6-flash");
+  GeminiVoiceTranscriber(RestClient gemini, String apiKey) {
+    this(gemini, apiKey, "gemini-3.6-flash");
   }
 
-  GeminiVoiceTranscriber(TelegramVoiceMediaClient mediaClient, RestClient gemini, String apiKey, String model) {
-    this.mediaClient = mediaClient;
+  GeminiVoiceTranscriber(RestClient gemini, String apiKey, String model) {
     this.gemini = gemini;
     this.apiKey = apiKey;
     this.model = model;
   }
 
-  @Override
-  public String transcribe(String telegramFileId, String mimeType) {
+  @Override public String name() { return "gemini"; }
+
+  @Override public String transcribe(byte[] bytes, String mimeType) {
     if (apiKey == null || apiKey.isBlank()) throw failure(MediaProcessingException.Category.NOT_CONFIGURED, "Media provider is not configured");
-    try (TransientVoicePayload payload = download(telegramFileId)) {
-      byte[] bytes = payload.bytes();
-      if (bytes == null || bytes.length == 0 || bytes.length > MAX_VOICE_BYTES) {
-        throw failure(MediaProcessingException.Category.INVALID_MEDIA, "Voice note is invalid");
-      }
+    try {
       Map<String, Object> body = Map.of("contents", List.of(Map.of("parts", List.of(
           Map.of("text", "Transcribe this voice note exactly. Return only the transcript."),
           Map.of("inline_data", Map.of("mime_type", mimeType == null ? "audio/ogg" : mimeType,
@@ -59,11 +48,11 @@ public class GeminiVoiceTranscriber implements VoiceTranscriber {
         throw providerFailure(responseFailure);
       } catch (ResourceAccessException connectionFailure) {
         throw failure(MediaProcessingException.Category.PROVIDER_TEMPORARY, "Media provider is temporarily unavailable", connectionFailure);
+      } catch (RuntimeException unexpectedFailure) {
+        throw failure(MediaProcessingException.Category.PROVIDER_RESPONSE, "Media provider returned an invalid response", unexpectedFailure);
       }
     } catch (MediaProcessingException expected) {
       throw expected;
-    } catch (RuntimeException downloadFailure) {
-      throw failure(MediaProcessingException.Category.TELEGRAM_DOWNLOAD, "Telegram media download failed", downloadFailure);
     }
   }
 
@@ -79,10 +68,6 @@ public class GeminiVoiceTranscriber implements VoiceTranscriber {
       throw failure(MediaProcessingException.Category.PROVIDER_RESPONSE, "Media provider returned no transcript");
     }
     return text.trim();
-  }
-
-  private TransientVoicePayload download(String telegramFileId) {
-    return mediaClient.download(telegramFileId);
   }
 
   private MediaProcessingException providerFailure(RestClientResponseException responseFailure) {
