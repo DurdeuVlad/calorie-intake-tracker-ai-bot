@@ -7,6 +7,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.ResourceAccessException;
@@ -17,7 +18,7 @@ public class GeminiVoiceTranscriber implements VoiceTranscriptionProvider {
   private final String apiKey;
   private final String model;
 
-  public GeminiVoiceTranscriber(RestClient.Builder builder, BotProperties properties) {
+  @Autowired public GeminiVoiceTranscriber(RestClient.Builder builder, BotProperties properties) {
     this(builder.baseUrl("https://generativelanguage.googleapis.com/v1beta").build(), properties.geminiApiKey(), properties.geminiModel());
   }
 

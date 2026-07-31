@@ -9,6 +9,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.ResourceAccessException;
@@ -20,7 +21,7 @@ public class OpenAiVoiceTranscriptionProvider implements VoiceTranscriptionProvi
   private final RestClient openai;
   private final BotProperties properties;
 
-  public OpenAiVoiceTranscriptionProvider(RestClient.Builder builder, BotProperties properties) {
+  @Autowired public OpenAiVoiceTranscriptionProvider(RestClient.Builder builder, BotProperties properties) {
     this(builder.baseUrl("https://api.openai.com/v1").build(), properties);
   }
 
