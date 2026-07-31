@@ -7,5 +7,6 @@ target/
 .vscode/
 *.iml
 coverage/
+eval-reports/
 media/
 n8n/
