@@ -3,6 +3,7 @@ package io.github.foodjournal.application;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /** Downloads voice once, then uses OpenAI only when Gemini fails at a provider boundary. */
@@ -15,7 +16,7 @@ public class FailoverVoiceTranscriber implements VoiceTranscriber {
   private final VoiceTranscriptionProvider openai;
   private final MeterRegistry metrics;
 
-  public FailoverVoiceTranscriber(TelegramVoiceMediaClient media, io.github.foodjournal.infrastructure.gemini.GeminiVoiceTranscriber gemini, io.github.foodjournal.infrastructure.openai.OpenAiVoiceTranscriptionProvider openai, MeterRegistry metrics) {
+  @Autowired public FailoverVoiceTranscriber(TelegramVoiceMediaClient media, io.github.foodjournal.infrastructure.gemini.GeminiVoiceTranscriber gemini, io.github.foodjournal.infrastructure.openai.OpenAiVoiceTranscriptionProvider openai, MeterRegistry metrics) {
     this.media = media; this.gemini = gemini; this.openai = openai; this.metrics = metrics;
   }
   FailoverVoiceTranscriber(TelegramVoiceMediaClient media, VoiceTranscriptionProvider gemini, VoiceTranscriptionProvider openai, MeterRegistry metrics) { this.media = media; this.gemini = gemini; this.openai = openai; this.metrics = metrics; }
