@@ -10,6 +10,7 @@
 | `OPENAI_API_KEY` | yes for natural language | OpenAI credential |
 | `GEMINI_API_KEY` | yes for voice/image/document | Gemini credential |
 | `GEMINI_MODEL` | no | Gemini multimodal model; defaults to `gemini-3.6-flash` |
+| `OPENAI_TRANSCRIPTION_MODEL` | no | OpenAI fallback speech-to-text model; defaults to `gpt-4o-mini-transcribe` |
 | `DEFAULT_TIMEZONE` | no | IANA timezone used until a user completes onboarding; defaults to `Europe/Bucharest` |
 | `OPENAI_MODEL` | no | OpenAI chat-completions model; defaults to `gpt-5.4-mini` |
 | `AGENT_MAX_TOOL_CALLS` | no | maximum tool calls in one agent run; capped at `10` |

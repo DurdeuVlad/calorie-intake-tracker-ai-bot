@@ -99,6 +99,14 @@ class UpdateServiceTest {
     verifyNoInteractions(journal); verify(outbound).save(argThat(message->message.getText().contains("could not transcribe")));
   }
 
+  @Test void transcriptionFailureUsesTelegramLanguageForSafeReply() {
+    ProcessedTelegramUpdateRepository processed=mock(ProcessedTelegramUpdateRepository.class); OutboundTelegramMessageRepository outbound=mock(OutboundTelegramMessageRepository.class); JournalApplicationService journal=mock(JournalApplicationService.class); io.github.foodjournal.application.VoiceTranscriber voice=mock(io.github.foodjournal.application.VoiceTranscriber.class);
+    UpdateService service=new UpdateService(new BotProperties("token","secret",Set.of(1L),"Europe/Bucharest","","test"),processed,outbound,journal,voice);
+    when(processed.claimIfNew(81L)).thenReturn(1); when(voice.transcribe(anyString(),any())).thenThrow(new io.github.foodjournal.application.MediaProcessingException(io.github.foodjournal.application.MediaProcessingException.Category.PROVIDER_TEMPORARY,"down"));
+    service.handle(new TelegramUpdate(81L,new TelegramMessage(5L,new TelegramChat(1L),new TelegramUser(1L,"A","ro"),null,new TelegramVoice("voice-file","audio/ogg",3),null,null),null));
+    verifyNoInteractions(journal); verify(outbound).save(argThat(message->message.getText().contains("Nu am putut transcrie")));
+  }
+
   @Test void routesLargestPhotoExtractionThroughTheJournalWithoutPersistingMedia() {
     ProcessedTelegramUpdateRepository processed = mock(ProcessedTelegramUpdateRepository.class); OutboundTelegramMessageRepository outbound = mock(OutboundTelegramMessageRepository.class); JournalApplicationService journal = mock(JournalApplicationService.class); io.github.foodjournal.application.FoodMediaExtractor media = mock(io.github.foodjournal.application.FoodMediaExtractor.class);
     UpdateService service = new UpdateService(new BotProperties("token", "secret", Set.of(1L), "Europe/Bucharest", "", "test"), processed, outbound, journal, mock(io.github.foodjournal.application.VoiceTranscriber.class), media);

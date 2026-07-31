@@ -11,8 +11,6 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import io.github.foodjournal.application.MediaProcessingException;
-import io.github.foodjournal.application.TransientVoicePayload;
-import io.github.foodjournal.application.TelegramVoiceMediaClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
@@ -21,7 +19,7 @@ import org.springframework.web.client.RestClient;
 
 class GeminiVoiceTranscriberTest {
   @Test
-  void erasesDownloadedBytesAfterSuccessfulTranscription() {
+  void transcribesProvidedTransientBytes() {
     byte[] downloaded = {7, 8, 9};
     RestClient.Builder builder = RestClient.builder().baseUrl("https://generativelanguage.googleapis.com/v1beta");
     MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -32,22 +30,10 @@ class GeminiVoiceTranscriberTest {
         .andExpect(jsonPath("$.contents[0].parts[1].inline_data.data").value("BwgJ"))
         .andRespond(withSuccess("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"two eggs\"}]}}]}", MediaType.APPLICATION_JSON));
 
-    String transcript = new GeminiVoiceTranscriber(media(downloaded), builder.build(), "key", "test-gemini").transcribe("voice", "audio/ogg");
+    String transcript = new GeminiVoiceTranscriber(builder.build(), "key", "test-gemini").transcribe(downloaded, "audio/ogg");
 
     assertThat(transcript).isEqualTo("two eggs");
-    assertThat(downloaded).containsOnly((byte) 0);
     server.verify();
-  }
-
-  @Test
-  void erasesRejectedOversizeBytesWithoutCallingGemini() {
-    byte[] downloaded = new byte[20_000_001];
-
-    assertThatThrownBy(() -> new GeminiVoiceTranscriber(media(downloaded), RestClient.create(), "key")
-        .transcribe("voice", "audio/ogg"))
-        .isInstanceOfSatisfying(MediaProcessingException.class, failure -> assertThat(failure.category()).isEqualTo(MediaProcessingException.Category.INVALID_MEDIA));
-
-    assertThat(downloaded).containsOnly((byte) 0);
   }
 
   @Test
@@ -66,10 +52,9 @@ class GeminiVoiceTranscriberTest {
     server.expect(once(), requestTo("https://generativelanguage.googleapis.com/v1beta/models/test-gemini:generateContent"))
         .andRespond(withSuccess("{\"candidates\":[]}", MediaType.APPLICATION_JSON));
 
-    assertThatThrownBy(() -> new GeminiVoiceTranscriber(media(downloaded), builder.build(), "key", "test-gemini").transcribe("voice", "audio/ogg"))
+    assertThatThrownBy(() -> new GeminiVoiceTranscriber(builder.build(), "key", "test-gemini").transcribe(downloaded, "audio/ogg"))
         .isInstanceOfSatisfying(MediaProcessingException.class, failure -> assertThat(failure.category()).isEqualTo(MediaProcessingException.Category.PROVIDER_RESPONSE));
 
-    assertThat(downloaded).containsOnly((byte) 0);
     server.verify();
   }
 
@@ -80,14 +65,10 @@ class GeminiVoiceTranscriberTest {
     server.expect(once(), requestTo("https://generativelanguage.googleapis.com/v1beta/models/test-gemini:generateContent"))
         .andExpect(header("x-goog-api-key", "key")).andRespond(withStatus(status));
 
-    assertThatThrownBy(() -> new GeminiVoiceTranscriber(media(downloaded), builder.build(), "key", "test-gemini").transcribe("voice", "audio/ogg"))
+    assertThatThrownBy(() -> new GeminiVoiceTranscriber(builder.build(), "key", "test-gemini").transcribe(downloaded, "audio/ogg"))
         .isInstanceOfSatisfying(MediaProcessingException.class, failure -> assertThat(failure.category()).isEqualTo(expectedCategory));
 
-    assertThat(downloaded).containsOnly((byte) 0);
     server.verify();
   }
 
-  private TelegramVoiceMediaClient media(byte[] bytes) {
-    return ignored -> new TransientVoicePayload(bytes);
-  }
 }
