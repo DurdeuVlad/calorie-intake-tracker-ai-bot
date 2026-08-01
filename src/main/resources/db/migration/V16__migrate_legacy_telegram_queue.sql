@@ -14,14 +14,18 @@ SELECT 'telegram', update_id::text,
   jsonb_build_object(
     'provider','telegram', 'eventId',update_id::text, 'userId',telegram_user_id::text,
     'conversationId',chat_id::text, 'displayName','Telegram user', 'languageCode',NULL,
-    'text',COALESCE(payload::jsonb #>> '{message,text}', payload::jsonb #>> '{edited_message,text}'),
-    'caption',COALESCE(payload::jsonb #>> '{message,caption}', payload::jsonb #>> '{edited_message,caption}'),
-    'attachments',CASE WHEN COALESCE(payload::jsonb #>> '{message,voice,file_id}', payload::jsonb #>> '{edited_message,voice,file_id}') IS NOT NULL
-      THEN jsonb_build_array(jsonb_build_object('kind','VOICE','handle',COALESCE(payload::jsonb #>> '{message,voice,file_id}', payload::jsonb #>> '{edited_message,voice,file_id}'),'mimeType',COALESCE(payload::jsonb #>> '{message,voice,mime_type}', payload::jsonb #>> '{edited_message,voice,mime_type}'),'name',NULL))
+    'text',payload::jsonb #>> '{message,text}',
+    'caption',payload::jsonb #>> '{message,caption}',
+    'attachments',CASE WHEN payload::jsonb #>> '{message,voice,file_id}' IS NOT NULL
+      THEN jsonb_build_array(jsonb_build_object('kind','VOICE','handle',payload::jsonb #>> '{message,voice,file_id}','mimeType',payload::jsonb #>> '{message,voice,mime_type}','name',NULL))
+      WHEN payload::jsonb #>> '{message,photo,-1,file_id}' IS NOT NULL
+      THEN jsonb_build_array(jsonb_build_object('kind','PHOTO','handle',payload::jsonb #>> '{message,photo,-1,file_id}','mimeType','image/jpeg','name',NULL))
+      WHEN payload::jsonb #>> '{message,document,file_id}' IS NOT NULL
+      THEN jsonb_build_array(jsonb_build_object('kind','DOCUMENT','handle',payload::jsonb #>> '{message,document,file_id}','mimeType',payload::jsonb #>> '{message,document,mime_type}','name',payload::jsonb #>> '{message,document,file_name}'))
       ELSE '[]'::jsonb END),
   'PENDING', attempts, current_timestamp
 FROM telegram_update_inbox
-WHERE status IN ('PENDING','IN_PROGRESS')
+WHERE status IN ('PENDING','IN_PROGRESS') AND payload::jsonb ? 'message'
 ON CONFLICT (provider,event_id) DO NOTHING;
 
 UPDATE telegram_update_inbox SET status = 'COMPLETED', payload = '', completed_at = COALESCE(completed_at,current_timestamp)

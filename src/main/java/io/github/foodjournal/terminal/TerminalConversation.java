@@ -6,6 +6,7 @@ import io.github.foodjournal.service.TelegramInboxWorker;
 import io.github.foodjournal.service.UpdateService;
 import io.github.foodjournal.telegram.*;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.context.annotation.Profile;
@@ -29,10 +30,8 @@ public class TerminalConversation {
     long updateId=updateIds.incrementAndGet();
     TelegramUser user=new TelegramUser(terminal.userId(), terminal.displayName());
     TelegramUpdate update=new TelegramUpdate(updateId, new TelegramMessage(updateId, new TelegramChat(terminal.userId()), user, text, null, null, null), null);
-    updates.enqueue(update);
-    inbox.dispatch();
-    outbox.dispatch();
-    TerminalTelegramGateway.Delivery delivery=gateway.await(updateId, REPLY_TIMEOUT);
+    updates.enqueue(update); Instant deadline=Instant.now().plus(REPLY_TIMEOUT); TerminalTelegramGateway.Delivery delivery=null;
+    while (delivery==null && Instant.now().isBefore(deadline)) { inbox.dispatch(); outbox.dispatch(); delivery=gateway.await(updateId,Duration.ofMillis(100)); }
     if (delivery==null) throw new IllegalStateException("No terminal reply arrived within " + REPLY_TIMEOUT.toSeconds() + " seconds");
     return new Result(delivery.text(), traces.await());
   }

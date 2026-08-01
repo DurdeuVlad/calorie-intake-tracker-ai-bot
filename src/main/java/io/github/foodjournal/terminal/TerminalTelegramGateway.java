@@ -24,6 +24,6 @@ public class TerminalTelegramGateway implements TelegramGateway, TerminalDeliver
   public Delivery await(long sourceUpdateId, Duration timeout) throws InterruptedException {
     Delivery saved=delayed.remove(sourceUpdateId); if(saved!=null)return saved;
     long deadline=System.nanoTime()+timeout.toNanos();
-    while (true) { long remaining=deadline-System.nanoTime(); if(remaining<=0)return null; Delivery delivery=deliveries.poll(remaining,TimeUnit.NANOSECONDS); if(delivery==null||delivery.sourceUpdateId()==null||Long.valueOf(sourceUpdateId).equals(delivery.sourceUpdateId()))return delivery; delayed.put(delivery.sourceUpdateId(),delivery); }
+    while (true) { long remaining=deadline-System.nanoTime(); if(remaining<=0)return null; Delivery delivery=deliveries.poll(remaining,TimeUnit.NANOSECONDS); if(delivery==null)return null; if(Long.valueOf(sourceUpdateId).equals(delivery.sourceUpdateId()))return delivery; if(delivery.sourceUpdateId()!=null)delayed.put(delivery.sourceUpdateId(),delivery); }
   }
 }
