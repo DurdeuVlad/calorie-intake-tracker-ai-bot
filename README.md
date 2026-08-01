@@ -1,6 +1,6 @@
-# Food Journal Telegram Bot
+# Food Journal Messaging Bot
 
-A private, self-hosted Telegram food journal built with Java 21 and Spring Boot.
+A private, self-hosted food journal built with Java 21 and Spring Boot. Telegram remains available during migration; Mattermost is the private Tailscale frontend.
 
 Send a meal in English, Romanian, or mixed language. The bot records the meal, tracks nutrition, and sends daily summaries. It is designed for a small household, not public SaaS.
 
@@ -18,7 +18,9 @@ Initial repository scaffold. Application implementation is in progress; do not u
 
 ## Stack
 
-Java 21, Spring Boot, PostgreSQL, Flyway, Docker, Telegram webhooks, OpenAI, Gemini, and Open Food Facts.
+Java 21, Spring Boot, PostgreSQL, Flyway, Docker, Telegram/Mattermost messaging adapters, OpenAI, Gemini, and Open Food Facts.
+
+See [Mattermost over Tailscale](docs/mattermost-tailscale.md) for private frontend setup and account linking.
 
 ## Quick start
 

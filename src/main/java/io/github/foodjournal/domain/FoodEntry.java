@@ -19,6 +19,7 @@ public class FoodEntry {
   public Long getId(){return id;} public Integer getCalories(){return calories;} public Instant getEatenAt(){return eatenAt;} public String getNutritionSource(){return nutritionSource;} public String getConfidence(){return confidence;}
   public String getOriginalMessage(){return originalMessage;} public FoodUser getUser(){return user;}
   public void revise(String message, Integer calories){if(message==null||message.isBlank()||calories==null||calories<0||calories>10000)throw new IllegalArgumentException("Invalid entry revision");this.originalMessage=message;this.calories=calories;}
+  public void moveTo(Instant when){if(when==null||when.isAfter(Instant.now()))throw new IllegalArgumentException("Invalid meal time");this.eatenAt=when;}
   public void replaceEstimate(String message, Integer calories, String source, String confidence){revise(message,calories);nutritionSource=source;this.confidence=confidence;}
   public boolean isDeleted(){return deletedAt!=null;}
   public void markDeleted(Instant when){deletedAt=when==null?Instant.now():when;}

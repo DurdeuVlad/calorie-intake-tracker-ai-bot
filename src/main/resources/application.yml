@@ -43,3 +43,13 @@ food-journal:
   gemini-model: ${GEMINI_MODEL:gemini-3.6-flash}
   openai-transcription-model: ${OPENAI_TRANSCRIPTION_MODEL:gpt-4o-mini-transcribe}
   open-food-facts-base-url: ${OPEN_FOOD_FACTS_BASE_URL:https://world.openfoodfacts.org/api/v2}
+  frontends:
+    telegram:
+      enabled: ${TELEGRAM_FRONTEND_ENABLED:true}
+      allowed-user-ids: ${ALLOWED_TELEGRAM_USER_IDS:}
+    mattermost:
+      enabled: ${MATTERMOST_FRONTEND_ENABLED:false}
+      internal-url: ${MATTERMOST_INTERNAL_URL:}
+      bot-token: ${MATTERMOST_BOT_TOKEN:}
+      bot-user-id: ${MATTERMOST_BOT_USER_ID:}
+      allowed-user-ids: ${ALLOWED_MATTERMOST_USER_IDS:}

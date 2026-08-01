@@ -44,24 +44,29 @@ public class GeminiFoodMediaExtractor implements FoodMediaExtractor {
     if (apiKey == null || apiKey.isBlank()) throw failure(MediaProcessingException.Category.NOT_CONFIGURED, "Media provider is not configured");
     String safeMimeType = supportedMimeType(mimeType, type);
     try (TransientVoicePayload payload = download(telegramFileId)) {
-      byte[] bytes = payload.bytes();
-      if (bytes == null || bytes.length == 0 || bytes.length > 20_000_000) throw failure(MediaProcessingException.Category.INVALID_MEDIA, "Media payload is invalid");
-      Map<String, Object> body = Map.of("contents", List.of(Map.of("parts", List.of(
-          Map.of("text", prompt(type)), Map.of("inline_data", Map.of("mime_type", safeMimeType,
-              "data", Base64.getEncoder().encodeToString(bytes)))))));
-      try {
-        Map<?, ?> response = gemini.post().uri("/models/{model}:generateContent", model)
-            .header("x-goog-api-key", apiKey).body(body).retrieve().body(Map.class);
-        return extractedText(response);
-      } catch (RestClientResponseException responseFailure) {
-        throw providerFailure(responseFailure);
-      } catch (ResourceAccessException connectionFailure) {
-        throw failure(MediaProcessingException.Category.PROVIDER_TEMPORARY, "Media provider is temporarily unavailable", connectionFailure);
-      }
+      return extract(payload.bytes(), mimeType, type);
     } catch (MediaProcessingException expected) {
       throw expected;
     } catch (RuntimeException downloadFailure) {
       throw failure(MediaProcessingException.Category.TELEGRAM_DOWNLOAD, "Telegram media download failed", downloadFailure);
+    }
+  }
+
+  @Override public String extract(byte[] bytes, String mimeType, FoodMediaType type) {
+    if (apiKey == null || apiKey.isBlank()) throw failure(MediaProcessingException.Category.NOT_CONFIGURED, "Media provider is not configured");
+    String safeMimeType = supportedMimeType(mimeType, type);
+    if (bytes == null || bytes.length == 0 || bytes.length > 20_000_000) throw failure(MediaProcessingException.Category.INVALID_MEDIA, "Media payload is invalid");
+    Map<String, Object> body = Map.of("contents", List.of(Map.of("parts", List.of(
+          Map.of("text", prompt(type)), Map.of("inline_data", Map.of("mime_type", safeMimeType,
+              "data", Base64.getEncoder().encodeToString(bytes)))))));
+    try {
+      Map<?, ?> response = gemini.post().uri("/models/{model}:generateContent", model)
+          .header("x-goog-api-key", apiKey).body(body).retrieve().body(Map.class);
+      return extractedText(response);
+    } catch (RestClientResponseException responseFailure) {
+      throw providerFailure(responseFailure);
+    } catch (ResourceAccessException connectionFailure) {
+      throw failure(MediaProcessingException.Category.PROVIDER_TEMPORARY, "Media provider is temporarily unavailable", connectionFailure);
     }
   }
 
