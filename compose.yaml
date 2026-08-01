@@ -31,6 +31,12 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET}
       ALLOWED_TELEGRAM_USER_IDS: ${ALLOWED_TELEGRAM_USER_IDS}
+      TELEGRAM_FRONTEND_ENABLED: ${TELEGRAM_FRONTEND_ENABLED:-true}
+      MATTERMOST_FRONTEND_ENABLED: ${MATTERMOST_FRONTEND_ENABLED:-false}
+      MATTERMOST_INTERNAL_URL: ${MATTERMOST_INTERNAL_URL:-http://mattermost:8065}
+      MATTERMOST_BOT_TOKEN: ${MATTERMOST_BOT_TOKEN:-}
+      MATTERMOST_BOT_USER_ID: ${MATTERMOST_BOT_USER_ID:-}
+      ALLOWED_MATTERMOST_USER_IDS: ${ALLOWED_MATTERMOST_USER_IDS:-}
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Europe/Bucharest}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
@@ -50,5 +56,33 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+  mattermost-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mattermost
+      POSTGRES_USER: mattermost
+      POSTGRES_PASSWORD: ${MATTERMOST_DATABASE_PASSWORD:-change-me-before-production}
+    volumes: [mattermost-db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mattermost -d mattermost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  mattermost:
+    image: mattermost/mattermost-team-edition:10.11.0
+    restart: unless-stopped
+    environment:
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: postgres://mattermost:${MATTERMOST_DATABASE_PASSWORD:-change-me-before-production}@mattermost-db:5432/mattermost?sslmode=disable&connect_timeout=10
+      MM_SERVICESETTINGS_SITEURL: ${MATTERMOST_PUBLIC_URL}
+      MM_SERVICESETTINGS_LISTENADDRESS: :8065
+    volumes: [mattermost-data:/opt/mattermost/data]
+    ports: ["127.0.0.1:8065:8065"]
+    depends_on:
+      mattermost-db:
+        condition: service_healthy
 volumes:
   postgres-data:
+  mattermost-db-data:
+  mattermost-data:

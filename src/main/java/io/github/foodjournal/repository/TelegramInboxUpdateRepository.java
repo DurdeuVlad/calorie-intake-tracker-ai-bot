@@ -17,7 +17,7 @@ public interface TelegramInboxUpdateRepository extends JpaRepository<TelegramInb
           where earlier.telegram_user_id = candidate.telegram_user_id
             and earlier.update_id < candidate.update_id
             and earlier.status in ('PENDING','IN_PROGRESS'))
-      order by candidate.update_id for update skip locked limit 1
+      order by candidate.update_id limit 1 for update skip locked
       """, nativeQuery=true)
   List<TelegramInboxUpdate> lockNextReady();
 }

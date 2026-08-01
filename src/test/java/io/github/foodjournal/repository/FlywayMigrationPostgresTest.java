@@ -29,7 +29,7 @@ class FlywayMigrationPostgresTest {
   @Autowired JdbcTemplate jdbc;
 
   @Test void freshPostgresAppliesAllMigrationsAndPreservesJournalInvariants() {
-    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("12");
+    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("16");
     List<String> tables = jdbc.queryForList("""
         select table_name from information_schema.tables
         where table_schema = 'public' and table_type = 'BASE TABLE'
@@ -37,6 +37,7 @@ class FlywayMigrationPostgresTest {
     assertThat(tables).contains("food_users", "user_settings", "food_entries", "food_items",
         "processed_telegram_updates", "report_deliveries", "outbound_telegram_messages", "journal_undo_actions",
         "pinned_daily_status", "nutrition_source_cache", "private_foods", "pending_food_drafts", "pending_agent_actions", "pending_nutrition_quotes", "telegram_update_inbox", "conversation_memory",
+        "messaging_identities", "messaging_routes", "frontend_link_codes", "messaging_inbox", "messaging_outbox", "messaging_daily_status",
         "flyway_schema_history");
 
     assertThat(hasUniqueConstraint("food_users", List.of("telegram_user_id"))).isTrue();
