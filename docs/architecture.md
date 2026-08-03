@@ -7,8 +7,7 @@ flowchart LR
   T[Telegram webhook] --> W[Webhook adapter]
   W --> A[Application services]
   A --> D[(PostgreSQL + Flyway)]
-  A --> O[OpenAI intent adapter]
-  A --> G[Gemini media adapter]
+  A --> O[OpenAI language and media adapters]
   A --> F[Open Food Facts adapter]
   S[Scheduler] --> A
   A --> T

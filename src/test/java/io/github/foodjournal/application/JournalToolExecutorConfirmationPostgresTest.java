@@ -23,13 +23,16 @@ class JournalToolExecutorConfirmationPostgresTest {
   @DynamicPropertySource static void database(DynamicPropertyRegistry registry) { registry.add("spring.datasource.url",postgres::getJdbcUrl); registry.add("spring.datasource.username",postgres::getUsername); registry.add("spring.datasource.password",postgres::getPassword); }
   @Autowired JournalToolExecutor tools; @Autowired FoodUserRepository users; @Autowired UserSettingsRepository settings; @Autowired FoodEntryRepository entries; @Autowired PendingAgentActionRepository pending;
 
-  @Test @Transactional void clearDeleteIsImmediateAndTheActiveJournalHidesIt() {
+  @Test @Transactional void batchDeleteIsImmediateReversibleAndTheActiveJournalHidesIt() {
     FoodUser user=users.save(new FoodUser(1,"Local")); settings.save(new UserSettings(user,"Europe/Bucharest"));
     FoodEntry entry=entries.save(new FoodEntry(user,"50 g crispy",Instant.now(),125,"manual","high"));
-    AgentToolResult prepared=tools.execute(new AgentContext(user,1,true,"delete it",Instant.now()),new JournalAgentModel.ToolCall("prepare","prepare_entry_delete","{\"entryId\":"+entry.getId()+"}"),new ArrayList<>());
+    AgentToolResult prepared=tools.execute(new AgentContext(user,1,true,"delete it",Instant.now()),new JournalAgentModel.ToolCall("apply","apply_journal_actions","{\"actions\":[{\"type\":\"DELETE\",\"entryId\":"+entry.getId()+"}]}"),new ArrayList<>());
     assertThat(prepared.ok()).isTrue();
     assertThat(entries.findById(entry.getId())).isPresent();
     assertThat(entries.findByIdAndUser(entry.getId(),user)).isEmpty();
     assertThat(pending.findById(user.getId())).isEmpty();
+    AgentToolResult undone=tools.execute(new AgentContext(user,1,true,"undo",Instant.now()),new JournalAgentModel.ToolCall("undo","undo_last_change","{}"),new ArrayList<>());
+    assertThat(undone.ok()).isTrue();
+    assertThat(entries.findByIdAndUser(entry.getId(),user)).isPresent();
   }
 }

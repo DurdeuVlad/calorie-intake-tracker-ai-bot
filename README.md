@@ -18,7 +18,7 @@ Initial repository scaffold. Application implementation is in progress; do not u
 
 ## Stack
 
-Java 21, Spring Boot, PostgreSQL, Flyway, Docker, Telegram/Mattermost messaging adapters, OpenAI, Gemini, and Open Food Facts.
+Java 21, Spring Boot, PostgreSQL, Flyway, Docker, Telegram/Mattermost messaging adapters, OpenAI, and Open Food Facts.
 
 See [Mattermost over Tailscale](docs/mattermost-tailscale.md) for private frontend setup and account linking.
 

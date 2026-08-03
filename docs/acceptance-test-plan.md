@@ -15,7 +15,7 @@ The automated suite must prove allowlist rejection, webhook-secret rejection, on
 
 ## Manual pre-production gate
 
-Run this only with a rotated test bot, a disposable database, an allowlisted test Telegram account, and separate non-production OpenAI/Gemini credentials. Record only pass/fail and redacted timestamps; do not commit messages, chat IDs, tokens, or media.
+Run this only with a rotated test bot, a disposable database, an allowlisted test Telegram account, and non-production OpenAI credentials. Record only pass/fail and redacted timestamps; do not commit messages, chat IDs, tokens, or media.
 
 | Scenario | Pass condition |
 | --- | --- |

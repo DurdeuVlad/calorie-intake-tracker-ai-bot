@@ -23,7 +23,6 @@ public class JournalAgent {
     count("food_journal_agent_runs_total");
     List<JournalAgentModel.AgentExchange> exchanges = new ArrayList<>();
     List<String> todos = new ArrayList<>();
-    boolean entryCreated = false;
     List<io.github.foodjournal.domain.ConversationMemory> recent=memory==null?List.of():memory.recent(context.user());
     AgentContext active=estimateFollowupContext(context,recent);
     for (int calls = 0; calls < maxCalls; ) {
@@ -33,7 +32,7 @@ public class JournalAgent {
       if (reply.toolCalls() == null || reply.toolCalls().isEmpty()) return complete(safeReply(reply.text(), active));
       for (JournalAgentModel.ToolCall call : reply.toolCalls()) {
         if (calls++ >= maxCalls) { count("food_journal_agent_loop_limit_total"); return complete(limit(active)); }
-        AgentToolResult raw; if(entryCreated && "create_food_entry".equals(call.name())) raw=AgentToolResult.failure("CONFLICT","A meal was already logged for this message; verify it before replying."); else try { raw=tools.execute(active, call, todos); } catch (AgentToolFailure failure) { raw=failure.result(); } catch (RuntimeException failure) { raw=AgentToolResult.failure("TEMPORARY_FAILURE","That operation could not be completed now."); } if("create_food_entry".equals(call.name())&&raw.ok())entryCreated=true; Map<String,Object> data=new LinkedHashMap<>(raw.data()); data.put("todos",List.copyOf(todos)); AgentToolResult result=new AgentToolResult(raw.ok(),raw.code(),Map.copyOf(data),raw.userHint()); count("food_journal_agent_tool_calls_total"); if(!result.ok()) count("food_journal_agent_tool_failures_total");
+        AgentToolResult raw; try { raw=tools.execute(active, call, todos); } catch (AgentToolFailure failure) { raw=failure.result(); } catch (RuntimeException failure) { raw=AgentToolResult.failure("TEMPORARY_FAILURE","That operation could not be completed now."); } Map<String,Object> data=new LinkedHashMap<>(raw.data()); data.put("todos",List.copyOf(todos)); AgentToolResult result=new AgentToolResult(raw.ok(),raw.code(),Map.copyOf(data),raw.userHint()); count("food_journal_agent_tool_calls_total"); if(!result.ok()) count("food_journal_agent_tool_failures_total");
         exchanges.add(new JournalAgentModel.AgentExchange(call, result));
         trace.toolResult(call, result);
         String rendered=canonicalReply(active,call,result);
@@ -61,6 +60,15 @@ public class JournalAgent {
     return text.length() > 3500 ? text.substring(0, 3500) : text;
   }
   @SuppressWarnings("unchecked") private String canonicalReply(AgentContext c,JournalAgentModel.ToolCall call,AgentToolResult result){
+    if("apply_journal_actions".equals(call.name())&&result.ok()){
+      Object raw=result.data().get("results"); List<Map<String,Object>> rows=raw instanceof List<?> list?list.stream().filter(Map.class::isInstance).map(value->(Map<String,Object>)value).toList():List.of();
+      if(rows.isEmpty())return c.romanian()?"Nu am putut aplica nicio schimbare.":"No journal changes could be applied.";
+      List<String> rendered=new ArrayList<>();
+      for(Map<String,Object> row:rows){boolean ok=Boolean.TRUE.equals(row.get("ok"));String type=String.valueOf(row.getOrDefault("type","ACTION"));if(!ok){rendered.add("- "+String.valueOf(row.getOrDefault("message",c.romanian()?"Schimbarea a eÈ™uat.":"The change failed.")));continue;}Object entryRaw=row.get("entry");Map<String,Object> entry=entryRaw instanceof Map<?,?> map?(Map<String,Object>)map:Map.of();String description=String.valueOf(entry.getOrDefault("description","entry"));String calories=String.valueOf(entry.getOrDefault("calories","?"));String date=String.valueOf(row.getOrDefault("date",entry.getOrDefault("date","")));String verb=switch(type){case "CREATE"->c.romanian()?"Notat":"Logged";case "EDIT"->c.romanian()?"Modificat":"Updated";case "MOVE"->c.romanian()?"Mutat":"Moved";case "DELETE"->c.romanian()?"È˜ters":"Deleted";default->c.romanian()?"Aplicat":"Applied";};rendered.add("- "+verb+": "+description+" â€” "+calories+" kcal"+(date.isBlank()?"":" ("+date+")"));}
+      boolean undoable=Boolean.TRUE.equals(result.data().get("undoAvailable"));String suffix=undoable?(c.romanian()?"\nScrie Undo Ã®n urmÄƒtoarele 10 minute pentru a anula schimbÄƒrile reuÈ™ite.":"\nSend Undo within 10 minutes to reverse the successful changes."):"";
+      return String.join("\n",rendered)+suffix;
+    }
+    if("undo_last_change".equals(call.name())&&result.ok())return c.romanian()?"Am anulat ultima schimbare din jurnal.":"Undid the latest journal change.";
     if(!result.ok())return null;
     if("create_food_entry".equals(call.name())){
       Object raw=result.data().get("entry"); Map<String,Object> entry=raw instanceof Map<?,?> map?(Map<String,Object>)map:Map.of();
@@ -69,10 +77,6 @@ public class JournalAgent {
       Object todayRaw=result.data().get("today"); Map<String,Object> today=todayRaw instanceof Map<?,?> map?(Map<String,Object>)map:Map.of();
       String estimated=Boolean.TRUE.equals(result.data().get("estimated"))?(c.romanian()?" Estimare; spune-mi porția exactă dacă vrei să o corectez.":" Estimate; tell me the exact portion to correct it."):"";
       return c.romanian()?(Boolean.TRUE.equals(result.data().get("estimated"))?"Am estimat ":"Am notat ")+description+": "+calories+" kcal. Total azi: "+today.getOrDefault("calories",calories)+" kcal."+estimated:(Boolean.TRUE.equals(result.data().get("estimated"))?"Estimated ":"Logged ")+description+": "+calories+" kcal. Today: "+today.getOrDefault("calories",calories)+" kcal."+estimated;
-    }
-    if("prepare_entry_delete".equals(call.name())){
-      Object raw=result.data().get("entry"); Map<String,Object> entry=raw instanceof Map<?,?> map?(Map<String,Object>)map:Map.of();
-      return c.romanian()?"Am șters „"+entry.getOrDefault("description","masa")+"”. Scrie Undo în următoarele 10 minute dacă vrei să o restaurezi.":"Removed '"+entry.getOrDefault("description","meal")+"'. Send Undo within 10 minutes to restore it.";
     }
     return null;
   }
