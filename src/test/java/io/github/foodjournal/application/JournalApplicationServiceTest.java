@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -162,14 +163,21 @@ class JournalApplicationServiceTest {
   @Test void helpListsTheAvailableCommandsAndSafeExamples() {
     FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
     String reply = service.handle(1L, 1L, "A", "/help");
-    assertThat(reply).contains("/start", "/cancel", "/privacy", "kcal/100 g").doesNotContain("tool JSON");
+    assertThat(reply).contains("/start", "/cancel", "/privacy", "Undo").doesNotContain("tool JSON", "confirm");
     verifyNoInteractions(interpreter);
   }
 
-  @Test void cancelClearsThePendingMealDraftAndAgentConfirmation() {
+  @Test void cancelClearsOnlyTheLegacyMealDraft() {
     FoodUser user = new FoodUser(1L, "A"); when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user)); configured(user);
     assertThat(service.handle(1L, 1L, "A", "/cancel")).contains("anulat");
     verify(drafts).deleteByUser(user);
-    verify(pendingActions).deleteById(user.getId());
+    verifyNoInteractions(pendingActions);
+  }
+
+  @Test void routesTheReportedYesterdayPhrasesToTheAgentInRomanian() {
+    FoodUser user=new FoodUser(1L,"Vlad");when(users.findByTelegramUserId(1L)).thenReturn(Optional.of(user));configured(user);JournalAgent agent=mock(JournalAgent.class);when(agent.run(any())).thenReturn("ok");
+    JournalApplicationService agentService=new JournalApplicationService(users,settings,entries,items,privateFoods,interpreter,new BotProperties("token","secret",Set.of(1L),"Europe/Bucharest","","test"),dailyStatus,NutritionResolver.noop(),drafts,pendingActions,agent,null);
+    agentService.handle(1L,1L,"Vlad","200 g crispy, 700 kcal pe ieri");agentService.handle(1L,1L,"Vlad","60 ml rom Bumbu pe ieri");
+    ArgumentCaptor<AgentContext> contexts=ArgumentCaptor.forClass(AgentContext.class);verify(agent,times(2)).run(contexts.capture());assertThat(contexts.getAllValues()).allMatch(AgentContext::romanian);
   }
 }

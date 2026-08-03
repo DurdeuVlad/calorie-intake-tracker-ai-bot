@@ -6,8 +6,8 @@
 4. Implement onboarding, settings, timezones, and pinned daily status.
 5. Implement deterministic meal logging and persistence.
 6. Add OpenAI typed-command interpretation and validation.
-7. Add Gemini voice transcription with transient-media handling.
-8. Add Gemini image/document extraction.
+7. Add OpenAI voice transcription with transient-media handling.
+8. Add OpenAI image/document extraction.
 9. Add Open Food Facts, private food records, and nutrition provenance.
 10. Add search, correction, deletion, and ownership tests.
 11. Add idempotent scheduled reports and delivery history.

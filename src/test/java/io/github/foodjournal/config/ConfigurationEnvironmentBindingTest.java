@@ -26,7 +26,6 @@ class ConfigurationEnvironmentBindingTest {
     assertThat(properties.defaultTimezone()).isEqualTo("Europe/Lisbon");
     assertThat(properties.openaiApiKey()).isEqualTo("openai-key");
     assertThat(properties.openaiModel()).isEqualTo("test-model");
-    assertThat(properties.geminiApiKey()).isEqualTo("gemini-key");
     assertThat(properties.openFoodFactsBaseUrl()).isEqualTo("https://foods.example/api/v2");
   }
 
@@ -38,7 +37,6 @@ class ConfigurationEnvironmentBindingTest {
           Map.entry("TELEGRAM_BOT_TOKEN", "telegram-token"), Map.entry("TELEGRAM_WEBHOOK_SECRET", "webhook-secret"),
           Map.entry("ALLOWED_TELEGRAM_USER_IDS", "101,202"), Map.entry("DEFAULT_TIMEZONE", "Europe/Lisbon"),
           Map.entry("OPENAI_API_KEY", "openai-key"), Map.entry("OPENAI_MODEL", "test-model"),
-          Map.entry("GEMINI_API_KEY", "gemini-key"),
           Map.entry("OPEN_FOOD_FACTS_BASE_URL", "https://foods.example/api/v2"))));
     }
   }
