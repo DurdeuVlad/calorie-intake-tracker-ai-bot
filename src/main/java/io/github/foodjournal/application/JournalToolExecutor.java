@@ -5,8 +5,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.foodjournal.domain.*;
 import io.github.foodjournal.infrastructure.openfoodfacts.OpenFoodFactsClient;
+import io.github.foodjournal.infrastructure.websearch.BrowserlessClient;
+import io.github.foodjournal.infrastructure.websearch.SearxngClient;
 import io.github.foodjournal.repository.*;
 import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.URI;
 import java.time.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -17,8 +21,9 @@ public class JournalToolExecutor {
   private final ObjectMapper json; private final UserSettingsRepository settings; private final FoodEntryRepository entries; private final FoodItemRepository items;
   private final PrivateFoodRepository privateFoods; private final NutritionResolver nutrition; private final DailyStatusService dailyStatus; private final PendingAgentActionRepository pending; private final JournalUndoActionRepository undo;
   private final OpenFoodFactsClient packagedFoods; private final PendingNutritionQuoteRepository quotes; private final NutritionSourceCacheRepository cache; private final JournalChangeSetRepository changeSets;
-  @org.springframework.beans.factory.annotation.Autowired public JournalToolExecutor(ObjectMapper json, UserSettingsRepository settings, FoodEntryRepository entries, FoodItemRepository items, PrivateFoodRepository privateFoods, NutritionResolver nutrition, DailyStatusService dailyStatus, PendingAgentActionRepository pending, OpenFoodFactsClient packagedFoods, PendingNutritionQuoteRepository quotes, NutritionSourceCacheRepository cache, JournalUndoActionRepository undo, JournalChangeSetRepository changeSets) { this.json=json;this.settings=settings;this.entries=entries;this.items=items;this.privateFoods=privateFoods;this.nutrition=nutrition;this.dailyStatus=dailyStatus;this.pending=pending;this.packagedFoods=packagedFoods;this.quotes=quotes;this.cache=cache;this.undo=undo;this.changeSets=changeSets; }
-  public JournalToolExecutor(ObjectMapper json, UserSettingsRepository settings, FoodEntryRepository entries, FoodItemRepository items, PrivateFoodRepository privateFoods, NutritionResolver nutrition, DailyStatusService dailyStatus, PendingAgentActionRepository pending, OpenFoodFactsClient packagedFoods, PendingNutritionQuoteRepository quotes, NutritionSourceCacheRepository cache, JournalUndoActionRepository undo) { this(json,settings,entries,items,privateFoods,nutrition,dailyStatus,pending,packagedFoods,quotes,cache,undo,null); }
+  private final SearxngClient searxng; private final BrowserlessClient browserless;
+  @org.springframework.beans.factory.annotation.Autowired public JournalToolExecutor(ObjectMapper json, UserSettingsRepository settings, FoodEntryRepository entries, FoodItemRepository items, PrivateFoodRepository privateFoods, NutritionResolver nutrition, DailyStatusService dailyStatus, PendingAgentActionRepository pending, OpenFoodFactsClient packagedFoods, PendingNutritionQuoteRepository quotes, NutritionSourceCacheRepository cache, JournalUndoActionRepository undo, JournalChangeSetRepository changeSets, SearxngClient searxng, BrowserlessClient browserless) { this.json=json;this.settings=settings;this.entries=entries;this.items=items;this.privateFoods=privateFoods;this.nutrition=nutrition;this.dailyStatus=dailyStatus;this.pending=pending;this.packagedFoods=packagedFoods;this.quotes=quotes;this.cache=cache;this.undo=undo;this.changeSets=changeSets;this.searxng=searxng;this.browserless=browserless; }
+  public JournalToolExecutor(ObjectMapper json, UserSettingsRepository settings, FoodEntryRepository entries, FoodItemRepository items, PrivateFoodRepository privateFoods, NutritionResolver nutrition, DailyStatusService dailyStatus, PendingAgentActionRepository pending, OpenFoodFactsClient packagedFoods, PendingNutritionQuoteRepository quotes, NutritionSourceCacheRepository cache, JournalUndoActionRepository undo) { this(json,settings,entries,items,privateFoods,nutrition,dailyStatus,pending,packagedFoods,quotes,cache,undo,null,null,null); }
   /** Kept for focused unit tests that do not exercise quote-backed nutrition. */
   public JournalToolExecutor(ObjectMapper json, UserSettingsRepository settings, FoodEntryRepository entries, FoodItemRepository items, PrivateFoodRepository privateFoods, NutritionResolver nutrition, DailyStatusService dailyStatus, PendingAgentActionRepository pending) { this(json,settings,entries,items,privateFoods,nutrition,dailyStatus,pending,null,null,null,null); }
   public JournalToolExecutor(ObjectMapper json, UserSettingsRepository settings, FoodEntryRepository entries, FoodItemRepository items, PrivateFoodRepository privateFoods, NutritionResolver nutrition, DailyStatusService dailyStatus, PendingAgentActionRepository pending, OpenFoodFactsClient packagedFoods, PendingNutritionQuoteRepository quotes, NutritionSourceCacheRepository cache) { this(json,settings,entries,items,privateFoods,nutrition,dailyStatus,pending,packagedFoods,quotes,cache,null); }
@@ -27,6 +32,7 @@ public class JournalToolExecutor {
     try { Map<String,Object> a=json.readValue(call.arguments()==null?"{}":call.arguments(),new TypeReference<>(){}); return switch(call.name()) {
       case "get_today_summary" -> today(c); case "search_entries" -> search(c,a); case "get_entry" -> entry(c,a); case "get_settings" -> settings(c);
       case "resolve_nutrition", "lookup_food" -> resolve(c,a); case "search_packaged_food" -> packagedFood(c,a); case "get_pending_nutrition_quotes" -> pendingQuotes(c);
+      case "search_web" -> searchWeb(a); case "fetch_web_page" -> fetchWebPage(a);
       case "select_packaged_food" -> selectPackaged(c,a); case "get_private_food" -> privateFood(c,a); case "plan_todos" -> planTodos(a,todos); case "complete_todo" -> completeTodo(a,todos);
       case "apply_journal_actions" -> applyActions(c,a); case "undo_last_change" -> undoLast(c); case "create_food_entry" -> create(c,a); case "estimate_food" -> estimateFood(c,a); case "save_private_food" -> savePrivate(c,a); case "update_settings" -> updateSettings(c,a);
       default -> AgentToolResult.failure("VALIDATION_ERROR","That tool is not available.");
@@ -45,6 +51,27 @@ public class JournalToolExecutor {
     if(name==null||name.isBlank()||grams==null||grams<=0)return AgentToolResult.failure("VALIDATION_ERROR","A food name and positive grams are required.");
     UUID batchId=UUID.randomUUID(); List<Map<String,Object>> products=new ArrayList<>(); for(OpenFoodFactsClient.PackagedFoodResult p:packagedFoods.searchByName(name,str(a,"brand"))){PendingNutritionQuote q=quotes.save(PendingNutritionQuote.packaged(c.user(),batchId,p.productName(),p.brand(),grams,p.caloriesPer100g(),p.barcode(),p.sourceUrl(),Instant.now()));products.add(quoteSummary(q));}
     return products.isEmpty()?AgentToolResult.failure("NOT_FOUND","No usable packaged-food result was found."):AgentToolResult.ok(Map.of("products",products));
+  }
+  private AgentToolResult searchWeb(Map<String,Object>a){
+    if(searxng==null)return AgentToolResult.failure("TEMPORARY_FAILURE","Web search is unavailable.");
+    String query=str(a,"query");if(query==null||query.isBlank())return AgentToolResult.failure("VALIDATION_ERROR","A search query is required.");
+    List<Map<String,Object>> results=searxng.search(query).stream().map(r->Map.<String,Object>of("title",r.title(),"url",r.url(),"snippet",r.snippet())).toList();
+    return results.isEmpty()?AgentToolResult.failure("NOT_FOUND","No web results were found."):AgentToolResult.ok(Map.of("results",results));
+  }
+  private AgentToolResult fetchWebPage(Map<String,Object>a){
+    if(browserless==null)return AgentToolResult.failure("TEMPORARY_FAILURE","Web page fetch is unavailable.");
+    String url=str(a,"url");if(url==null||url.isBlank())return AgentToolResult.failure("VALIDATION_ERROR","A url is required.");
+    if(!isSafeExternalUrl(url))return AgentToolResult.failure("VALIDATION_ERROR","That url cannot be fetched.");
+    return browserless.fetchText(url).<AgentToolResult>map(text->AgentToolResult.ok(Map.of("url",url,"text",text))).orElse(AgentToolResult.failure("NOT_FOUND","That page could not be fetched."));
+  }
+  private boolean isSafeExternalUrl(String url){
+    try{
+      URI uri=URI.create(url);String scheme=uri.getScheme();
+      if(scheme==null||!(scheme.equalsIgnoreCase("http")||scheme.equalsIgnoreCase("https")))return false;
+      String host=uri.getHost();if(host==null||host.isBlank())return false;
+      InetAddress address=InetAddress.getByName(host);
+      return !(address.isLoopbackAddress()||address.isSiteLocalAddress()||address.isLinkLocalAddress()||address.isAnyLocalAddress());
+    }catch(Exception e){return false;}
   }
   private AgentToolResult pendingQuotes(AgentContext c){if(quotes==null)return AgentToolResult.failure("TEMPORARY_FAILURE","Nutrition choices are unavailable.");Instant now=Instant.now();List<Map<String,Object>> rows=quotes.findFirstByUserAndTypeAndExpiresAtAfterOrderByCreatedAtDesc(c.user(),PendingNutritionQuote.Type.PACKAGED_MATCH,now).map(q->quotes.findByUserAndBatchIdAndExpiresAtAfterOrderByCreatedAtAsc(c.user(),q.getBatchId(),now).stream().map(this::quoteSummary).toList()).orElse(List.of());return rows.isEmpty()?AgentToolResult.failure("NOT_FOUND","There are no pending nutrition choices."):AgentToolResult.ok(Map.of("quotes",rows));}
   private AgentToolResult selectPackaged(AgentContext c,Map<String,Object>a){PendingNutritionQuote q=ownedQuote(c,quoteId(a),PendingNutritionQuote.Type.PACKAGED_MATCH);if(q==null)return AgentToolResult.failure("NOT_FOUND","That packaged-food choice is unavailable or expired.");return AgentToolResult.ok(Map.of("quoteId",q.getId().toString(),"item",itemSummary(quoteItem(q),"open_food_facts_estimate","estimate"),"source","Open Food Facts"));}

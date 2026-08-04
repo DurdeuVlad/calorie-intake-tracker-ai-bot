@@ -46,10 +46,12 @@ public class JournalAgent {
 
   private AgentContext estimateFollowupContext(AgentContext context,List<io.github.foodjournal.domain.ConversationMemory> recent){
     String reply=context.message()==null?"":context.message().trim().toLowerCase(Locale.ROOT);
-    boolean declined=reply.contains("nu știu")||reply.contains("nu stiu")||reply.contains("estimează")||reply.contains("estimeaza")||reply.contains("i don't know")||reply.contains("estimate it");
-    if(!declined||recent.size()<2)return context;
+    if(recent.isEmpty())return context;
     io.github.foodjournal.domain.ConversationMemory previousAssistant=recent.get(recent.size()-1);
     if(!"assistant".equals(previousAssistant.getRole())||!looksLikePortionQuestion(previousAssistant.getContent()))return context;
+    boolean declinedByKeyword=reply.contains("nu știu")||reply.contains("nu stiu")||reply.contains("estimează")||reply.contains("estimeaza")||reply.contains("i don't know")||reply.contains("estimate it");
+    boolean declinedByNoDigits=!reply.isBlank()&&reply.chars().noneMatch(Character::isDigit);
+    if(!declinedByKeyword&&!declinedByNoDigits)return context;
     for(int i=recent.size()-2;i>=0;i--){io.github.foodjournal.domain.ConversationMemory turn=recent.get(i);if("user".equals(turn.getRole()))return new AgentContext(context.user(),context.chatId(),context.romanian(),"Estimate this meal now: "+turn.getContent(),context.startedAt());}
     return context;
   }

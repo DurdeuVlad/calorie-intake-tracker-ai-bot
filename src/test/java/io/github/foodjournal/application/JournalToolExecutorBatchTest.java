@@ -29,7 +29,7 @@ class JournalToolExecutorBatchTest {
     when(settings.findById(any())).thenReturn(Optional.of(new UserSettings(user,"Europe/Bucharest")));
     AtomicLong ids=new AtomicLong(10);when(entries.save(any(FoodEntry.class))).thenAnswer(call->{FoodEntry entry=call.getArgument(0);ReflectionTestUtils.setField(entry,"id",ids.getAndIncrement());return entry;});
     when(items.save(any(FoodItem.class))).thenAnswer(call->{FoodItem item=call.getArgument(0);ReflectionTestUtils.setField(item,"id",ids.getAndIncrement());return item;});
-    executor=new JournalToolExecutor(new ObjectMapper(),settings,entries,items,mock(PrivateFoodRepository.class),NutritionResolver.noop(),status,mock(PendingAgentActionRepository.class),null,mock(PendingNutritionQuoteRepository.class),mock(NutritionSourceCacheRepository.class),mock(JournalUndoActionRepository.class),changeSets);
+    executor=new JournalToolExecutor(new ObjectMapper(),settings,entries,items,mock(PrivateFoodRepository.class),NutritionResolver.noop(),status,mock(PendingAgentActionRepository.class),null,mock(PendingNutritionQuoteRepository.class),mock(NutritionSourceCacheRepository.class),mock(JournalUndoActionRepository.class),changeSets,null,null);
   }
 
   @Test void createsSeveralEntriesWithoutQuantitiesAndBackdatesThem(){

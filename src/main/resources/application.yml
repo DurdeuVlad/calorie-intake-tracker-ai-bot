@@ -41,6 +41,9 @@ food-journal:
   agent-max-tool-calls: ${AGENT_MAX_TOOL_CALLS:10}
   openai-transcription-model: ${OPENAI_TRANSCRIPTION_MODEL:gpt-4o-mini-transcribe}
   open-food-facts-base-url: ${OPEN_FOOD_FACTS_BASE_URL:https://world.openfoodfacts.org/api/v2}
+  searxng-base-url: ${SEARXNG_BASE_URL:}
+  browserless-base-url: ${BROWSERLESS_BASE_URL:}
+  browserless-token: ${BROWSERLESS_TOKEN:}
   frontends:
     telegram:
       enabled: ${TELEGRAM_FRONTEND_ENABLED:true}
