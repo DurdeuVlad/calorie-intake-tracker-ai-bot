@@ -13,6 +13,9 @@
 | `OPENAI_MODEL` | no | OpenAI chat-completions model; defaults to `gpt-5.4-mini` |
 | `AGENT_MAX_TOOL_CALLS` | no | maximum tool calls in one agent run; capped at `10` |
 | `OPEN_FOOD_FACTS_BASE_URL` | no | Open Food Facts API base URL, including `/api/v2`; defaults to the public API |
+| `SEARXNG_BASE_URL` | no | SearxNG instance base URL used for restaurant/menu nutrition lookups; empty disables `search_web`. The instance must have JSON output enabled (`search.formats: [json]` in `settings.yml`), since SearxNG ships with it off by default |
+| `BROWSERLESS_BASE_URL` | no | Browserless instance base URL used to fetch page text for `fetch_web_page`; empty disables it |
+| `BROWSERLESS_TOKEN` | no | Browserless auth token, sent as a query parameter; omit if the instance has no auth |
 | `MANAGEMENT_PORT` | no | local-only Actuator port; defaults to `8081` |
 | `FOOD_JOURNAL_SCHEDULING_ENABLED` | no | set `false` to disable outbox and report schedulers; defaults to `true` |
 | `FOOD_JOURNAL_OUTBOX_DELAY_MS` | no | polling delay for Telegram outbox and pinned-status delivery; defaults to `5000` ms |

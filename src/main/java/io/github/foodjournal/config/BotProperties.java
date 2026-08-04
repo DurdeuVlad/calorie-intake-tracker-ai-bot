@@ -16,7 +16,10 @@ public record BotProperties(
     String openaiModel,
     int agentMaxToolCalls,
     String openaiTranscriptionModel,
-    String openFoodFactsBaseUrl) {
+    String openFoodFactsBaseUrl,
+    String searxngBaseUrl,
+    String browserlessBaseUrl,
+    String browserlessToken) {
   @ConstructorBinding public BotProperties {
     telegramToken = telegramToken == null ? "" : telegramToken;
     webhookSecret = webhookSecret == null ? "" : webhookSecret;
@@ -27,11 +30,14 @@ public record BotProperties(
     openaiTranscriptionModel = openaiTranscriptionModel == null || openaiTranscriptionModel.isBlank() ? "gpt-4o-mini-transcribe" : openaiTranscriptionModel;
     openFoodFactsBaseUrl = openFoodFactsBaseUrl == null || openFoodFactsBaseUrl.isBlank()
         ? "https://world.openfoodfacts.org/api/v2" : openFoodFactsBaseUrl;
+    searxngBaseUrl = searxngBaseUrl == null ? "" : searxngBaseUrl;
+    browserlessBaseUrl = browserlessBaseUrl == null ? "" : browserlessBaseUrl;
+    browserlessToken = browserlessToken == null ? "" : browserlessToken;
   }
 
   public BotProperties(String telegramToken, String webhookSecret, Set<Long> allowedTelegramUserIds,
       String defaultTimezone, String openaiApiKey, String openaiModel) {
     this(telegramToken, webhookSecret, allowedTelegramUserIds, defaultTimezone, openaiApiKey,
-        openaiModel, 10, "gpt-4o-mini-transcribe", "https://world.openfoodfacts.org/api/v2");
+        openaiModel, 10, "gpt-4o-mini-transcribe", "https://world.openfoodfacts.org/api/v2", "", "", "");
   }
 }
