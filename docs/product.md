@@ -1,31 +1,54 @@
-# Product brief
+# Product Vision & Capabilities
 
-## Problem
+## The Problem
 
-The existing n8n automation has become difficult to operate and change. Household users need a quick way to record what they ate without losing privacy or creating duplicate records.
+Tracking calorie intake and macro nutrition is one of the most effective tools for health management. However, almost all existing solutions fail users for three primary reasons:
 
-## Users
+1. **Friction Fatigue**: Traditional mobile apps force users to search millions of crowdsourced, inaccurate database items, weigh every item, and tap through multiple UI screens per meal. Most users abandon logging within 14 days.
+2. **Privacy Risks**: Commercial nutrition applications track, analyze, and sell personal dietary and health data to advertisers. They also retain uploaded meal photos and voice recordings indefinitely on proprietary servers.
+3. **Automated Workflow Fragility**: Low-code automation platforms (like n8n or Make) are difficult to maintain, fail unpredictably on complex multi-item meals, lack transactional rollback capability, and duplicate entries on network retries.
 
-Allowlisted members of one household, interacting only through one Telegram bot.
+---
 
-## Goals
+## The Solution: Food Journal Messaging Bot
 
-- Capture meals from text, voice, photos, and documents.
-- Keep a trustworthy, editable daily food journal with nutrition provenance.
-- Deliver useful daily totals without manual spreadsheet work.
-- Make operation reproducible on a private Coolify homelab.
+A self-hosted, private messaging bot designed to turn natural human communication into a accurate, database-backed food journal.
 
-## Non-goals
+- **Conversation First**: Speak, type, or photograph what you ate in plain English, Romanian, or mixed language.
+- **AI Reasoning + Validated Transactional Execution**: OpenAI handles natural language and image processing, while strict Spring Boot application code enforces ownership, validation, macro calculations, and database mutations.
+- **Private & Multi-Frontend**: Chat seamlessly over **Telegram** or **Mattermost (over Tailscale)**.
 
-- Public signup, billing, social features, medical diagnosis, or dietary advice.
-- Retention of original uploaded media.
-- Exact nutritional truth when the source is an estimate.
+---
 
-## Core use cases
+## Core Capabilities & Features
 
-1. A user sends “two eggs and toast” and gets a concise saved-entry confirmation.
-2. A user sends a voice note, food photo, or label/document; the bot extracts a proposed meal and safely asks for clarification when needed.
-3. A user asks what they ate today or searches for a food/date range.
-4. A user corrects or deletes one of their own entries.
-5. A user configures timezone, calorie target, and report preferences.
-6. The bot sends one morning and one evening report in the user's local timezone.
+### 1. Flexible Multi-Modal Logging
+- **Text Messages**: Log simple or complex multi-item meals (e.g., *"2 scrambled eggs with butter, sourdough toast, and a small cappuccino"*).
+- **Voice Notes**: Send voice messages in English or Romanian; automatically transcribed via OpenAI Audio and converted into structured food entries.
+- **Photos & Documents**: Send pictures of meals, restaurant menus, or nutrition facts labels; extracted via vision AI into validated journal entries.
+
+### 2. Live Pinned Status & Scheduled Reports
+- **Pinned Daily Status**: Automatically maintains a live, pinned Telegram/Mattermost message showing today's eaten items, calorie total, remaining calorie budget, and macro totals.
+- **Local Timezone Daily Reports**: Delivers morning summaries (setting up daily targets) and evening summaries (reviewing daily consumption) based on each user's configured IANA timezone.
+
+### 3. Smart Nutrition Lookup & Web Tools
+- **Open Food Facts API**: Resolves official product barcode and branded food data.
+- **SearxNG Web Search**: Performs self-hosted web searches for restaurant menus and meal nutrition.
+- **Browserless Scraping**: Fetches web page content for detailed recipe/nutrition extraction.
+- **Provenanced Sources**: Every nutrition entry is transparently labelled (`OFFICIAL_SOURCE`, `PRIVATE_RECORD`, `MANUAL`, or `AI_ESTIMATE`).
+
+### 4. Reversible 10-Minute Undo
+- Made a typo or logged something by accident? Send `/undo` or tell the bot *"undo that"*.
+- Every message mutation produces a snapshot change set (`JournalChangeSet`) that can be safely reverted within 10 minutes.
+
+---
+
+## User Personas & Scope
+
+- **Primary Users**: Members of a household using Telegram or private Mattermost for daily chat.
+- **Non-Goals**:
+  - Public multi-tenant commercial SaaS with billing.
+  - Social media feeds or community meal sharing.
+  - Medical diagnosis or dietary treatment advice.
+  - Long-term storage of raw audio, image, or document files.
+
