@@ -11,6 +11,9 @@ import io.github.foodjournal.repository.*;
 import java.math.BigDecimal;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.*;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -22,6 +25,8 @@ public class JournalToolExecutor {
   private final PrivateFoodRepository privateFoods; private final NutritionResolver nutrition; private final DailyStatusService dailyStatus; private final PendingAgentActionRepository pending; private final JournalUndoActionRepository undo;
   private final OpenFoodFactsClient packagedFoods; private final PendingNutritionQuoteRepository quotes; private final NutritionSourceCacheRepository cache; private final JournalChangeSetRepository changeSets;
   private final SearxngClient searxng; private final BrowserlessClient browserless;
+  /** Package-visible for tests: swap out the live redirect walk so tests don't hit the network. */
+  java.util.function.Function<String,String> redirectResolver=this::resolveSafeFinalUrl;
   @org.springframework.beans.factory.annotation.Autowired public JournalToolExecutor(ObjectMapper json, UserSettingsRepository settings, FoodEntryRepository entries, FoodItemRepository items, PrivateFoodRepository privateFoods, NutritionResolver nutrition, DailyStatusService dailyStatus, PendingAgentActionRepository pending, OpenFoodFactsClient packagedFoods, PendingNutritionQuoteRepository quotes, NutritionSourceCacheRepository cache, JournalUndoActionRepository undo, JournalChangeSetRepository changeSets, SearxngClient searxng, BrowserlessClient browserless) { this.json=json;this.settings=settings;this.entries=entries;this.items=items;this.privateFoods=privateFoods;this.nutrition=nutrition;this.dailyStatus=dailyStatus;this.pending=pending;this.packagedFoods=packagedFoods;this.quotes=quotes;this.cache=cache;this.undo=undo;this.changeSets=changeSets;this.searxng=searxng;this.browserless=browserless; }
   public JournalToolExecutor(ObjectMapper json, UserSettingsRepository settings, FoodEntryRepository entries, FoodItemRepository items, PrivateFoodRepository privateFoods, NutritionResolver nutrition, DailyStatusService dailyStatus, PendingAgentActionRepository pending, OpenFoodFactsClient packagedFoods, PendingNutritionQuoteRepository quotes, NutritionSourceCacheRepository cache, JournalUndoActionRepository undo) { this(json,settings,entries,items,privateFoods,nutrition,dailyStatus,pending,packagedFoods,quotes,cache,undo,null,null,null); }
   /** Kept for focused unit tests that do not exercise quote-backed nutrition. */
@@ -58,11 +63,15 @@ public class JournalToolExecutor {
     List<Map<String,Object>> results=searxng.search(query).stream().map(r->Map.<String,Object>of("title",r.title(),"url",r.url(),"snippet",r.snippet())).toList();
     return results.isEmpty()?AgentToolResult.failure("NOT_FOUND","No web results were found."):AgentToolResult.ok(Map.of("results",results));
   }
+  private static final int MAX_REDIRECTS=5;
+
   private AgentToolResult fetchWebPage(Map<String,Object>a){
     if(browserless==null)return AgentToolResult.failure("TEMPORARY_FAILURE","Web page fetch is unavailable.");
     String url=str(a,"url");if(url==null||url.isBlank())return AgentToolResult.failure("VALIDATION_ERROR","A url is required.");
     if(!isSafeExternalUrl(url))return AgentToolResult.failure("VALIDATION_ERROR","That url cannot be fetched.");
-    return browserless.fetchText(url).<AgentToolResult>map(text->AgentToolResult.ok(Map.of("url",url,"text",text))).orElse(AgentToolResult.failure("NOT_FOUND","That page could not be fetched."));
+    String resolvedUrl=redirectResolver.apply(url);
+    if(resolvedUrl==null)return AgentToolResult.failure("VALIDATION_ERROR","That url cannot be fetched.");
+    return browserless.fetchText(resolvedUrl).<AgentToolResult>map(text->AgentToolResult.ok(Map.of("url",resolvedUrl,"text",text))).orElse(AgentToolResult.failure("NOT_FOUND","That page could not be fetched."));
   }
   private boolean isSafeExternalUrl(String url){
     try{
@@ -72,6 +81,30 @@ public class JournalToolExecutor {
       InetAddress address=InetAddress.getByName(host);
       return !(address.isLoopbackAddress()||address.isSiteLocalAddress()||address.isLinkLocalAddress()||address.isAnyLocalAddress());
     }catch(Exception e){return false;}
+  }
+  /**
+   * Browserless resolves DNS and follows redirects independently of this JVM's checks, so a URL
+   * that passes {@link #isSafeExternalUrl} can still 302 to an internal/link-local address once
+   * Browserless fetches it. Walk redirects ourselves first (without following them via the HTTP
+   * client), re-validating {@link #isSafeExternalUrl} at every hop, so only a URL whose entire
+   * redirect chain is external is ever handed to Browserless.
+   */
+  private String resolveSafeFinalUrl(String url){
+    String current=url;
+    HttpClient client=HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
+    for(int hop=0;hop<=MAX_REDIRECTS;hop++){
+      if(!isSafeExternalUrl(current))return null;
+      try{
+        HttpRequest request=HttpRequest.newBuilder(URI.create(current)).timeout(Duration.ofSeconds(5)).GET().build();
+        HttpResponse<Void> response=client.send(request,HttpResponse.BodyHandlers.discarding());
+        int status=response.statusCode();
+        if(status<300||status>399)return current;
+        String location=response.headers().firstValue("Location").orElse(null);
+        if(location==null||location.isBlank())return null;
+        current=URI.create(current).resolve(location).toString();
+      }catch(Exception e){return null;}
+    }
+    return null;
   }
   private AgentToolResult pendingQuotes(AgentContext c){if(quotes==null)return AgentToolResult.failure("TEMPORARY_FAILURE","Nutrition choices are unavailable.");Instant now=Instant.now();List<Map<String,Object>> rows=quotes.findFirstByUserAndTypeAndExpiresAtAfterOrderByCreatedAtDesc(c.user(),PendingNutritionQuote.Type.PACKAGED_MATCH,now).map(q->quotes.findByUserAndBatchIdAndExpiresAtAfterOrderByCreatedAtAsc(c.user(),q.getBatchId(),now).stream().map(this::quoteSummary).toList()).orElse(List.of());return rows.isEmpty()?AgentToolResult.failure("NOT_FOUND","There are no pending nutrition choices."):AgentToolResult.ok(Map.of("quotes",rows));}
   private AgentToolResult selectPackaged(AgentContext c,Map<String,Object>a){PendingNutritionQuote q=ownedQuote(c,quoteId(a),PendingNutritionQuote.Type.PACKAGED_MATCH);if(q==null)return AgentToolResult.failure("NOT_FOUND","That packaged-food choice is unavailable or expired.");return AgentToolResult.ok(Map.of("quoteId",q.getId().toString(),"item",itemSummary(quoteItem(q),"open_food_facts_estimate","estimate"),"source","Open Food Facts"));}
