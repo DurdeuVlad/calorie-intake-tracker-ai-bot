@@ -1,15 +1,25 @@
-# Initial issue backlog
+# Project Milestones & Issue Backlog
 
-1. Bootstrap repository governance, secret scanning, and templates.
-2. Create domain schema and Flyway migrations.
-3. Implement Telegram webhook verification, allowlist, and idempotency.
-4. Implement onboarding, settings, timezones, and pinned daily status.
-5. Implement deterministic meal logging and persistence.
-6. Add OpenAI typed-command interpretation and validation.
-7. Add OpenAI voice transcription with transient-media handling.
-8. Add OpenAI image/document extraction.
-9. Add Open Food Facts, private food records, and nutrition provenance.
-10. Add search, correction, deletion, and ownership tests.
-11. Add idempotent scheduled reports and delivery history.
-12. Add Docker, Compose, Coolify deployment, backups, health, and metrics.
-13. Add end-to-end tests, legacy migration assessment, and cutover runbook.
+---
+
+## Completed Milestones (Production Release)
+
+1. [x] **Bootstrap & Governance**: Docker architecture, Spring Boot 3.4 setup, security scanning, and configuration template.
+2. [x] **Database Schema & Migrations**: PostgreSQL 16 schema evolution via Flyway migrations (`V1`–`V17`).
+3. [x] **Multi-Frontend Ingestion**: Telegram HTTPS Webhook API with secret header verification and Mattermost WebSocket client over Tailscale.
+4. [x] **User Isolation & Idempotency**: Atomic update claiming (`processed_updates`), strict user-level authorization, and outbox messaging worker (`messaging_outbound_messages`).
+5. [x] **Onboarding & Pinned Status**: Timezone-aware user settings, daily calorie targets, and dynamic pinned daily status updates.
+6. [x] **Natural Language & Vision Logging**: OpenAI interpretation (`gpt-5.4-mini`), audio transcription (`gpt-4o-mini-transcribe`), and image/document vision extraction.
+7. [x] **External Tool Integrations**: Open Food Facts API (`CachedNutritionResolver`), self-hosted SearxNG web search (`SearxngClient`), and Browserless web scraping (`BrowserlessClient` with SSRF protection).
+8. [x] **Reversible Undo System**: 10-minute snapshot change set undo (`JournalChangeSet` / `/undo`).
+9. [x] **Timezone-Aware Reports**: Morning and evening scheduled report delivery with per-day deduplication (`report_deliveries`).
+10. [x] **Interactive CLI & Eval Suite**: Terminal interactive profile and automated prompt evaluation framework (`evals/text-journal.json`).
+
+---
+
+## Future Roadmap & Enhancements
+
+1. [ ] **Multi-Language Expansion**: Add native localization support for additional languages beyond English and Romanian.
+2. [ ] **Micronutrient Tracking**: Expand macro tracking to include detailed micronutrients (sodium, fiber, sugar, saturated fats).
+3. [ ] **Custom Export Tools**: Export user journal records to CSV, JSON, or HealthKit/Google Fit formats.
+

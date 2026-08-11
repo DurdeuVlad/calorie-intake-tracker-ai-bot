@@ -1,28 +1,59 @@
-# Functional requirements and acceptance criteria
+# Functional Requirements & Acceptance Criteria
 
-## Business rules
+---
 
-- Each Telegram update is idempotent by `update_id`; retries create no duplicate entries or notifications.
-- Every query and mutation is scoped to the authenticated Telegram user ID. A user cannot see or change another user's data.
-- One inbound message may create or mutate several eating events. Each requested action is validated independently, successful actions are reported explicitly, and a failed action does not discard unrelated successes.
-- Validation failures are isolated per action. Database or infrastructure failures abort and retry the complete inbound update so the bot never reports changes that were rolled back.
-- Clear journal edits, moves, and deletes execute immediately for the owning user and are reversible as one message-level change set for ten minutes.
-- Explicit total calories do not require a gram quantity; structured quantities support grams, millilitres, portions, or unspecified units.
-- Store processed text/structured extraction, not original media bytes or files.
-- Nutrition is labelled `OFFICIAL_SOURCE`, `PRIVATE_RECORD`, `MANUAL`, or `AI_ESTIMATE` and retains source/provenance metadata.
-- AI providers may interpret content but cannot directly execute database actions. Invalid, incomplete, or ambiguous outputs require clarification or a safe failure.
-- Defaults: reports enabled, morning 08:00, evening 22:00; timezone and calorie target are collected during onboarding.
-- English is the default reply language; English, Romanian, and mixed messages are accepted.
+## Core Business Rules
 
-## Commands
+1. **Idempotency & Deduplication**:
+   - Each inbound update (Telegram `update_id` or Mattermost `post_id`) is claimed atomically in PostgreSQL (`processed_updates`).
+   - Network retries or replayed webhooks produce zero duplicate food entries or outbox messages.
 
-`/start`, `/help`, `/settings`, `/today`, and `/report` are explicit. Natural-language logging, history, correction, deletion, and ordinary chat are supported.
+2. **Strict User Ownership & Access Control**:
+   - Every database query and mutation is strictly filtered by the caller's verified `user_id`.
+   - Messages from users not explicitly listed in `ALLOWED_TELEGRAM_USER_IDS` or `ALLOWED_MATTERMOST_USER_IDS` are rejected immediately without disclosing system state.
 
-## Acceptance criteria
+3. **Transaction Safety & Atomicity**:
+   - Inbound messages may trigger multiple food entry mutations. Each requested action is validated independently.
+   - Successful actions are committed and reported explicitly. An unexpected error during processing rolls back the transaction, preventing partial corrupt writes.
 
-- An allowlisted user can log supported input types, receives a confirmation, and only processed content is retained.
-- A non-allowlisted sender cannot access or mutate private data.
-- Replayed webhook updates result in exactly one persisted eating event.
-- Search, edit, and delete enforce ownership and leave no partial writes on validation failure.
-- Report delivery is recorded and prevents duplicate delivery across retries/restarts.
-- A fresh deployment starts from migrations and documented environment variables alone.
+4. **10-Minute Reversible Undo**:
+   - Every journal modification generates a message-level snapshot (`JournalChangeSet` / `JournalMutation`).
+   - Users can execute `/undo` or request an undo in natural language within 10 minutes to restore previous state.
+
+5. **Structured Quantities & Units**:
+   - Calories may be declared directly or derived from structured quantities.
+   - Supported quantity units: grams (`g`), millilitres (`ml`), portions (`portion`), or `unspecified`.
+
+6. **Transient Media Lifecycle (Zero Retention)**:
+   - Voice notes, images, and documents are downloaded transiently to memory/tmpfs.
+   - Original media files are deleted immediately following transcription or vision extraction. No binary media is saved to PostgreSQL or persistent disk volumes.
+
+7. **Nutrition Provenance**:
+   - Every logged food item tracks its provenance source: `OFFICIAL_SOURCE` (Open Food Facts), `PRIVATE_RECORD`, `MANUAL`, or `AI_ESTIMATE`.
+
+8. **AI Execution Boundaries**:
+   - AI models act strictly as interpretation engines calling typed tools (`JournalToolExecutor`).
+   - Ambiguous or incomplete model outputs require clarification instead of guessing user intent.
+
+9. **Multi-Frontend Linking**:
+   - Accounts across Telegram and Mattermost can be linked using `/link`. Codes expire after 10 minutes and can be redeemed once.
+
+10. **Timezone-Aware Reporting & Pinned Status**:
+    - Users configure their IANA timezone during onboarding (`/start` or `/settings`).
+    - Scheduled morning (08:00 default) and evening (22:00 default) reports deliver once per local calendar day.
+    - Pinned daily status updates dynamically reflect total calories and macro intake for the current local day.
+
+---
+
+## Acceptance Criteria Matrix
+
+| Domain | Acceptance Criteria | Verification Method |
+| --- | --- | --- |
+| **Authentication** | Senders not on allowlist are rejected cleanly without side effects. | Integration test & manual check. |
+| **Idempotency** | Sending the same update twice creates exactly one food entry and one reply message. | `processed_updates` ledger assertions. |
+| **Natural Language** | Text, voice, photos, and document inputs extract food items, quantities, and calories. | Automated eval suite & integration tests. |
+| **10-Minute Undo** | `/undo` within 10 minutes reverts the exact previous message mutations; `/undo` after 10 minutes fails gracefully. | ChangeSet expiration integration tests. |
+| **Nutrition Lookup** | Open Food Facts and SearxNG return valid nutrition data; failure falls back to AI estimation with `AI_ESTIMATE` provenance. | Mocked tool boundary tests. |
+| **Web Fetching & SSRF** | `fetch_web_page` rejects internal IP ranges (`127.0.0.1`, `10.0.0.0/8`, `192.168.0.0/16`, cloud metadata endpoints). | Unit tests for `BrowserlessClient`. |
+| **Scheduled Reports** | Morning and evening reports fire once per day per user timezone; retries across restarts do not send duplicate reports. | `report_deliveries` unique index verification. |
+

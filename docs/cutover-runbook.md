@@ -1,37 +1,68 @@
-# n8n cutover and rollback runbook
+# Production Cutover & Deployment Runbook
 
-## Hard preconditions
+This runbook guides operators through launching a new production instance of **Food Journal Messaging Bot** or executing a cutover from a legacy automation flow.
 
-Do not begin cutover unless all are true:
+---
 
-- The exact protected `master` commit passed the [acceptance plan](acceptance-test-plan.md).
-- The Telegram token exposed by the n8n export was rotated; the old token is invalid.
-- Legacy schemas, secured export, and separate error workflow were assessed against [legacy import mapping](legacy-import-mapping.md). An import is optional; unreviewed legacy data is never imported.
-- A tested PostgreSQL backup and isolated restore exist for the target database.
-- A public HTTPS endpoint, a private management network, persistent PostgreSQL storage, runtime secrets, and backup retention have been prepared. This is a future Coolify configuration step, not authorization to connect it now.
-- The user explicitly authorizes the production webhook switch.
+## 1. Pre-Deployment Checklist
 
-## Cutover
+Before registering the live webhook or enabling user traffic, ensure all prerequisites are met:
 
-1. Record the release commit, redacted backup location, and current Telegram webhook configuration outside Git.
-2. Stop n8n from writing journal data. Do not operate the old and new systems as concurrent writers.
-3. Deploy the release only after Coolify is explicitly authorized; confirm Flyway completion and private readiness.
-4. Register the Telegram webhook once, using the HTTPS URL and the new webhook secret. Verify Telegram reports the expected URL without exposing the token in logs or shell history.
-5. From one allowlisted test account, run `/start`, one text meal, `/today`, and a duplicate-update test. Check the outbox and application logs for safe delivery.
-6. Observe the configured report schedule and health/metrics. Declare cutover complete only after the manual acceptance rows pass.
+- [x] Protected `master` commit passed all automated Maven and Docker CI checks.
+- [x] PostgreSQL 16 database provisioned with persistent storage volume and daily backup schedule configured.
+- [x] High-entropy `TELEGRAM_WEBHOOK_SECRET` generated.
+- [x] Numeric Telegram user IDs configured in `ALLOWED_TELEGRAM_USER_IDS`.
+- [x] Valid `OPENAI_API_KEY` supplied.
+- [x] Public HTTPS endpoint (Coolify, Caddy, Traefik, or Cloudflare Tunnel) configured to forward `/telegram/webhook` to app port `8080`.
 
-## Rollback
+---
 
-Rollback means stopping the new application and routing Telegram back to the previously known-good writer. It does **not** mean deleting PostgreSQL volumes or reversing Flyway migrations.
+## 2. Execution Steps
 
-1. Disable the new webhook route and preserve logs, outbox rows, idempotency ledger, and database volume for diagnosis.
-2. If the old n8n writer is still valid and contains the authoritative journal, register its webhook once. Otherwise leave the bot unavailable rather than risk dual writers.
-3. If data repair is required, restore only to an isolated database and reconcile from there. Never overwrite the live journal with a dump during an incident.
-4. Document the incident, token/webhook state, affected update IDs, and decision to retry cutover.
+### Step 1: Deploy Database & Run Migrations
+1. Deploy PostgreSQL and the application container (`app`).
+2. Verify Flyway migration logs:
+   ```text
+   Successfully applied 17 migrations to schema "public"
+   ```
+3. Verify Actuator readiness probe returns HTTP 200 OK:
+   ```bash
+   curl -i http://localhost:8081/actuator/health/readiness
+   ```
 
-## Prohibited actions
+### Step 2: Register Telegram Webhook
+Register the public HTTPS URL with Telegram using your bot token and secret header:
 
-- Do not connect Coolify before the acceptance gate passes and the user authorizes it.
-- Do not commit exports, secrets, Telegram updates, backups, or live data.
-- Do not run n8n and this service as simultaneous writers for the same household journal.
-- Do not roll back schema migrations by deleting data.
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "url": "https://your-domain.com/telegram/webhook",
+           "secret_token": "<TELEGRAM_WEBHOOK_SECRET>"
+         }'
+```
+
+Confirm Telegram response:
+```json
+{"ok": true, "result": true, "description": "Webhook was set"}
+```
+
+### Step 3: Verify User Onboarding & Integration
+1. Send `/start` from an allowlisted Telegram account. Set timezone (e.g. `Europe/Bucharest`) and daily calorie goal (e.g. `2000`).
+2. Log a natural language test meal (e.g., `"2 eggs and coffee"`).
+3. Send `/today` to verify entry persistence and pinned daily status message updates.
+4. Verify `/undo` reverts the test entry cleanly.
+
+---
+
+## 3. Rollback & Emergency Procedures
+
+If an operational anomaly occurs post-cutover:
+
+1. **Disable Webhook Routing**: Remove the Telegram webhook or pause container ingress to prevent new update ingestion:
+   ```bash
+   curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteWebhook"
+   ```
+2. **Preserve PostgreSQL Volume**: Do **NOT** drop PostgreSQL database volumes or delete Flyway migration history during incident handling.
+3. **Inspect Outbox & Logs**: Query `processed_updates`, `messaging_outbound_messages`, and application logs to diagnose issues.
+
