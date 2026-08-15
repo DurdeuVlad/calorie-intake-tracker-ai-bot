@@ -70,6 +70,15 @@ Verify Telegram response:
 {"ok": true, "result": true, "description": "Webhook was set"}
 ```
 
+### 6. Configure the GitHub Auto-Deploy Webhook
+Coolify exposes a single, shared webhook endpoint (`/webhooks/source/github/events/manual`) that identifies the target application from the push payload and validates it against that application's own secret — so every app on the instance points at the same URL:
+
+```
+https://webhooks.<yourdomain>.com/webhooks/source/github/events/manual
+```
+
+In the repository's GitHub webhook settings, set this URL, content type `application/json`, and the app's manual webhook secret from Coolify's application settings. Use a stable ingress (a permanent named Cloudflare Tunnel, not an ephemeral quick tunnel) so deploys keep firing after reboots/restarts — a dead quick-tunnel URL here will fail silently (GitHub still reports the delivery, but every request 502s) and pushes will stop deploying without any error surfaced in the app itself.
+
 ---
 
 ## Operations & Upgrades
