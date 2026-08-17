@@ -53,7 +53,7 @@ public class ReportScheduler {
     this.clock = c;
   }
 
-  @Scheduled(cron = "0 0 * * * *")
+  @Scheduled(cron = "0 * * * * *")
   @Transactional
   public void deliverDueReports() {
     for (UserSettings s : settings.findAll()) {
@@ -65,15 +65,14 @@ public class ReportScheduler {
         continue;
       }
       ZonedDateTime now = Instant.now(clock).atZone(z);
-      LocalTime time = now.toLocalTime();
-      if (isDue(time, s.getMorningReportTime())) send(s, "morning", now.toLocalDate());
-      if (isDue(time, s.getEveningReportTime())) send(s, "evening", now.toLocalDate());
+      if (!now.toLocalTime().isBefore(s.getMorningReportTime())) send(s, "morning", now.toLocalDate());
+      if (!now.toLocalTime().isBefore(s.getEveningReportTime())) send(s, "evening", now.toLocalDate());
+      if (now.toLocalTime().isBefore(LocalTime.of(2, 0))) {
+        LocalDate previous = now.toLocalDate().minusDays(1);
+        send(s, "morning", previous);
+        send(s, "evening", previous);
+      }
     }
-  }
-
-  private boolean isDue(LocalTime now, LocalTime reportTime) {
-    if (reportTime == null) return false;
-    return now.getHour() == reportTime.getHour();
   }
 
   private void send(UserSettings s, String type, LocalDate date) {
