@@ -22,7 +22,7 @@ flowchart TD
     end
 
     subgraph External Tools & Providers
-        OAI[OpenAI gpt-5.4-mini / Transcribe]
+        OAI[OpenAI gpt-5.6-luna / Transcribe]
         OFF[Open Food Facts API]
         SX[SearxNG Web Search]
         BL[Browserless Headless Scraper]
@@ -62,7 +62,7 @@ flowchart TD
 - **Terminal CLI**: Standalone interactive local development profile that executes real domain flows without messaging platform dependencies.
 
 ### 2. The AI Boundary (Reasoning vs. Execution)
-- OpenAI models (`gpt-5.4-mini` for intent/tool-calling, `gpt-4o-mini-transcribe` for voice) are **strictly interpretation engines**.
+- OpenAI models (`gpt-5.6-luna` for intent/tool-calling, `gpt-4o-mini-transcribe` for voice) are **strictly interpretation engines**.
 - AI providers **cannot directly mutate the database**. The model calls typed tools exposed by `JournalToolExecutor`.
 - The application service (`JournalApplicationService`) validates inputs (ownership, bounds, dates, macro math) before committing any changes.
 

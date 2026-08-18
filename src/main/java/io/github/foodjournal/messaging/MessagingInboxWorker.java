@@ -30,6 +30,7 @@ public class MessagingInboxWorker {
   private final FoodMediaExtractor media;
   private final OpenAiVoiceTranscriber voice;
   private final MessagingDailyStatusService status;
+  private final ConversationMemoryService memory;
 
   public MessagingInboxWorker(
       MessagingInboxRepository inbox,
@@ -44,7 +45,8 @@ public class MessagingInboxWorker {
       FrontendRegistry frontends,
       FoodMediaExtractor media,
       OpenAiVoiceTranscriber voice,
-      MessagingDailyStatusService status) {
+      MessagingDailyStatusService status,
+      ConversationMemoryService memory) {
     this.inbox = inbox;
     this.identities = identities;
     this.routes = routes;
@@ -58,6 +60,7 @@ public class MessagingInboxWorker {
     this.media = media;
     this.voice = voice;
     this.status = status;
+    this.memory = memory;
   }
 
   @Scheduled(fixedDelayString = "${food-journal.inbox-delay-ms:500}")
@@ -83,7 +86,10 @@ public class MessagingInboxWorker {
   }
 
   private void process(InboundMessage message) {
-    if (!allowed(message)) return;
+    if (!allowed(message)) {
+      log.warn("Dropping message from disallowed sender: provider={} userId={}", message.provider(), message.userId());
+      return;
+    }
     String text = message.text() == null ? "" : message.text().trim();
     String caption = message.caption() == null ? "" : message.caption().trim();
     if ("telegram".equals(message.provider()) && "/link".equalsIgnoreCase(text)) {
@@ -102,8 +108,8 @@ public class MessagingInboxWorker {
     }
     MessagingIdentity identity = identities.findByProviderAndExternalUserId(message.provider(), message.userId()).orElse(null);
     if (identity == null) {
-      if ("telegram".equals(message.provider())) {
-        identity = new MessagingIdentity(telegramUser(message), "telegram", message.userId());
+      if ("telegram".equals(message.provider()) || "terminal".equals(message.provider())) {
+        identity = new MessagingIdentity(telegramUser(message), message.provider(), message.userId());
       } else return;
       identities.save(identity);
     }
@@ -119,6 +125,7 @@ public class MessagingInboxWorker {
               : media.extract(payload.bytes(), attachment.mimeType(), attachment.kind() == Attachment.Kind.PHOTO ? FoodMediaType.PHOTO : FoodMediaType.DOCUMENT);
         }
       } catch (Exception failure) {
+        log.error("Media processing failed: provider={} kind={} cause={}", message.provider(), message.attachments().getFirst().kind(), failure.getMessage(), failure);
         reply(message, "I could not analyze that media. Please send clearer media or text.");
         return;
       }
@@ -128,6 +135,7 @@ public class MessagingInboxWorker {
     long legacyId = identity.getUser().getTelegramUserId();
     String finalText = text;
     String response = MessagingExecutionContext.run(() -> journal.handle(legacyId, legacyId, message.displayName(), finalText));
+    memory.recordTurn(identity.getUser(), finalText, response);
     status.refresh(identity.getUser(), message.provider(), message.conversationId());
     reply(message, response);
   }
@@ -143,6 +151,7 @@ public class MessagingInboxWorker {
     return switch (message.provider()) {
       case "telegram" -> properties.telegram().enabled() && properties.telegram().allowedUserIds().contains(message.userId());
       case "mattermost" -> properties.mattermost().enabled() && properties.mattermost().allowedUserIds().contains(message.userId());
+      case "terminal" -> true;
       default -> false;
     };
   }

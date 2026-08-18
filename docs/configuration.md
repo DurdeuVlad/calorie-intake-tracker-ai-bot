@@ -45,7 +45,7 @@ All application settings are declared via environment variables or standard Spri
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
 | `OPENAI_API_KEY` | Yes (for AI features) | *(empty)* | OpenAI API key credential. |
-| `OPENAI_MODEL` | No | `gpt-5.4-mini` | Chat completions model for intent interpretation and tool calling. |
+| `OPENAI_MODEL` | No | `gpt-5.6-luna` | Chat completions model for intent interpretation and tool calling. |
 | `OPENAI_TRANSCRIPTION_MODEL` | No | `gpt-4o-mini-transcribe` | OpenAI model used for audio voice note transcription. |
 | `AGENT_MAX_TOOL_CALLS` | No | `10` | Maximum tool-call turns per agent run; hard-capped at 10. |
 

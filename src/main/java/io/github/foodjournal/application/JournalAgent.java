@@ -2,6 +2,8 @@ package io.github.foodjournal.application;
 
 import java.util.*;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -9,6 +11,7 @@ import org.springframework.stereotype.Service;
 /** A bounded tool loop. The model is never given repositories or provider credentials. */
 @Service
 public class JournalAgent {
+  private static final Logger log = LoggerFactory.getLogger(JournalAgent.class);
   private final JournalAgentModel model;
   private final JournalToolExecutor tools;
   private final int maxCalls; private final MeterRegistry metrics; private final ConversationMemoryService memory; private final AgentTraceSink trace;
@@ -26,7 +29,14 @@ public class JournalAgent {
     List<io.github.foodjournal.domain.ConversationMemory> recent=memory==null?List.of():memory.recent(context.user());
     AgentContext active=estimateFollowupContext(context,recent);
     for (int calls = 0; calls < maxCalls; ) {
-      JournalAgentModel.AgentReply reply = model.next(active, recent, List.copyOf(exchanges));
+      JournalAgentModel.AgentReply reply;
+      try {
+        reply = model.next(active, recent, List.copyOf(exchanges));
+      } catch (RuntimeException failure) {
+        log.error("Agent model call failed: {}", failure.getMessage(), failure);
+        count("food_journal_agent_model_failures_total");
+        return complete(unavailable(active));
+      }
       trace.modelReply(reply);
       if (reply == null) return complete(unavailable(active));
       if (reply.toolCalls() == null || reply.toolCalls().isEmpty()) return complete(safeReply(reply.text(), active));

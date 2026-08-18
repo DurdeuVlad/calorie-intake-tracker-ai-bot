@@ -6,40 +6,42 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import io.github.foodjournal.config.BotProperties;
-import io.github.foodjournal.service.UpdateService;
-import io.github.foodjournal.service.TelegramInboxWorker;
-import io.github.foodjournal.service.OutboundTelegramDispatcher;
+import io.github.foodjournal.messaging.InboundMessage;
+import io.github.foodjournal.messaging.MessagingDispatcher;
+import io.github.foodjournal.messaging.MessagingIngressService;
+import io.github.foodjournal.messaging.MessagingInboxWorker;
+import java.time.Duration;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class TerminalConversationTest {
-  @Test void wrapsTerminalTextInAnAllowlistedSyntheticTelegramUpdate() throws Exception {
-    UpdateService updates=mock(UpdateService.class); TelegramInboxWorker inbox=mock(TelegramInboxWorker.class); OutboundTelegramDispatcher outbox=mock(OutboundTelegramDispatcher.class); TerminalTelegramGateway gateway=new TerminalTelegramGateway(); AtomicLong updateId=new AtomicLong();
-    doAnswer(call->{updateId.set(call.<io.github.foodjournal.telegram.TelegramUpdate>getArgument(0).update_id());return null;}).when(updates).enqueue(any());
-    doAnswer(call->{gateway.sendTerminalMessage(42,"Saved.",updateId.get());return null;}).when(outbox).dispatch();
-    TerminalConversation chat=new TerminalConversation(updates,inbox,outbox,gateway,new TerminalTraceCollector(),new TerminalProperties(42,"Local",null,null),props(42));
+  @Test void wrapsTerminalTextInAnAllowlistedSyntheticMessage() throws Exception {
+    MessagingIngressService ingress=mock(MessagingIngressService.class); MessagingInboxWorker inbox=mock(MessagingInboxWorker.class); MessagingDispatcher outbox=mock(MessagingDispatcher.class); TerminalFrontend frontend=new TerminalFrontend();
+    doAnswer(call->{frontend.send("42","Saved."); return null;}).when(outbox).dispatch();
+    TerminalConversation chat=new TerminalConversation(ingress,inbox,outbox,frontend,new TerminalTraceCollector(),new TerminalProperties(42,"Local",null,null),props(42));
 
     TerminalConversation.Result result=chat.send("two eggs");
 
-    ArgumentCaptor<io.github.foodjournal.telegram.TelegramUpdate> captured=ArgumentCaptor.forClass(io.github.foodjournal.telegram.TelegramUpdate.class);
-    verify(updates).enqueue(captured.capture());
-    assertThat(captured.getValue().message().text()).isEqualTo("two eggs");
-    assertThat(captured.getValue().message().from().id()).isEqualTo(42L);
+    ArgumentCaptor<InboundMessage> captured=ArgumentCaptor.forClass(InboundMessage.class);
+    verify(ingress).accept(captured.capture());
+    assertThat(captured.getValue().provider()).isEqualTo("terminal");
+    assertThat(captured.getValue().text()).isEqualTo("two eggs");
+    assertThat(captured.getValue().userId()).isEqualTo("42");
     assertThat(result.reply()).isEqualTo("Saved.");
   }
 
   @Test void rejectsATerminalUserOutsideTheTelegramAllowlist() {
-    assertThatThrownBy(()->new TerminalConversation(mock(UpdateService.class),mock(TelegramInboxWorker.class),mock(OutboundTelegramDispatcher.class),new TerminalTelegramGateway(),new TerminalTraceCollector(),new TerminalProperties(42,"Local",null,null),props(7))).isInstanceOf(IllegalStateException.class).hasMessageContaining("ALLOWED_TELEGRAM_USER_IDS");
+    assertThatThrownBy(()->new TerminalConversation(mock(MessagingIngressService.class),mock(MessagingInboxWorker.class),mock(MessagingDispatcher.class),new TerminalFrontend(),new TerminalTraceCollector(),new TerminalProperties(42,"Local",null,null),props(7))).isInstanceOf(IllegalStateException.class).hasMessageContaining("ALLOWED_TELEGRAM_USER_IDS");
   }
 
-  @Test void deliversRepliesToTheirMatchingSyntheticUpdateWhenAnOlderDeliveryIsQueued() throws Exception {
-    TerminalTelegramGateway gateway=new TerminalTelegramGateway();
-    gateway.sendTerminalMessage(42,"older",100L); gateway.sendTerminalMessage(42,"current",200L);
+  @Test void resetDiscardsAStaleQueuedDeliveryBeforeTheNextSend() throws Exception {
+    TerminalFrontend frontend=new TerminalFrontend();
+    frontend.send("42","stale reply from a previous turn");
 
-    assertThat(gateway.await(200L,java.time.Duration.ofSeconds(1)).text()).isEqualTo("current");
-    assertThat(gateway.await(100L,java.time.Duration.ofSeconds(1)).text()).isEqualTo("older");
+    frontend.reset();
+
+    assertThat(frontend.awaitReply(Duration.ofMillis(50))).isNull();
   }
 
   private BotProperties props(long user) { return new BotProperties("token","secret",Set.of(user),"Europe/Bucharest","key","test"); }
