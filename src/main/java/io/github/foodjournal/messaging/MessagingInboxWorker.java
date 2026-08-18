@@ -30,6 +30,7 @@ public class MessagingInboxWorker {
   private final FoodMediaExtractor media;
   private final OpenAiVoiceTranscriber voice;
   private final MessagingDailyStatusService status;
+  private final ConversationMemoryService memory;
 
   public MessagingInboxWorker(
       MessagingInboxRepository inbox,
@@ -44,7 +45,8 @@ public class MessagingInboxWorker {
       FrontendRegistry frontends,
       FoodMediaExtractor media,
       OpenAiVoiceTranscriber voice,
-      MessagingDailyStatusService status) {
+      MessagingDailyStatusService status,
+      ConversationMemoryService memory) {
     this.inbox = inbox;
     this.identities = identities;
     this.routes = routes;
@@ -58,6 +60,7 @@ public class MessagingInboxWorker {
     this.media = media;
     this.voice = voice;
     this.status = status;
+    this.memory = memory;
   }
 
   @Scheduled(fixedDelayString = "${food-journal.inbox-delay-ms:500}")
@@ -132,6 +135,7 @@ public class MessagingInboxWorker {
     long legacyId = identity.getUser().getTelegramUserId();
     String finalText = text;
     String response = MessagingExecutionContext.run(() -> journal.handle(legacyId, legacyId, message.displayName(), finalText));
+    memory.recordTurn(identity.getUser(), finalText, response);
     status.refresh(identity.getUser(), message.provider(), message.conversationId());
     reply(message, response);
   }
