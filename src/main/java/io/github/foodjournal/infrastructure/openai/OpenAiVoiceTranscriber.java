@@ -13,12 +13,10 @@ import org.springframework.web.client.*;
 @Component
 public class OpenAiVoiceTranscriber implements VoiceTranscriber {
   private static final int MAX_VOICE_BYTES=20_000_000;
-  private final RestClient openai;private final BotProperties properties;private final TelegramVoiceMediaClient media;
-  @Autowired public OpenAiVoiceTranscriber(RestClient.Builder builder,BotProperties properties,TelegramVoiceMediaClient media){this(builder.baseUrl("https://api.openai.com/v1").build(),properties,media);}
-  OpenAiVoiceTranscriber(RestClient openai,BotProperties properties){this(openai,properties,null);}
-  OpenAiVoiceTranscriber(RestClient openai,BotProperties properties,TelegramVoiceMediaClient media){this.openai=openai;this.properties=properties;this.media=media;}
-  @Override public String transcribe(String telegramFileId,String mimeType){if(media==null)throw failure(MediaProcessingException.Category.NOT_CONFIGURED,"Telegram media download is not configured");try(TransientVoicePayload payload=media.download(telegramFileId)){return transcribe(payload.bytes(),mimeType);}catch(MediaProcessingException expected){throw expected;}catch(RuntimeException failure){throw failure(MediaProcessingException.Category.TELEGRAM_DOWNLOAD,"Telegram media download failed",failure);}}
-  public String transcribe(byte[] bytes,String mimeType){
+  private final RestClient openai;private final BotProperties properties;
+  @Autowired public OpenAiVoiceTranscriber(RestClient.Builder builder,BotProperties properties){this(builder.baseUrl("https://api.openai.com/v1").build(),properties);}
+  OpenAiVoiceTranscriber(RestClient openai,BotProperties properties){this.openai=openai;this.properties=properties;}
+  @Override public String transcribe(byte[] bytes,String mimeType){
     if(properties.openaiApiKey()==null||properties.openaiApiKey().isBlank())throw failure(MediaProcessingException.Category.NOT_CONFIGURED,"OpenAI transcription is not configured");
     if(bytes==null||bytes.length==0||bytes.length>MAX_VOICE_BYTES)throw failure(MediaProcessingException.Category.INVALID_MEDIA,"Voice note is invalid");
     MultiValueMap<String,Object> form=new LinkedMultiValueMap<>();form.add("model",properties.openaiTranscriptionModel());HttpHeaders headers=new HttpHeaders();headers.setContentType(mediaType(mimeType));form.add("file",new HttpEntity<>(new ByteArrayResource(bytes){@Override public String getFilename(){return "voice.ogg";}},headers));

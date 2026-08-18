@@ -83,7 +83,10 @@ public class MessagingInboxWorker {
   }
 
   private void process(InboundMessage message) {
-    if (!allowed(message)) return;
+    if (!allowed(message)) {
+      log.warn("Dropping message from disallowed sender: provider={} userId={}", message.provider(), message.userId());
+      return;
+    }
     String text = message.text() == null ? "" : message.text().trim();
     String caption = message.caption() == null ? "" : message.caption().trim();
     if ("telegram".equals(message.provider()) && "/link".equalsIgnoreCase(text)) {
@@ -102,8 +105,8 @@ public class MessagingInboxWorker {
     }
     MessagingIdentity identity = identities.findByProviderAndExternalUserId(message.provider(), message.userId()).orElse(null);
     if (identity == null) {
-      if ("telegram".equals(message.provider())) {
-        identity = new MessagingIdentity(telegramUser(message), "telegram", message.userId());
+      if ("telegram".equals(message.provider()) || "terminal".equals(message.provider())) {
+        identity = new MessagingIdentity(telegramUser(message), message.provider(), message.userId());
       } else return;
       identities.save(identity);
     }
@@ -119,6 +122,7 @@ public class MessagingInboxWorker {
               : media.extract(payload.bytes(), attachment.mimeType(), attachment.kind() == Attachment.Kind.PHOTO ? FoodMediaType.PHOTO : FoodMediaType.DOCUMENT);
         }
       } catch (Exception failure) {
+        log.error("Media processing failed: provider={} kind={} cause={}", message.provider(), message.attachments().getFirst().kind(), failure.getMessage(), failure);
         reply(message, "I could not analyze that media. Please send clearer media or text.");
         return;
       }
@@ -143,6 +147,7 @@ public class MessagingInboxWorker {
     return switch (message.provider()) {
       case "telegram" -> properties.telegram().enabled() && properties.telegram().allowedUserIds().contains(message.userId());
       case "mattermost" -> properties.mattermost().enabled() && properties.mattermost().allowedUserIds().contains(message.userId());
+      case "terminal" -> true;
       default -> false;
     };
   }

@@ -2,9 +2,12 @@ package io.github.foodjournal.terminal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.foodjournal.service.*;
-import io.github.foodjournal.telegram.*;
+import io.github.foodjournal.messaging.InboundMessage;
+import io.github.foodjournal.messaging.MessagingDispatcher;
+import io.github.foodjournal.messaging.MessagingIngressService;
+import io.github.foodjournal.messaging.MessagingInboxWorker;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,16 +23,15 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class TerminalPipelinePostgresTest {
   @Container static final PostgreSQLContainer<?> postgres=new PostgreSQLContainer<>("postgres:17-alpine");
   @DynamicPropertySource static void database(DynamicPropertyRegistry registry) { registry.add("spring.datasource.url",postgres::getJdbcUrl); registry.add("spring.datasource.username",postgres::getUsername); registry.add("spring.datasource.password",postgres::getPassword); }
-  @Autowired UpdateService updates; @Autowired TelegramInboxWorker inbox; @Autowired OutboundTelegramDispatcher outbox; @Autowired TerminalTelegramGateway terminal;
+  @Autowired MessagingIngressService ingress; @Autowired MessagingInboxWorker inbox; @Autowired MessagingDispatcher outbox; @Autowired TerminalFrontend frontend;
 
-  @Test void syntheticTerminalUpdateTravelsThroughInboxWorkerAndOutbox() throws Exception {
-    long updateId=9001L;
-    updates.enqueue(new TelegramUpdate(updateId,new TelegramMessage(updateId,new TelegramChat(42L),new TelegramUser(42L,"Local"),"/start",null,null,null),null));
+  @Test void syntheticTerminalMessageTravelsThroughInboxWorkerAndOutbox() throws Exception {
+    ingress.accept(new InboundMessage("terminal","9001","42","42","Local",null,"/start",null,List.of()));
 
     inbox.dispatch(); outbox.dispatch();
 
-    TerminalTelegramGateway.Delivery reply=terminal.await(updateId,Duration.ofSeconds(1));
+    String reply=frontend.awaitReply(Duration.ofSeconds(1));
     assertThat(reply).isNotNull();
-    assertThat(reply.text()).contains("IANA");
+    assertThat(reply).contains("IANA");
   }
 }

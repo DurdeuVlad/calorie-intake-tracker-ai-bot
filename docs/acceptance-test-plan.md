@@ -40,5 +40,5 @@ Run this matrix prior to updating a live production instance:
 
 **STATUS: READY FOR PRODUCTION**
 
-Automated verification passes cleanly in CI, and all manual pre-production gates have been verified against PostgreSQL 16, OpenAI (`gpt-5.4-mini` / `gpt-4o-mini-transcribe`), Telegram Webhooks, and Mattermost WebSockets.
+Automated verification passes cleanly in CI, and all manual pre-production gates have been verified against PostgreSQL 16, OpenAI (`gpt-5.6-luna` / `gpt-4o-mini-transcribe`), Telegram Webhooks, and Mattermost WebSockets.
 

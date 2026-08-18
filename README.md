@@ -15,7 +15,7 @@
 
 - 🚀 **Zero-Friction Logging**: Forget tapping through 10 screens in MyFitnessPal or LoseIt. Send a 5-second voice message, take a picture of your plate, or text *"2 poached eggs on sourdough with avocado"*.
 - 🔒 **100% Private & Self-Hosted**: Run on your own homelab or server. Original audio files, photos, and label documents are processed in-memory and destroyed immediately after extraction. No ad-tracking, no cloud database lock-in.
-- 🧠 **AI Reasoning + Industrial Transaction Safety**: OpenAI (`gpt-5.4-mini` / `gpt-4o-mini-transcribe`) acts strictly as an interpretation engine. Validated Spring Boot domain code owns every PostgreSQL mutation, macro calculation, and schema integrity check.
+- 🧠 **AI Reasoning + Industrial Transaction Safety**: OpenAI (`gpt-5.6-luna` / `gpt-4o-mini-transcribe`) acts strictly as an interpretation engine. Validated Spring Boot domain code owns every PostgreSQL mutation, macro calculation, and schema integrity check.
 - ↩️ **10-Minute Instant Undo**: Made a typo or logged the wrong meal? Just say *"undo that"* or run `/undo` to revert previous message mutations in one click.
 - 🌐 **Telegram & Mattermost Integration**: Use Telegram via webhooks or run privately on Mattermost over **Tailscale Serve**. Seamlessly link identities across frontends with `/link`.
 - 🔍 **Autonomous Tool Ecosystem**: Automatically queries **Open Food Facts API** for official product barcodes, performs self-hosted web search via **SearxNG** for menu nutrition, and scrapes web pages via **Browserless** with strict SSRF guards.
@@ -36,7 +36,7 @@
 **Food Journal Messaging Bot** bridges the gap between natural human conversation and robust, database-backed nutrition tracking:
 
 1. **Natural Language Messaging**: Text, speak, or take a picture of your food in English, Romanian, or mixed language.
-2. **AI Reasoning + Deterministic Execution**: OpenAI (`gpt-5.4-mini` / `gpt-4o-mini-transcribe`) acts strictly as an interpretation engine. It invokes structured tools to look up nutrition, while validated Spring Boot application code owns every database mutation.
+2. **AI Reasoning + Deterministic Execution**: OpenAI (`gpt-5.6-luna` / `gpt-4o-mini-transcribe`) acts strictly as an interpretation engine. It invokes structured tools to look up nutrition, while validated Spring Boot application code owns every database mutation.
 3. **Multi-Frontend Support**: Run over **Telegram** (via HTTPS webhooks) or private **Mattermost** (via WebSocket over Tailscale). Link accounts seamlessly with `/link`.
 4. **Rich Tool Ecosystem**:
    - **Open Food Facts API**: Resolves official barcodes and branded product nutrition.
@@ -54,7 +54,7 @@
 ## Architecture Stack
 
 - **Core**: Java 21, Spring Boot 3.4, PostgreSQL 16+, Flyway Migrations (V1–V17)
-- **AI & Vision**: OpenAI Chat Completions (`gpt-5.4-mini`), OpenAI Audio (`gpt-4o-mini-transcribe`), Vision/Media Extraction
+- **AI & Vision**: OpenAI Chat Completions (`gpt-5.6-luna`), OpenAI Audio (`gpt-4o-mini-transcribe`), Vision/Media Extraction
 - **Integrations**: Open Food Facts API, SearxNG (JSON search API), Browserless (headless chrome fetching)
 - **Frontends**: Telegram Bot Webhook API, Mattermost Client WebSocket Engine, Interactive CLI Terminal
 - **Deployment**: Docker, Docker Compose, Coolify-ready, non-root read-only container architecture

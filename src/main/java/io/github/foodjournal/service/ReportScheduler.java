@@ -16,7 +16,6 @@ public class ReportScheduler {
   private final UserSettingsRepository settings;
   private final FoodEntryRepository entries;
   private final ReportDeliveryRepository deliveries;
-  private final OutboundTelegramMessageRepository legacyOutbound;
   private final MessagingRouteRepository routes;
   private final MessagingOutboundRepository outbound;
   private final Clock clock;
@@ -26,30 +25,23 @@ public class ReportScheduler {
       UserSettingsRepository s,
       FoodEntryRepository e,
       ReportDeliveryRepository d,
-      OutboundTelegramMessageRepository legacy,
       MessagingRouteRepository routes,
       MessagingOutboundRepository outbound) {
-    this.settings = s;
-    this.entries = e;
-    this.deliveries = d;
-    this.legacyOutbound = legacy;
-    this.routes = routes;
-    this.outbound = outbound;
-    this.clock = Clock.systemUTC();
+    this(s, e, d, routes, outbound, Clock.systemUTC());
   }
 
   ReportScheduler(
       UserSettingsRepository s,
       FoodEntryRepository e,
       ReportDeliveryRepository d,
-      OutboundTelegramMessageRepository o,
+      MessagingRouteRepository routes,
+      MessagingOutboundRepository outbound,
       Clock c) {
     this.settings = s;
     this.entries = e;
     this.deliveries = d;
-    this.legacyOutbound = o;
-    this.routes = null;
-    this.outbound = null;
+    this.routes = routes;
+    this.outbound = outbound;
     this.clock = c;
   }
 
@@ -82,10 +74,6 @@ public class ReportScheduler {
         s.getUser(), date.atStartOfDay(z).toInstant(), date.plusDays(1).atStartOfDay(z).toInstant());
     int calories = day.stream().map(FoodEntry::getCalories).filter(Objects::nonNull).mapToInt(Integer::intValue).sum();
     String text = (type.equals("morning") ? "Good morning. " : "Daily summary: ") + day.size() + " meals, " + calories + " kcal logged.";
-    if (routes == null || outbound == null) {
-      legacyOutbound.save(new OutboundTelegramMessage(s.getUser().getTelegramUserId(), text));
-      return;
-    }
     for (MessagingRoute route : routes.findByUser(s.getUser())) {
       outbound.save(new MessagingOutboundMessage(route.getProvider(), route.getConversationId(), text));
     }

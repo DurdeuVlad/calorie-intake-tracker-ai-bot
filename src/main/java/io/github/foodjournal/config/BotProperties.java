@@ -25,7 +25,7 @@ public record BotProperties(
     webhookSecret = webhookSecret == null ? "" : webhookSecret;
     allowedTelegramUserIds = allowedTelegramUserIds == null ? Set.of() : Set.copyOf(allowedTelegramUserIds);
     defaultTimezone = defaultTimezone == null ? "Europe/Bucharest" : defaultTimezone;
-    openaiModel = openaiModel == null ? "gpt-5.4-mini" : openaiModel;
+    openaiModel = openaiModel == null ? "gpt-5.6-luna" : openaiModel;
     agentMaxToolCalls = agentMaxToolCalls <= 0 ? 10 : Math.min(agentMaxToolCalls, 10);
     openaiTranscriptionModel = openaiTranscriptionModel == null || openaiTranscriptionModel.isBlank() ? "gpt-4o-mini-transcribe" : openaiTranscriptionModel;
     openFoodFactsBaseUrl = openFoodFactsBaseUrl == null || openFoodFactsBaseUrl.isBlank()

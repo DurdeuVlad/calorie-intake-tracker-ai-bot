@@ -11,19 +11,11 @@ import org.springframework.web.client.*;
 @Component
 public class OpenAiFoodMediaExtractor implements FoodMediaExtractor {
   private static final int MAX_MEDIA_BYTES=20_000_000;
-  private final TelegramVoiceMediaClient media;
   private final RestClient openai;
   private final BotProperties properties;
 
-  @Autowired public OpenAiFoodMediaExtractor(TelegramVoiceMediaClient media,RestClient.Builder builder,BotProperties properties){this(media,builder.baseUrl("https://api.openai.com/v1").build(),properties);}
-  OpenAiFoodMediaExtractor(TelegramVoiceMediaClient media,RestClient openai,BotProperties properties){this.media=media;this.openai=openai;this.properties=properties;}
-
-  @Override public String extract(String telegramFileId,String mimeType,FoodMediaType type){
-    supportedMimeType(mimeType,type);
-    try(TransientVoicePayload payload=media.download(telegramFileId)){return extract(payload.bytes(),mimeType,type);}
-    catch(MediaProcessingException expected){throw expected;}
-    catch(RuntimeException failure){throw failure(MediaProcessingException.Category.TELEGRAM_DOWNLOAD,"Telegram media download failed",failure);}
-  }
+  @Autowired public OpenAiFoodMediaExtractor(RestClient.Builder builder,BotProperties properties){this(builder.baseUrl("https://api.openai.com/v1").build(),properties);}
+  OpenAiFoodMediaExtractor(RestClient openai,BotProperties properties){this.openai=openai;this.properties=properties;}
 
   @Override public String extract(byte[] bytes,String mimeType,FoodMediaType type){
     if(properties.openaiApiKey()==null||properties.openaiApiKey().isBlank())throw failure(MediaProcessingException.Category.NOT_CONFIGURED,"OpenAI media extraction is not configured");
