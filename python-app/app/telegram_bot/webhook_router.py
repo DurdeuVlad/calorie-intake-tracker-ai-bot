@@ -51,7 +51,7 @@ def _to_inbound_message(update: Update) -> InboundMessage | None:
     )
 
 
-@router.post("/telegram/webhook")
+@router.post("/webhook")
 async def telegram_webhook(
     request: Request,
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
