@@ -72,6 +72,11 @@ jobs:
           ALLOWED_TELEGRAM_USER_IDS: '1'
           OPENAI_API_KEY: ci-openai-key
         run: docker compose up --build --detach
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install alembic (setup_test_db.sh runs it on the runner, not in the container)
+        run: pip install --no-cache-dir .
       - name: Apply the real schema to the compose Postgres (same DB the app talks to)
         env:
           PGHOST: localhost
