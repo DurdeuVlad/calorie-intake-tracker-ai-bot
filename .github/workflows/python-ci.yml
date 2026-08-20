@@ -1,0 +1,122 @@
+name: Python CI
+
+on:
+  pull_request:
+    paths:
+      - 'python-app/**'
+      - 'src/main/resources/db/migration/**'
+      - '.github/workflows/python-ci.yml'
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: python-app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: foodjournal
+          POSTGRES_USER: foodjournal
+          POSTGRES_PASSWORD: foodjournal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U foodjournal -d foodjournal"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install --no-cache-dir '.[dev]'
+      - name: Set up test database (replays the real Flyway V1-V17 schema, never Base.metadata.create_all)
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: foodjournal
+          PGPASSWORD: foodjournal
+          PGDATABASE: foodjournal
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+          bash scripts/setup_test_db.sh
+      - name: Run tests
+        env:
+          DATABASE_URL: jdbc:postgresql://localhost:5432/foodjournal
+          DATABASE_USERNAME: foodjournal
+          DATABASE_PASSWORD: foodjournal
+          ALLOWED_TELEGRAM_USER_IDS: '1'
+        run: pytest -q
+
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container
+        run: docker build --tag food-journal-python:${{ github.sha }} .
+      - name: Start compose stack
+        env:
+          DATABASE_PASSWORD: ci-password
+          TELEGRAM_BOT_TOKEN: ci-token-not-a-secret
+          TELEGRAM_WEBHOOK_SECRET: ci-webhook-secret
+          ALLOWED_TELEGRAM_USER_IDS: '1'
+          OPENAI_API_KEY: ci-openai-key
+        run: docker compose up --build --detach
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install alembic (setup_test_db.sh runs it on the runner, not in the container)
+        run: pip install --no-cache-dir .
+      - name: Apply the real schema to the compose Postgres (same DB the app talks to)
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: foodjournal
+          PGPASSWORD: ci-password
+          PGDATABASE: foodjournal
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+          bash scripts/setup_test_db.sh
+      - name: Verify health endpoints
+        env:
+          DATABASE_PASSWORD: ci-password
+          TELEGRAM_BOT_TOKEN: ci-token-not-a-secret
+          TELEGRAM_WEBHOOK_SECRET: ci-webhook-secret
+          ALLOWED_TELEGRAM_USER_IDS: '1'
+          OPENAI_API_KEY: ci-openai-key
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:8080/health && docker compose exec -T app python -c "import urllib.request; urllib.request.urlopen('http://localhost:8081/health/readiness').read()"; then exit 0; fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - name: Compose cleanup
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  security-scan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan repository dependencies and configuration
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: python-app
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
