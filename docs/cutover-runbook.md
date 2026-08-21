@@ -11,7 +11,7 @@ Before registering the live webhook or enabling user traffic, ensure all prerequ
 - [x] Protected `master` commit passed all automated Maven and Docker CI checks.
 - [x] PostgreSQL 16 database provisioned with persistent storage volume and daily backup schedule configured.
 - [x] High-entropy `TELEGRAM_WEBHOOK_SECRET` generated.
-- [x] Numeric Telegram user IDs configured in `ALLOWED_TELEGRAM_USER_IDS`.
+- [ ] Bootstrap administrator ID configured in `ADMIN_TELEGRAM_USER_IDS`; keep the old `ALLOWED_TELEGRAM_USER_IDS` only until its grants are migrated.
 - [x] Valid `OPENAI_API_KEY` supplied.
 - [x] Public HTTPS endpoint (Coolify, Caddy, Traefik, or Cloudflare Tunnel) configured to forward `/telegram/webhook` to app port `8080`.
 
@@ -65,4 +65,3 @@ If an operational anomaly occurs post-cutover:
    ```
 2. **Preserve PostgreSQL Volume**: Do **NOT** drop PostgreSQL database volumes or delete Flyway migration history during incident handling.
 3. **Inspect Outbox & Logs**: Query `processed_updates`, `messaging_outbound_messages`, and application logs to diagnose issues.
-

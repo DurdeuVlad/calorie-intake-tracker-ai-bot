@@ -19,6 +19,11 @@ This guide outlines how to deploy **Food Journal Messaging Bot** on a self-hoste
 - Select **New Resource** -> **Application** -> **GitHub Repository**.
 - Select the `calorie-intake-tracker-ai-bot` repository and the `master` branch.
 - Choose **Dockerfile** as the build mechanism.
+- For the Python cutover, set the application **Base Directory / Build Context** to
+  `/python-app` and the **Dockerfile** to `Dockerfile` (relative to that directory).
+  This makes Coolify build `python-app/Dockerfile` while leaving the root Java
+  `Dockerfile` intact for the legacy implementation. Do not point Coolify at the
+  repository root until the Java-to-Python cutover has been intentionally completed.
 
 ### 2. Configure Environment Variables
 In the Coolify Application Environment settings, populate all required variables (see [Configuration Reference](configuration.md)):
@@ -30,7 +35,7 @@ DATABASE_PASSWORD=your-secure-db-password
 
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
 TELEGRAM_WEBHOOK_SECRET=your-random-webhook-secret
-ALLOWED_TELEGRAM_USER_IDS=123456789,987654321
+ADMIN_TELEGRAM_USER_IDS=123456789
 
 OPENAI_API_KEY=sk-proj-...
 OPENAI_MODEL=gpt-5.6-luna
@@ -40,18 +45,34 @@ DEFAULT_TIMEZONE=Europe/Bucharest
 ```
 
 ### 3. Health Check Configuration
-Configure Coolify liveness/readiness health probes to point to the Spring Actuator port:
+Configure Coolify liveness/readiness health probes to point to the Python management port:
 - **Port**: `8081`
-- **Path**: `/actuator/health/readiness`
+- **Path**: `/health/readiness`
 - **Interval**: `10s`
 
-### 4. Deploy & Verify Flyway Migrations
+### 4. Deploy & Verify Alembic Migrations
 - Click **Deploy** in Coolify.
-- Monitor application logs to confirm Flyway migration execution:
+- After the container is running, run `alembic upgrade head` once against the
+  shared database (from the app container or a one-off migration job). If this
+  is the first Python deployment and the database is still stamped at the
+  baseline, this applies the persistent Telegram access-grants migration.
+- Monitor application logs to confirm the container starts and the existing PostgreSQL
+  schema is compatible. The Python image does not run the Java Flyway migrations;
+  its baseline Alembic revision is intentionally a no-op against the existing V1–V17
+  schema. Apply future Python migrations through the normal Alembic migration process.
+  Verify readiness with:
   ```text
-  Successfully applied 17 migrations to schema "public"
+  GET http://<internal-host>:8081/health/readiness
   ```
-- Confirm readiness check passes (`UP`).
+- Confirm readiness returns a healthy status before registering the webhook.
+
+The old `ALLOWED_TELEGRAM_USER_IDS` value is used only during migration to
+preserve existing users. Set `ADMIN_TELEGRAM_USER_IDS` to the initial admin ID(s)
+before the first Python deployment, then remove the deprecated allowlist after
+confirming the grants table contains the expected users. In a private Telegram
+chat, administrators can use `/adduser <numeric-id>` and `/removeuser
+<numeric-id>`; these commands are ignored as management operations in group
+chats and never echo user IDs.
 
 ### 5. Register Telegram Webhook
 Once Coolify provisions the public HTTPS URL (e.g., `https://foodbot.yourdomain.com`), set your Telegram bot webhook:
@@ -60,7 +81,7 @@ Once Coolify provisions the public HTTPS URL (e.g., `https://foodbot.yourdomain.
 curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
      -H "Content-Type: application/json" \
      -d '{
-           "url": "https://foodbot.yourdomain.com/telegram/webhook",
+           "url": "https://foodbot.yourdomain.com/webhook",
            "secret_token": "<TELEGRAM_WEBHOOK_SECRET>"
          }'
 ```
@@ -84,5 +105,4 @@ In the repository's GitHub webhook settings, set this URL, content type `applica
 ## Operations & Upgrades
 
 - **Stateless App Container**: The application container is non-root and read-only with a temporary `/tmp` mount. All persistent state lives in PostgreSQL.
-- **Upgrades**: Pushing updates to `master` triggers zero-downtime redeployments in Coolify. Flyway executes new migrations automatically upon startup.
-
+- **Upgrades**: Pushing updates to `master` triggers zero-downtime redeployments in Coolify. Keep the Python application context and health-check settings attached to the Coolify application when upgrading.

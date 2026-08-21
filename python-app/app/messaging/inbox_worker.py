@@ -14,9 +14,11 @@ from app.messaging import execution_context, ingress, outbox
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import AttachmentKind, InboundMessage
 from app.repositories import messaging_identity_repo
+from app.repositories import telegram_access_repo
 from app.repositories.food_user_repo import get_or_create_by_telegram_user_id
 from app.repositories.messaging_inbox_repo import lock_ready
 from app.services import message_link_service, messaging_daily_status_service
+from app.services import telegram_admin_service
 from app.services.conversation_memory_service import record_turn
 from app.services.journal_application_service import JournalApplicationService
 
@@ -31,9 +33,12 @@ class InboxWorkerDeps:
     media: OpenAiFoodMediaExtractor | None = None
 
 
-def allowed(message: InboundMessage, settings: Settings) -> bool:
+async def allowed(session, message: InboundMessage, settings: Settings) -> bool:
     if message.provider == "telegram":
-        return settings.telegram_frontend_enabled and message.user_id in settings.allowed_telegram_user_id_set
+        if not settings.telegram_frontend_enabled:
+            return False
+        await telegram_access_repo.seed_bootstrap_grants(session, settings)
+        return await telegram_access_repo.allowed(session, int(message.user_id))
     if message.provider == "mattermost":
         return settings.mattermost_enabled and message.user_id in settings.allowed_mattermost_user_id_set
     if message.provider == "terminal":
@@ -77,12 +82,23 @@ async def _extract_media_text(deps: InboxWorkerDeps, message: InboundMessage) ->
 
 
 async def handle_message(session, message: InboundMessage, settings: Settings, deps: InboxWorkerDeps) -> None:
-    if not allowed(message, settings):
+    if not await allowed(session, message, settings):
         logger.warning("Dropping message from disallowed sender: provider=%s user_id=%s", message.provider, message.user_id)
         return
 
     text = (message.text or "").strip()
     caption = (message.caption or "").strip()
+
+    if message.provider == "telegram":
+        admin_response = await telegram_admin_service.handle_command(
+            session,
+            text,
+            int(message.user_id),
+            message.conversation_id == message.user_id,
+        )
+        if admin_response is not None:
+            await outbox.reply(session, message.provider, message.conversation_id, admin_response)
+            return
 
     if message.provider == "telegram" and text.lower() == "/link":
         user = await resolve_identity_user(session, message, deps.journal.default_timezone)

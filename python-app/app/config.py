@@ -12,6 +12,9 @@ class TelegramFrontendSettings(BaseSettings):
 
     telegram_frontend_enabled: bool = Field(default=True, alias="TELEGRAM_FRONTEND_ENABLED")
     allowed_telegram_user_ids: str = Field(default="", alias="ALLOWED_TELEGRAM_USER_IDS")
+    # Bootstrap-only administrator IDs. Runtime access is stored in Postgres;
+    # this value is used to seed/reassert administrators during deployment.
+    admin_telegram_user_ids: str = Field(default="", alias="ADMIN_TELEGRAM_USER_IDS")
 
     @property
     def allowed_user_ids(self) -> set[str]:
@@ -53,6 +56,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_webhook_secret: str = Field(default="", alias="TELEGRAM_WEBHOOK_SECRET")
     allowed_telegram_user_ids: str = Field(default="", alias="ALLOWED_TELEGRAM_USER_IDS")
+    admin_telegram_user_ids: str = Field(default="", alias="ADMIN_TELEGRAM_USER_IDS")
     default_timezone: str = Field(default="Europe/Bucharest", alias="DEFAULT_TIMEZONE")
 
     # OpenAI
@@ -94,6 +98,10 @@ class Settings(BaseSettings):
     @property
     def allowed_telegram_user_id_set(self) -> set[str]:
         return {v.strip() for v in self.allowed_telegram_user_ids.split(",") if v.strip()}
+
+    @property
+    def admin_telegram_user_id_set(self) -> set[str]:
+        return {v.strip() for v in self.admin_telegram_user_ids.split(",") if v.strip()}
 
     @property
     def allowed_mattermost_user_id_set(self) -> set[str]:

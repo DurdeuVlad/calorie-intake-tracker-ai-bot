@@ -75,7 +75,7 @@ Key required variables:
 - `DATABASE_PASSWORD`: Strong password for PostgreSQL.
 - `TELEGRAM_BOT_TOKEN`: Token from [@BotFather](https://t.me/BotFather).
 - `TELEGRAM_WEBHOOK_SECRET`: High-entropy random secret header for webhook verification.
-- `ALLOWED_TELEGRAM_USER_IDS`: Comma-separated list of authorized numeric Telegram user IDs.
+- `ADMIN_TELEGRAM_USER_IDS`: Comma-separated bootstrap administrator Telegram IDs. Runtime user access is stored in PostgreSQL and managed with private-chat `/adduser <id>` and `/removeuser <id>` commands.
 - `OPENAI_API_KEY`: OpenAI secret API key.
 
 ### 2. Run with Docker Compose
@@ -138,4 +138,3 @@ Type natural language meals directly into the CLI console. Use `:help`, `:trace 
 ## License
 
 [MIT License](LICENSE).
-

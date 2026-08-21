@@ -22,7 +22,8 @@ All application settings are declared via environment variables or standard Spri
 | --- | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | Yes (if Telegram enabled) | *(none)* | Bot token provided by [@BotFather](https://t.me/BotFather). |
 | `TELEGRAM_WEBHOOK_SECRET` | Yes (if Telegram enabled) | *(none)* | High-entropy string expected in `X-Telegram-Bot-Api-Secret-Token` header. |
-| `ALLOWED_TELEGRAM_USER_IDS` | Yes (if Telegram enabled) | *(empty)* | Comma-separated list of allowed numeric Telegram user IDs. |
+| `ADMIN_TELEGRAM_USER_IDS` | Yes (if Telegram enabled) | *(empty)* | Comma-separated numeric Telegram IDs used only to bootstrap persistent administrators. |
+| `ALLOWED_TELEGRAM_USER_IDS` | Migration only | *(empty)* | Deprecated legacy allowlist imported into persistent grants during migration. Remove after migration. |
 | `TELEGRAM_FRONTEND_ENABLED` | No | `true` | Set `false` to disable the Telegram webhook adapter. |
 
 ---
@@ -94,4 +95,3 @@ All application settings are declared via environment variables or standard Spri
 1. **Never Commit Secrets**: Never commit `.env` files, production credentials, API keys, or Telegram bot tokens into version control.
 2. **Production Secret Injection**: In production (Docker Compose or Coolify), populate runtime variables strictly through container environment settings or secret vaults.
 3. **Log Protection**: Application logging filters credentials, HTTP headers, raw prompt text, and original user messages.
-

@@ -27,6 +27,19 @@ class MessagingIdentity(Base):
     external_user_id: Mapped[str] = mapped_column(Text)
 
 
+class TelegramAccessGrant(Base):
+    """Persistent Telegram authorization, independent of journal data."""
+
+    __tablename__ = "telegram_access_grants"
+
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    granted_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column()
+    updated_at: Mapped[datetime] = mapped_column()
+
+
 class MessagingRoute(Base):
     __tablename__ = "messaging_routes"
 

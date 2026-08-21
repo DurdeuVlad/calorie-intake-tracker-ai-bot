@@ -12,6 +12,7 @@ from app.db.models.messaging import (
     MessagingOutboundMessage,
     MessagingRoute,
     PinnedDailyStatus,
+    TelegramAccessGrant,
 )
 from app.db.models.nutrition import NutritionSourceCache, PendingNutritionQuote, PrivateFood
 from app.db.models.reports import ReportDelivery
@@ -30,6 +31,7 @@ __all__ = [
     "MessagingOutboundMessage",
     "MessagingRoute",
     "PinnedDailyStatus",
+    "TelegramAccessGrant",
     "NutritionSourceCache",
     "PendingNutritionQuote",
     "PrivateFood",
