@@ -89,8 +89,9 @@ def tool_definitions() -> list[dict[str, Any]]:
         _tool("select_packaged_food", "Read a server-owned packaged quote before logging it.", _object({"quoteId": _string()}, ["quoteId"])),
         _tool(
             "search_web",
-            "Search the web for nutrition facts not covered by packaged-food search, such as restaurant or menu "
-            "items. Returns up to 5 results with title, url, and snippet. May be unavailable.",
+            "Use this to ground nutrition when no explicit calories or trusted local, private-food, or exact packaged "
+            "result is available. Checks a fresh cache before an outbound query. Search restaurant, menu, product, and "
+            "serving facts. Returns up to 5 results with title, url, and snippet. May be unavailable.",
             _object({"query": _string()}, ["query"]),
         ),
         _tool(
@@ -107,8 +108,9 @@ def tool_definitions() -> list[dict[str, Any]]:
         _tool(
             "apply_journal_actions",
             "Apply independent journal mutations immediately. Each CREATE needs description and either calories or "
-            "quoteId; quantity is optional when calories are explicit. EDIT/MOVE/DELETE need entryId. MOVE also "
-            "needs date. Actions succeed or fail independently and the result reports each outcome.",
+            "quoteId; quantity is optional when calories are explicit. EDIT/MOVE/DELETE need entryId. EDIT calories "
+            "is the entry's replacement total, never an increment or delta. MOVE also needs date. Actions succeed or "
+            "fail independently and the result reports each outcome.",
             _object({"actions": {"type": "array", "minItems": 1, "items": action}}, ["actions"]),
         ),
         _tool(

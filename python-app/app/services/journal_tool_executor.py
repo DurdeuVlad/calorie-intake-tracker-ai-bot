@@ -38,6 +38,12 @@ from app.services import nutrition_resolver
 
 MAX_ACTIONS_PER_BATCH = 20
 MAX_REDIRECTS = 5
+WEB_SEARCH_CACHE_TTL = timedelta(days=1)
+MAX_WEB_SEARCH_CACHE_ENTRIES = 256
+MAX_WEB_SEARCH_QUERY_CHARS = 256
+MAX_WEB_SEARCH_TITLE_CHARS = 256
+MAX_WEB_SEARCH_URL_CHARS = 1024
+MAX_WEB_SEARCH_SNIPPET_CHARS = 1024
 _DATE_WORDS_TODAY = {"today", "azi", "astăzi", "astazi"}
 _DATE_WORDS_YESTERDAY = {"yesterday", "yersterday", "ieri"}
 _VALID_SOURCES = {"manual", "private", "open_food_facts_estimate", "ai_estimate", "mixed"}
@@ -57,6 +63,10 @@ class ValidationError(ValueError):
 def _str(args: dict, key: str) -> str | None:
     value = args.get(key)
     return None if value is None else str(value)
+
+
+def _bounded_text(value: object, limit: int) -> str:
+    return str(value)[:limit]
 
 
 def _int_required(args: dict, key: str) -> int:
@@ -192,6 +202,7 @@ class JournalToolExecutor:
         self.browserless = browserless
         self.refresh_daily_status = refresh_daily_status
         self._http = http
+        self._web_search_cache: dict[str, tuple[datetime, list[dict[str, str]]]] = {}
 
     async def execute(self, session: AsyncSession, context: AgentContext, call: ToolCall, todos: list[str]) -> AgentToolResult:
         try:
@@ -396,13 +407,40 @@ class JournalToolExecutor:
     async def _search_web(self, session, context, args, todos) -> AgentToolResult:
         if self.searxng is None:
             return AgentToolResult.failure("TEMPORARY_FAILURE", "Web search is unavailable.")
-        query = _str(args, "query")
+        raw_query = _str(args, "query")
+        if not raw_query:
+            return AgentToolResult.failure("VALIDATION_ERROR", "A search query is required.")
+        query = " ".join(raw_query.split())
         if not query:
             return AgentToolResult.failure("VALIDATION_ERROR", "A search query is required.")
+        cache_key = query.lower()
+        if len(cache_key) > MAX_WEB_SEARCH_QUERY_CHARS:
+            return AgentToolResult.failure("VALIDATION_ERROR", "The search query is too long.")
+        now = datetime.now(timezone.utc)
+        cached = self._web_search_cache.get(cache_key)
+        if cached is not None and cached[0] > now - WEB_SEARCH_CACHE_TTL:
+            return AgentToolResult.success({"results": cached[1], "cached": True})
+
         results = await self.searxng.search(query)
         if not results:
             return AgentToolResult.failure("NOT_FOUND", "No web results were found.")
-        return AgentToolResult.success({"results": [{"title": r.title, "url": r.url, "snippet": r.snippet} for r in results]})
+        grounded = [
+            {
+                "title": _bounded_text(r.title, MAX_WEB_SEARCH_TITLE_CHARS),
+                "url": _bounded_text(r.url, MAX_WEB_SEARCH_URL_CHARS),
+                "snippet": _bounded_text(r.snippet, MAX_WEB_SEARCH_SNIPPET_CHARS),
+            }
+            for r in results[:5]
+        ]
+        if len(self._web_search_cache) >= MAX_WEB_SEARCH_CACHE_ENTRIES:
+            expired = [key for key, (cached_at, _) in self._web_search_cache.items() if cached_at <= now - WEB_SEARCH_CACHE_TTL]
+            for key in expired:
+                self._web_search_cache.pop(key, None)
+            if len(self._web_search_cache) >= MAX_WEB_SEARCH_CACHE_ENTRIES:
+                oldest_key = min(self._web_search_cache, key=lambda key: self._web_search_cache[key][0])
+                self._web_search_cache.pop(oldest_key, None)
+        self._web_search_cache[cache_key] = (now, grounded)
+        return AgentToolResult.success({"results": grounded, "cached": False})
 
     def _is_safe_external_url(self, url: str) -> bool:
         try:
