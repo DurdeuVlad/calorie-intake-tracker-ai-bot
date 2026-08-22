@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.language import is_romanian
 from app.db.models.users import FoodUser, UserSettings
 from app.domain.agent_types import AgentContext
-from app.repositories import food_entry_repo, food_user_repo
+from app.repositories import food_entry_repo, food_user_repo, telegram_access_repo
 
 MIN_CALORIE_TARGET = 1200
 MAX_CALORIE_TARGET = 5000
@@ -108,7 +108,7 @@ async def _today_text(session, user: FoodUser, settings: UserSettings, romanian:
     return f"Today: {calories} kcal" + ("." if target is None else f" of {target} kcal.")
 
 
-async def command(session, user: FoodUser, settings: UserSettings, raw: str, romanian: bool) -> str:
+async def command(session, user: FoodUser, settings: UserSettings, raw: str, romanian: bool, is_admin: bool = False) -> str:
     cmd = raw.strip().lower().split(maxsplit=1)[0]
     if cmd == "/start":
         if settings.onboarding_completed:
@@ -119,14 +119,15 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
             )
         return onboarding_prompt(settings, romanian)
     if cmd == "/help":
+        admin_commands = "\n\nAdmin commands: /adduser TELEGRAM_ID, /removeuser TELEGRAM_ID" if is_admin else ""
         return (
             "Pot nota mai multe mese dintr-un singur mesaj, inclusiv pe zile trecute; pot estima nutriția, muta, corecta "
             "sau șterge direct și poți folosi Undo timp de 10 minute.\n\nComenzi: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy"
+            "/settings, /cancel, /privacy" + admin_commands
             if romanian
             else "I can log several meals from one message, including past dates; estimate nutrition; and move, edit, "
             "or delete entries immediately with a 10-minute Undo window.\n\nCommands: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy"
+            "/settings, /cancel, /privacy" + admin_commands
         )
     if cmd in ("/today", "/report"):
         return await _today_text(session, user, settings, romanian)
@@ -167,7 +168,12 @@ class JournalApplicationService:
 
         if message.startswith("/"):
             romanian = settings.preferred_language == "ro"
-            return await command(session, user, settings, message, romanian)
+            is_private_admin = (
+                user.telegram_user_id is not None
+                and chat_id == str(user.telegram_user_id)
+                and await telegram_access_repo.is_admin(session, user.telegram_user_id)
+            )
+            return await command(session, user, settings, message, romanian, is_private_admin)
 
         romanian = is_romanian(message)
         settings.set_preferred_language("ro" if romanian else "en")
