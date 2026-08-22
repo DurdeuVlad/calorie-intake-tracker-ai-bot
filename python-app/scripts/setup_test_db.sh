@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Bootstraps a Postgres database with the REAL schema by replaying the actual
 # Flyway V1..V17 SQL files from the Java app (src/main/resources/db/migration),
-# then stamps Alembic as already-at-baseline. There is no schema-creating
-# Alembic revision -- only a no-op baseline stamp -- so `alembic upgrade head`
-# must never be run against an empty database; this script is the only
-# supported way to provision a schema for local dev or CI.
+# then applies the Alembic revisions layered on top of that baseline. The
+# baseline revision is a no-op; subsequent revisions contain Python-service
+# schema changes and must be applied for local dev and CI.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,8 +38,8 @@ for n in $(seq 1 17); do
   psql -v ON_ERROR_STOP=1 -q -f "$file"
 done
 
-echo "Stamping Alembic baseline (no schema-creating migration is ever run)"
+echo "Applying Alembic revisions layered on top of the Flyway baseline"
 cd "$APP_DIR"
-alembic stamp head
+alembic upgrade head
 
 echo "Test database ready."
