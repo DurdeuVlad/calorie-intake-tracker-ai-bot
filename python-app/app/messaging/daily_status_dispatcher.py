@@ -1,7 +1,15 @@
 """Provider-neutral daily-status text dispatch, ported from
-MessagingDailyStatusDispatcher.java. Errors are only logged (row stays dirty
-and retries on the next tick -- no lease/backoff bookkeeping here, matching
-the Java predecessor exactly)."""
+MessagingDailyStatusDispatcher.java. On failure the row is marked not-dirty
+(see MessagingDailyStatus.retry()) instead of retried in a tight loop: the
+Java predecessor's @Scheduled(fixedDelay=...) gave every retry attempt a
+natural floor of one tick, but asyncio's run_forever() here only sleeps when
+nothing was claimed, so a persistently failing row was retried as fast as the
+DB round-trip and Telegram call allowed -- unbounded, with no backoff. That
+turned an occasional flood-control response into a runaway loop that
+exhausted the bot's global Telegram rate limit and delayed delivery for every
+other chat. Giving up on failure (mirroring PinnedDailyStatus.retry()) is
+safe here because refresh() re-marks the row dirty with fresh text on the
+very next inbound message from that user."""
 
 import asyncio
 import logging
@@ -32,6 +40,7 @@ async def dispatch_once(registry: FrontendRegistry) -> bool:
                 status.delivered(status.remote_message_id)
         except Exception as failure:  # noqa: BLE001
             logger.error("Failed to dispatch daily status: %s", failure)
+            status.retry()
         await session.commit()
     return True
 

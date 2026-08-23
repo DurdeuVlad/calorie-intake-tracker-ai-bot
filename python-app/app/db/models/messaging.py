@@ -150,6 +150,15 @@ class MessagingDailyStatus(Base):
         self.text = text
         self.dirty = True
 
+    def retry(self) -> None:
+        """Give up rather than retry in a tight loop, mirroring
+        PinnedDailyStatus.retry(): a persistently failing chat must not spin the
+        dispatcher with zero backoff and exhaust the bot's global Telegram
+        rate-limit budget. The next refresh() call (issued on every inbound
+        message) marks the row dirty again with fresh text, so delivery is
+        naturally retried instead of looped."""
+        self.dirty = False
+
     def delivered(self, remote_message_id: str) -> None:
         self.remote_message_id = remote_message_id
         self.dirty = False
