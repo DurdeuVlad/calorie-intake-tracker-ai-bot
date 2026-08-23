@@ -20,6 +20,14 @@ For local Compose, run `bash docker/backup-postgres.sh` to create a timestamped,
 
 If a credential leaks: rotate it locally (and later in Coolify), invalidate the old Telegram webhook/token where relevant, review logs, and document impact. If duplicate updates occur: preserve the idempotency ledger, pause retries if needed, and diagnose before manual repair.
 
+### 2026-08-23: daily-status flood-control storm delaying all Telegram replies
+
+**Symptom:** replies from the bot arrived with delays ranging from minutes to hours; Grafana/alertmanager reported the service as degraded even though the container was `Up (healthy)` and Coolify itself (proxy, db, redis, sentinel) was fully up.
+
+**Cause:** `daily_status_dispatcher.py` (the provider-neutral per-turn status editor, distinct from the Telegram-only pinned status) left a failed row `dirty=True` on any exception and logged only — no lease or backoff. Its `run_forever()` loop only sleeps when `dispatch_once()` finds nothing to claim, so a persistently failing row (one chat, `EditMessageText` failing repeatedly) was reclaimed and retried on effectively every event-loop tick with no delay. In the Java predecessor this was throttled by `@Scheduled(fixedDelay=...)`, which enforces a floor between invocations regardless of outcome; the asyncio port dropped that floor for the failure path. Over ~2 hours this produced 42,908 failed dispatch attempts against a single chat, which drove Telegram's per-bot flood control from single-digit-second backoffs up to an 86-minute `retry_after` — and because Telegram rate limits are shared per-bot, that storm delayed delivery for every other chat too, not just the stuck one.
+
+**Fix:** `MessagingDailyStatus.retry()` now clears `dirty` on failure instead of leaving the row eligible for immediate reclaim, mirroring the give-up-rather-than-loop-forever semantics `PinnedDailyStatus.retry()` already uses for the same class of problem. This is safe because `messaging_daily_status_service.refresh()` re-marks the row dirty with fresh text on the very next inbound message from that user, so delivery is naturally retried rather than busy-looped. See `app/messaging/daily_status_dispatcher.py` and `app/db/models/messaging.py`.
+
 ## Cutover
 
 Validate the new deployment using a test user, back up legacy data, register the new webhook once, and observe the first scheduled reports. Keep a reversible DNS/application route, but do not run both bot writers against the same user journal.

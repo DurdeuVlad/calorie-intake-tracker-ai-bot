@@ -1,6 +1,9 @@
-"""End-to-end inbox -> outbox pipe test, plus the regression test for the exact
+"""End-to-end inbox -> outbox pipe test, plus regression tests for the exact
 bug that started this rewrite: a failing send must respect next_attempt_at
-backoff, not resend immediately on the very next dispatcher tick."""
+backoff, not resend immediately on the very next dispatcher tick. Also covers
+the daily-status flood-control storm fix (see daily_status_dispatcher.py):
+a failing daily-status edit must give up rather than be reclaimed by the very
+next tick with zero backoff."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -8,10 +11,11 @@ import pytest
 from sqlalchemy import select
 
 from app.db.base import session_scope
-from app.messaging import ingress, inbox_worker, outbox_dispatcher
+from app.db.models.users import FoodUser
+from app.messaging import daily_status_dispatcher, ingress, inbox_worker, outbox_dispatcher
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import InboundMessage
-from app.db.models.messaging import MessagingOutboundMessage
+from app.db.models.messaging import MessagingDailyStatus, MessagingOutboundMessage
 from app.config import get_settings
 
 
@@ -143,3 +147,51 @@ async def test_outbox_truncates_over_limit_text():
     sent_text = frontend.sent[0][1]
     assert len(sent_text) == 4096
     assert sent_text.endswith("[Message truncated]")
+
+
+@pytest.mark.asyncio
+async def test_daily_status_gives_up_instead_of_looping_forever_on_failure():
+    """Regression test for the production flood-control storm this fix
+    addresses: a persistently failing daily-status dispatch must not be
+    reclaimed by the very next dispatcher tick with zero backoff. Before this
+    fix, a failed row stayed dirty forever with no lease/backoff bookkeeping,
+    so run_forever() never slept between attempts (it only sleeps when
+    nothing was claimed) -- an unbounded busy loop that exhausted the bot's
+    global Telegram rate limit and delayed delivery for every other chat."""
+    async with session_scope() as session:
+        user = FoodUser(telegram_user_id=8131572669, display_name="Stuck Chat", created_at=datetime.now(timezone.utc))
+        session.add(user)
+        await session.flush()
+        session.add(
+            MessagingDailyStatus(
+                user_id=user.id, provider="telegram", conversation_id="8131572669", text="Today: 1 entry, 100 kcal logged."
+            )
+        )
+        await session.commit()
+
+    failing_frontend = StubFrontend(fail=True)
+    registry = FrontendRegistry([failing_frontend])
+
+    processed_first = await daily_status_dispatcher.dispatch_once(registry)
+    assert processed_first is True
+
+    async with session_scope() as session:
+        row = (await session.execute(select(MessagingDailyStatus))).scalar_one()
+        assert row.dirty is False  # gave up, rather than staying dirty for an immediate retry
+
+    # Immediately try again -- with dirty cleared, nothing should be claimed.
+    processed_second = await daily_status_dispatcher.dispatch_once(registry)
+    assert processed_second is False
+
+    # A fresh refresh() call (the next inbound message) marks it dirty again
+    # and delivery succeeds normally once the underlying problem clears.
+    working_frontend = StubFrontend(fail=False)
+    registry_ok = FrontendRegistry([working_frontend])
+    async with session_scope() as session:
+        row = (await session.execute(select(MessagingDailyStatus))).scalar_one()
+        row.request("Today: 2 entries, 250 kcal logged.")
+        await session.commit()
+
+    processed_third = await daily_status_dispatcher.dispatch_once(registry_ok)
+    assert processed_third is True
+    assert working_frontend.sent == [("8131572669", "Today: 2 entries, 250 kcal logged.")]
