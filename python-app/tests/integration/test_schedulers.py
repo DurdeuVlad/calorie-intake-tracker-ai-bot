@@ -1,11 +1,11 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
 
 from app.db.base import session_scope
-from app.db.models.messaging import MessagingDailyStatus, MessagingOutboundMessage, MessagingRoute, PinnedDailyStatus
+from app.db.models.messaging import PINNED_STATUS_MAX_BACKOFF_SECONDS, MessagingDailyStatus, MessagingOutboundMessage, MessagingRoute, PinnedDailyStatus
 from app.db.models.reports import ReportDelivery
 from app.db.models.users import UserSettings
 from app.messaging import daily_status_dispatcher, pinned_status_dispatcher
@@ -82,9 +82,7 @@ async def test_report_scheduler_skips_disabled_or_incomplete_users():
 
 
 @pytest.mark.asyncio
-async def test_pinned_status_dispatcher_gives_up_rather_than_truly_retrying_on_failure():
-    """PinnedDailyStatus.retry() marks the current desired version as delivered
-    even though the send failed -- a deliberate design choice, not a bug."""
+async def test_pinned_status_dispatcher_recovers_after_a_transient_failure_without_another_message():
 
     class FailingTelegram:
         async def send(self, conversation_id, text):
@@ -107,9 +105,57 @@ async def test_pinned_status_dispatcher_gives_up_rather_than_truly_retrying_on_f
 
     async with session_scope() as session:
         status = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user.id))).scalar_one()
-        assert status.delivered_version == status.desired_version  # gave up, not stuck retrying
-        assert status.status == "PENDING"
+        assert status.delivered_version < status.desired_version
+        assert status.status == "RETRY_1"
+        assert status.updated_at > datetime.now(timezone.utc)
         assert status.lease_token is None
+
+    # The failure cannot spin the worker before its backoff expires.
+    assert await pinned_status_dispatcher.dispatch_once(FailingTelegram()) is False
+
+    async with session_scope() as session:
+        status = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user.id))).scalar_one()
+        status.updated_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        await session.commit()
+
+    class WorkingTelegram:
+        def __init__(self):
+            self.sent = []
+            self.pinned = []
+
+        async def send(self, conversation_id, text):
+            self.sent.append((conversation_id, text))
+            return "77"
+
+        async def edit(self, conversation_id, message_id, text):
+            raise AssertionError("a recovered initial send must not edit")
+
+        async def pin(self, conversation_id, message_id):
+            self.pinned.append((conversation_id, message_id))
+
+    telegram = WorkingTelegram()
+    assert await pinned_status_dispatcher.dispatch_once(telegram) is True
+    assert await pinned_status_dispatcher.dispatch_once(telegram) is False
+    assert telegram.sent == [("1004", "Today: 0 entries, 0 kcal logged.")]
+    assert telegram.pinned == [("1004", "77")]
+
+    async with session_scope() as session:
+        status = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user.id))).scalar_one()
+        assert status.delivered_version == status.desired_version
+        assert status.status == "PENDING"
+
+
+def test_pinned_retry_backoff_is_capped_and_uses_persisted_attempts():
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4()
+    status = PinnedDailyStatus(
+        user_id=1, chat_id=1, local_date=now.date(), desired_text="today", desired_version=1, delivered_version=0,
+        updated_at=now, status="RETRY_8", lease_token=token, lease_expires_at=now,
+    )
+    status.retry(token)
+    assert status.status == "RETRY_9"
+    assert status.updated_at - now <= timedelta(seconds=PINNED_STATUS_MAX_BACKOFF_SECONDS + 1)
+    assert status.updated_at - now >= timedelta(seconds=PINNED_STATUS_MAX_BACKOFF_SECONDS - 1)
 
 
 @pytest.mark.asyncio

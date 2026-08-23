@@ -4,14 +4,13 @@ status message) -- both exist in parallel, matching the Java predecessor."""
 
 import uuid
 from dataclasses import dataclass
-from datetime import date as date_type, datetime, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.messaging import PinnedDailyStatus
 from app.db.models.users import FoodUser
-from app.messaging import execution_context
 from app.repositories import food_entry_repo, food_user_repo, pinned_daily_status_repo
 
 
@@ -39,8 +38,9 @@ async def refresh_for_tool_executor(session: AsyncSession, user: FoodUser, chat_
 
 
 async def refresh(session: AsyncSession, user: FoodUser, chat_id: int) -> None:
-    if execution_context.active():
-        return
+    # This is deliberately safe inside the live message execution context.
+    # Journal mutations call it after their database changes have been flushed,
+    # and the row is the durable hand-off to the Telegram dispatcher.
     settings = await food_user_repo.get_settings(session, user.id)
     zone = ZoneInfo(settings.timezone)
     today = datetime.now(zone).date()

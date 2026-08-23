@@ -6,7 +6,9 @@ Note: the `create_food_entry` legacy tool's canonical-reply branch from the
 Java source is intentionally dropped here (see journal_tool_executor.py's
 module docstring for why)."""
 
+import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,7 @@ from app.agent.portion_followup import estimate_followup_context
 from app.agent.trace_sink import AgentTraceSink, NoopTraceSink
 from app.db.models.conversation import ConversationMemory
 from app.domain.agent_types import AgentContext, AgentExchange, AgentToolFailure, AgentToolResult, ToolCall
+from app.repositories import nutrition_evidence_repo
 from app.services.journal_tool_executor import JournalToolExecutor
 
 logger = logging.getLogger(__name__)
@@ -82,7 +85,7 @@ class JournalAgent:
                 exchanges.append(AgentExchange(call, result))
                 self._trace.tool_result(call, result)
 
-                rendered = self._canonical_reply(active, call, result)
+                rendered = await self._canonical_reply(session, active, call, result)
                 if rendered is not None:
                     return self._complete(rendered)
 
@@ -95,12 +98,21 @@ class JournalAgent:
             return self._unavailable(context)
         return text if len(text) <= 3500 else text[:3500]
 
-    def _canonical_reply(self, context: AgentContext, call: ToolCall, result: AgentToolResult) -> str | None:
+    async def _canonical_reply(self, session: AsyncSession, context: AgentContext, call: ToolCall, result: AgentToolResult) -> str | None:
         if call.name == "apply_journal_actions" and result.ok:
             rows = result.data.get("results") or []
             rows = [r for r in rows if isinstance(r, dict)]
             if not rows:
                 return "Nu am putut aplica nicio schimbare." if context.romanian else "No journal changes could be applied."
+
+            created_ids = [
+                row.get("entry", {}).get("id")
+                for row in rows
+                if row.get("ok") is True and str(row.get("type", "")).upper() == "CREATE" and isinstance(row.get("entry"), dict)
+            ]
+            evidence_by_entry = await nutrition_evidence_repo.find_by_food_entry_ids(
+                session, [entry_id for entry_id in created_ids if isinstance(entry_id, int)]
+            )
 
             lines: list[str] = []
             for row in rows:
@@ -114,12 +126,16 @@ class JournalAgent:
                 description = str(entry.get("description", "entry"))
                 calories = str(entry.get("calories", "?"))
                 date = str(row.get("date", entry.get("date", "")))
+                if action_type == "CREATE":
+                    lines.extend(self._meal_receipt(context, entry, row, evidence_by_entry.get(entry.get("id"))))
+                    continue
                 verb_ro, verb_en = _VERBS.get(action_type, ("Aplicat", "Applied"))
                 verb = verb_ro if context.romanian else verb_en
                 suffix_date = f" ({date})" if date else ""
                 lines.append(f"- {verb}: {description} — {calories} kcal{suffix_date}")
 
             undoable = result.data.get("undoAvailable") is True
+            media_lines = self._media_lines(context)
             if undoable:
                 suffix = (
                     "\nScrie Undo în următoarele 10 minute pentru a anula schimbările reușite."
@@ -128,12 +144,141 @@ class JournalAgent:
                 )
             else:
                 suffix = ""
-            return "\n".join(lines) + suffix
+            return "\n".join([*media_lines, *lines]) + suffix
 
         if call.name == "undo_last_change" and result.ok:
             return "Am anulat ultima schimbare din jurnal." if context.romanian else "Undid the latest journal change."
 
         return None
+
+    def _meal_receipt(self, context: AgentContext, entry: dict[str, Any], row: dict[str, Any], evidence) -> list[str]:
+        """Render server-owned provenance as a short, Telegram-safe receipt."""
+        description = self._clean(entry.get("description", "meal"), 180)
+        calories = entry.get("calories", "?")
+        if evidence is None:
+            source = str(row.get("nutritionSource") or "manual")
+            confidence = str(row.get("nutritionConfidence") or "unknown")
+            receipt = row.get("receipt") if isinstance(row.get("receipt"), dict) else {}
+            trusted_ai_estimate = source == "ai_estimate" and (
+                receipt.get("caloriesPer100g") is not None or bool(receipt.get("basis"))
+            )
+            source_label = {
+                "manual": "manual value",
+                "mixed": "mixed estimate",
+                "open_food_facts_estimate": "Open Food Facts-based estimate",
+            }.get(source, "AI estimate" if trusted_ai_estimate else "unverified value")
+            lines = [
+                f"Logged: {description} — {calories} kcal",
+                f"Source: {source_label}; confidence: {confidence}.",
+            ]
+            quantity = receipt.get("quantity")
+            unit = self._clean(receipt.get("unit"), 16)
+            per_100g = receipt.get("caloriesPer100g")
+            if unit == "g" and quantity is not None and per_100g is not None:
+                lines.append(f"Calculation: {self._number(quantity)} g × {per_100g} kcal/100 g = {calories} kcal.")
+            elif source == "manual":
+                basis = self._clean(receipt.get("basis"), 180)
+                if basis.startswith("unverified source label ignored"):
+                    lines.append(f"Basis: {basis}. Send a correction with the food, serving, or calories if this is wrong.")
+                else:
+                    serving = self._serving(quantity, unit)
+                    lines.append(f"Basis: user-provided {calories} kcal" + (f" for {serving}." if serving else "."))
+            elif source == "ai_estimate" and trusted_ai_estimate:
+                basis = self._clean(receipt.get("basis"), 180)
+                detail = f" Basis: {basis}." if basis else ""
+                lines.append(f"Estimate recorded; no verified source or URL is available.{detail}")
+            else:
+                lines.append(
+                    "No verified source calculation is available."
+                    + " Send a correction with the food, serving, or calories if this is wrong."
+                )
+            return lines
+
+        candidate = self._candidate(evidence.selected_candidate, evidence.source_name)
+        grams = self._number(evidence.quantity_grams)
+        url = self._clean(evidence.source_url, 900) if evidence.source_url else None
+        source_state = self._source_state(evidence.source_cache_hit, evidence.source_fetched_at)
+        confidence = self._clean(evidence.confidence, 32)
+        lines = [
+            f"Logged: {description} — {evidence.total_calories} kcal",
+            f"Food: {candidate}; {grams} g × {evidence.calories_per_100g} kcal/100 g = {evidence.total_calories} kcal.",
+            f"Verified source: {self._clean(evidence.source_name, 120)} ({source_state}); confidence: {confidence}.",
+        ]
+        if url:
+            lines.append(f"Source: {url}")
+        return lines
+
+    def _media_lines(self, context: AgentContext) -> list[str]:
+        """Expose server output without relabeling it as a model observation."""
+        text = str(context.media_text or "").strip()[:500]
+        if context.media_kind == "voice" and text:
+            lines = [f"I heard: {text}"]
+            if context.media_caption:
+                lines.append(f"Voice caption: {self._clean(context.media_caption, 180)}")
+            return lines
+        if context.media_kind == "voice_caption_only":
+            return [f"Voice caption (no transcript): {self._clean(context.media_caption, 180)}"] if context.media_caption else ["Voice note had no usable transcript."]
+        if context.media_kind == "photo" and text:
+            return self._photo_lines(text)
+        return []
+
+    def _photo_lines(self, assessment: str) -> list[str]:
+        sections: dict[str, str] = {}
+        for line in assessment.splitlines():
+            label, separator, value = line.partition(":")
+            if separator and label.strip().lower() in {"interpretation", "estimate", "confidence", "question"}:
+                sections[label.strip().lower()] = self._clean(value, 240)
+        if not sections:
+            return [f"Photo interpretation: {self._clean(assessment, 360)}"]
+        lines = []
+        if sections.get("interpretation"):
+            lines.append(f"Photo: {sections['interpretation']}")
+        details = "; ".join(
+            f"{label}: {sections[label]}" for label in ("estimate", "confidence") if sections.get(label)
+        )
+        if details:
+            lines.append(details.capitalize() + ".")
+        question = sections.get("question")
+        if question and question.lower() != "none":
+            lines.append(f"Question: {question}")
+        return lines
+
+    @staticmethod
+    def _candidate(raw: object, fallback: str) -> str:
+        try:
+            candidate = json.loads(str(raw))
+            if isinstance(candidate, dict):
+                name = candidate.get("name")
+                brand = candidate.get("brand")
+                return JournalAgent._clean(" ".join(str(v) for v in (name, brand) if v), 180) or fallback
+        except (TypeError, ValueError):
+            pass
+        return JournalAgent._clean(raw, 180) or fallback
+
+    @staticmethod
+    def _source_state(cache_hit: bool, fetched_at: datetime | None) -> str:
+        if not cache_hit:
+            return "fetched from provider"
+        if fetched_at is not None and fetched_at <= datetime.now(timezone.utc) - timedelta(days=30):
+            return "cached/stale; not a live lookup"
+        return "cached; not a live lookup"
+
+    @staticmethod
+    def _clean(value: object, limit: int) -> str:
+        return " ".join(str(value or "").split())[:limit]
+
+    @staticmethod
+    def _number(value: object) -> str:
+        try:
+            number = float(value)
+            return str(int(number)) if number.is_integer() else f"{number:g}"
+        except (TypeError, ValueError):
+            return "?"
+
+    def _serving(self, quantity: object, unit: str) -> str:
+        if quantity is None or not unit or unit == "unspecified":
+            return ""
+        return f"{self._number(quantity)} {unit}"
 
     def _unavailable(self, context: AgentContext) -> str:
         return (

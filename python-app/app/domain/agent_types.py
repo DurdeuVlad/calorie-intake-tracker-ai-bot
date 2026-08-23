@@ -11,6 +11,12 @@ class AgentContext:
     chat_id: str
     romanian: bool
     message: str
+    # Optional server-supplied media context. It is deliberately separate from
+    # message so receipt text can state what was transcribed/interpreted rather
+    # than pretending the model itself heard or saw the attachment.
+    media_kind: str | None = None
+    media_text: str | None = None
+    media_caption: str | None = None
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

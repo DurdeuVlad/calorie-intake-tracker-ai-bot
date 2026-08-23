@@ -1,7 +1,4 @@
-"""Telegram-only pinned "today's total" message, ported from
-PinnedDailyStatusDispatcher.java. Deliberately has "give up rather than truly
-retry" semantics on failure (see PinnedDailyStatus.retry() in
-db/models/messaging.py) -- a persistently broken chat must not loop forever."""
+"""Telegram-only pinned "today's total" message with durable retry recovery."""
 
 import asyncio
 import logging
@@ -30,19 +27,23 @@ async def dispatch_once(telegram: TelegramFrontend) -> bool:
             else:
                 try:
                     await telegram.edit(str(status.chat_id), str(message_id), status.text)
-                except Exception as edit_error:  # noqa: BLE001
-                    logger.warning("Failed to edit pinned message %s, sending new message: %s", message_id, edit_error)
+                except Exception:  # noqa: BLE001
+                    logger.warning("Pinned-status edit failed; sending a replacement (status_id=%s)", status.id)
                     message_id = int(await telegram.send(str(status.chat_id), status.text))
                     await daily_status_service.remember_message(session, status.id, status.lease_token, message_id)
 
             try:
                 await telegram.pin(str(status.chat_id), str(message_id))
-            except Exception as pin_error:  # noqa: BLE001
-                logger.warning("Failed to pin message %s: %s", message_id, pin_error)
+            except Exception:  # noqa: BLE001
+                # Treat pinning as part of delivery. The retry is idempotent for
+                # Telegram and prevents an unpinned replacement from becoming a
+                # silently accepted final state.
+                logger.warning("Pinned-status pin failed (status_id=%s)", status.id)
+                raise
 
             await daily_status_service.mark_delivered(session, status.id, status.version, status.lease_token, message_id)
         except Exception:  # noqa: BLE001
-            logger.exception("Failed to dispatch pinned daily status id=%s", status.id)
+            logger.warning("Pinned-status delivery failed; scheduling retry (status_id=%s)")
             await daily_status_service.retry(session, status.id, status.lease_token)
 
         await session.commit()

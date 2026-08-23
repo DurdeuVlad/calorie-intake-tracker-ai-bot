@@ -128,7 +128,15 @@ async def test_full_round_trip_through_every_aggregate():
 
         daily_status = MessagingDailyStatus(user_id=user.id, provider="telegram", conversation_id="1", text="today")
         session.add(daily_status)
-        pinned = PinnedDailyStatus(user_id=user.id, chat_id=1, local_date=date.today(), desired_text="pinned", updated_at=now)
+        pinned = PinnedDailyStatus(
+            user_id=user.id,
+            chat_id=1,
+            local_date=date.today(),
+            desired_text="pinned",
+            desired_version=1,
+            delivered_version=0,
+            updated_at=now,
+        )
         session.add(pinned)
 
         report = ReportDelivery(user_id=user.id, report_type="morning", local_date=date.today(), delivered_at=now)
@@ -158,7 +166,8 @@ async def test_full_round_trip_through_every_aggregate():
         await session.flush()
         pinned.retry(pinned.lease_token)
         await session.commit()
-        assert pinned.delivered_version == pinned.desired_version
+        assert pinned.delivered_version < pinned.desired_version
+        assert pinned.status == "RETRY_1"
 
         loaded_user = (await session.execute(select(FoodUser).where(FoodUser.id == user.id))).scalar_one()
         assert loaded_user.display_name == "Schema Check"

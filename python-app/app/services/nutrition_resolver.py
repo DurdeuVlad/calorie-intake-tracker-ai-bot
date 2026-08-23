@@ -16,6 +16,7 @@ from app.db.models.users import FoodUser
 from app.domain.journal_intent import MealItem
 from app.integrations.openfoodfacts_types import NutritionProfile, OpenFoodFactsClient
 from app.repositories import nutrition_source_cache_repo, private_food_repo
+from app.services import openfoodfacts_cache
 
 CACHE_TTL = timedelta(days=30)
 
@@ -71,35 +72,17 @@ async def resolve(
 
     if item.barcode is not None:
         now = datetime.now(timezone.utc)
-        existing = await nutrition_source_cache_repo.find_by_barcode(session, item.barcode)
+        cached_lookup = await openfoodfacts_cache.barcode(session, off, item.barcode, now)
         profile: NutritionProfile | None = None
-        if existing is not None and existing.fetched_at > now - CACHE_TTL:
-            profile = _cache_to_profile(existing)
-        else:
-            fetched = await off.by_barcode(item.barcode)
-            if fetched is not None:
-                profile = fetched
-                if existing is None:
-                    session.add(
-                        NutritionSourceCache(
-                            barcode=item.barcode,
-                            product_name=fetched.name,
-                            calories_per_100g=fetched.calories_per_100g,
-                            protein_per_100g=fetched.protein_per_100g,
-                            carbs_per_100g=fetched.carbs_per_100g,
-                            fat_per_100g=fetched.fat_per_100g,
-                            source_url=fetched.source_url or "",
-                            fetched_at=now,
-                        )
-                    )
-                else:
-                    existing.product_name = fetched.name
-                    existing.calories_per_100g = fetched.calories_per_100g
-                    existing.protein_per_100g = fetched.protein_per_100g
-                    existing.carbs_per_100g = fetched.carbs_per_100g
-                    existing.fat_per_100g = fetched.fat_per_100g
-                    existing.source_url = fetched.source_url or ""
-                    existing.fetched_at = now
+        if isinstance(cached_lookup.value, NutritionProfile):
+            profile = cached_lookup.value
+        elif cached_lookup.status not in {"RATE_LIMITED", "TEMPORARY_FAILURE"}:
+            # Compatibility bridge for the pre-cache barcode table. It keeps
+            # existing deployments warm while fresh responses move into the
+            # provider-aware cache above.
+            existing = await nutrition_source_cache_repo.find_by_barcode(session, item.barcode)
+            if existing is not None and existing.fetched_at > now - CACHE_TTL:
+                profile = _cache_to_profile(existing)
         if profile is not None:
             return ResolvedMealItem(_scale_item(item, profile), "open_food_facts")
 

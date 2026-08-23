@@ -18,7 +18,9 @@ async def lock_pending(session: AsyncSession) -> PinnedDailyStatus | None:
         select(PinnedDailyStatus)
         .where(
             PinnedDailyStatus.desired_version > PinnedDailyStatus.delivered_version,
-            (PinnedDailyStatus.status == "PENDING") | ((PinnedDailyStatus.status == "IN_PROGRESS") & (PinnedDailyStatus.lease_expires_at <= now)),
+            (PinnedDailyStatus.status == "PENDING")
+            | ((PinnedDailyStatus.status.like("RETRY_%")) & (PinnedDailyStatus.updated_at <= now))
+            | ((PinnedDailyStatus.status == "IN_PROGRESS") & (PinnedDailyStatus.lease_expires_at <= now)),
         )
         .order_by(PinnedDailyStatus.id)
         .limit(1)

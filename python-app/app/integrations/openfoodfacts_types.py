@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class OpenFoodFactsUnavailable(RuntimeError):
+    """The provider could not answer safely; callers should use cached data."""
+
+    def __init__(self, message: str, *, rate_limited: bool = False) -> None:
+        super().__init__(message)
+        self.rate_limited = rate_limited
+
+
 @dataclass(frozen=True)
 class NutritionProfile:
     name: str

@@ -3,12 +3,16 @@ feed the resulting text through the normal message pipeline, or reply with a
 graceful fallback if anything in that chain fails -- mirrors
 MessagingInboxWorker.process()'s attachment branch exactly."""
 
+from dataclasses import replace
+from datetime import datetime, timezone
+
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 
 from app.config import get_settings
 from app.db.base import session_scope
-from app.db.models.messaging import MessagingOutboundMessage
+from app.db.models.messaging import MessagingOutboundMessage, TelegramAccessGrant
 from app.messaging import ingress, inbox_worker
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import Attachment, AttachmentKind, InboundMessage
@@ -64,10 +68,39 @@ class StubMedia:
         return self.text
 
 
-@pytest.fixture(autouse=True)
-def _allow_test_user(monkeypatch):
+class ReceiptJournal:
+    """Small journal double that exposes the final user-facing receipt text."""
+
+    default_timezone = "Europe/Bucharest"
+
+    async def handle(self, session, user, chat_id, message, *, media_kind=None, media_text=None, media_caption=None):
+        if media_kind == "voice":
+            return f"I heard: {media_text}\nLogged: eggs — 140 kcal\nSend Undo within 10 minutes."
+        if media_kind == "photo":
+            return f"Photo: {media_text}\nLogged: meal — 300 kcal\nSend Undo within 10 minutes."
+        if media_kind == "voice_caption_only":
+            return f"Voice caption (no transcript): {media_caption}\nLogged: meal — 300 kcal\nSend Undo within 10 minutes."
+        return "Logged: meal — 300 kcal"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _allow_test_user(monkeypatch):
+    """Exercise the durable access policy with an explicitly granted account."""
     settings = get_settings()
-    monkeypatch.setattr(type(settings), "allowed_telegram_user_id_set", property(lambda self: {"901"}))
+    monkeypatch.setattr(settings, "telegram_frontend_enabled", True)
+    now = datetime.now(timezone.utc)
+    async with session_scope() as session:
+        session.add(
+            TelegramAccessGrant(
+                telegram_user_id=901,
+                is_admin=False,
+                active=True,
+                granted_by=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await session.commit()
     yield
 
 
@@ -81,7 +114,7 @@ def _voice_message(event_id: str) -> InboundMessage:
 
 @pytest.mark.asyncio
 async def test_voice_note_is_transcribed_and_routed_through_the_journal():
-    journal = JournalApplicationService(default_timezone="Europe/Bucharest")  # no agent -> canned reply
+    journal = ReceiptJournal()
     deps = InboxWorkerDeps(journal=journal, frontends=FrontendRegistry([StubFrontend()]), voice=StubVoice(text="how many calories today"))
 
     async with session_scope() as session:
@@ -91,13 +124,16 @@ async def test_voice_note_is_transcribed_and_routed_through_the_journal():
 
     async with session_scope() as session:
         rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
-    assert any("cannot process" in r.text for r in rows)  # reached the journal (no agent configured in this test)
+    assert [r.text for r in rows] == [
+        "I heard: how many calories today\nLogged: eggs — 140 kcal\nSend Undo within 10 minutes."
+    ]
 
 
 @pytest.mark.asyncio
 async def test_photo_is_extracted_and_routed_through_the_journal():
-    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
-    deps = InboxWorkerDeps(journal=journal, frontends=FrontendRegistry([StubFrontend()]), media=StubMedia(text="Oat bar, 180 kcal"))
+    journal = ReceiptJournal()
+    assessment = "Interpretation: oat bar\nEstimate: one bar\nConfidence: high\nQuestion: none"
+    deps = InboxWorkerDeps(journal=journal, frontends=FrontendRegistry([StubFrontend()]), media=StubMedia(text=assessment))
     message = InboundMessage(
         provider="telegram", event_id="evt-photo", user_id="901", conversation_id="901", display_name="Tester",
         language_code="en", text=None, caption=None,
@@ -110,7 +146,9 @@ async def test_photo_is_extracted_and_routed_through_the_journal():
 
     async with session_scope() as session:
         rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
-    assert len(rows) == 1  # got a reply at all -> extraction succeeded and reached the journal
+    assert [r.text for r in rows] == [
+        f"Photo: {assessment}\nLogged: meal — 300 kcal\nSend Undo within 10 minutes."
+    ]
 
 
 @pytest.mark.asyncio
@@ -125,7 +163,7 @@ async def test_media_download_failure_gets_a_graceful_fallback_reply():
 
     async with session_scope() as session:
         rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
-    assert any("could not analyze" in r.text for r in rows)
+    assert [r.text for r in rows] == ["I could not transcribe that voice note. Please resend it or type the meal details."]
 
 
 @pytest.mark.asyncio
@@ -140,4 +178,22 @@ async def test_missing_voice_client_gets_a_graceful_fallback_reply():
 
     async with session_scope() as session:
         rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
-    assert any("could not analyze" in r.text for r in rows)
+    assert [r.text for r in rows] == ["I could not transcribe that voice note. Please resend it or type the meal details."]
+
+
+@pytest.mark.asyncio
+async def test_captioned_voice_survives_a_transcription_failure_with_an_honest_receipt():
+    journal = ReceiptJournal()
+    deps = InboxWorkerDeps(journal=journal, frontends=FrontendRegistry([StubFrontend()]), voice=StubVoice(fail=True))
+    message = replace(_voice_message("evt-caption-fail"), caption="two eggs")
+
+    async with session_scope() as session:
+        await ingress.accept(session, message)
+
+    await inbox_worker.process_one(deps)
+
+    async with session_scope() as session:
+        rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
+    assert [r.text for r in rows] == [
+        "Voice caption (no transcript): two eggs\nLogged: meal — 300 kcal\nSend Undo within 10 minutes."
+    ]
