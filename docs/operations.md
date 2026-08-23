@@ -28,6 +28,8 @@ If a credential leaks: rotate it locally (and later in Coolify), invalidate the 
 
 **Fix:** `MessagingDailyStatus.retry()` now clears `dirty` on failure instead of leaving the row eligible for immediate reclaim, mirroring the give-up-rather-than-loop-forever semantics `PinnedDailyStatus.retry()` already uses for the same class of problem. This is safe because `messaging_daily_status_service.refresh()` re-marks the row dirty with fresh text on the very next inbound message from that user, so delivery is naturally retried rather than busy-looped. See `app/messaging/daily_status_dispatcher.py` and `app/db/models/messaging.py`.
 
+While diagnosing this incident, the GitHub push webhook that drives Coolify's auto-deploy was found disabled (`active: false`) on the repo, so the fix above did not deploy on merge. Re-enabled it via `gh api -X PATCH repos/.../hooks/<id> -F active=true`; check the webhook's active state first when a merged fix isn't showing up in a running container.
+
 ## Cutover
 
 Validate the new deployment using a test user, back up legacy data, register the new webhook once, and observe the first scheduled reports. Keep a reversible DNS/application route, but do not run both bot writers against the same user journal.
