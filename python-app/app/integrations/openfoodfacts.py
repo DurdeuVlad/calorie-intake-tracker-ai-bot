@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.config import Settings
-from app.integrations.openfoodfacts_types import NutritionProfile, PackagedFoodResult
+from app.integrations.openfoodfacts_types import NutritionProfile, OpenFoodFactsUnavailable, PackagedFoodResult
 
 _BARCODE_RE = re.compile(r"\d{8,14}")
 
@@ -71,8 +71,12 @@ class OpenFoodFactsHttpClient:
                 source="open_food_facts",
                 source_url=f"https://world.openfoodfacts.org/product/{barcode}",
             )
-        except Exception:  # noqa: BLE001 - graceful degradation, matches Java's catch(Exception ignored)
-            return None
+        except httpx.HTTPStatusError as error:
+            raise OpenFoodFactsUnavailable("Open Food Facts rejected the barcode lookup.", rate_limited=error.response.status_code == 429) from error
+        except httpx.HTTPError as error:
+            raise OpenFoodFactsUnavailable("Open Food Facts is unavailable.") from error
+        except Exception as error:  # malformed provider response is not a nutrition miss
+            raise OpenFoodFactsUnavailable("Open Food Facts returned an unusable response.") from error
 
     async def search_by_name(self, name: str, brand: str | None) -> list[PackagedFoodResult]:
         if not name or not name.strip():
@@ -109,8 +113,12 @@ class OpenFoodFactsHttpClient:
                 )
             matches.sort(key=lambda m: (-m.exact, -m.overlap, m.source_order))
             return [m.result for m in matches[:5]]
-        except Exception:  # noqa: BLE001
-            return []
+        except httpx.HTTPStatusError as error:
+            raise OpenFoodFactsUnavailable("Open Food Facts rejected the packaged-food lookup.", rate_limited=error.response.status_code == 429) from error
+        except httpx.HTTPError as error:
+            raise OpenFoodFactsUnavailable("Open Food Facts is unavailable.") from error
+        except Exception as error:  # malformed provider response is not a nutrition miss
+            raise OpenFoodFactsUnavailable("Open Food Facts returned an unusable response.") from error
 
     @staticmethod
     def _number(root: dict, field: str) -> float | None:

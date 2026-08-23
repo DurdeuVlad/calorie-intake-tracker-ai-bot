@@ -12,11 +12,14 @@ from app.agent.journal_agent import JournalAgent
 from app.agent.openai_model_client import AgentProviderUnavailableError
 from app.db.base import session_scope
 from app.db.models.entries import FoodEntry
+from app.db.models.messaging import PinnedDailyStatus
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext, AgentReply, ToolCall
 from app.repositories import food_entry_repo
 from app.repositories.food_user_repo import get_or_create_by_telegram_user_id
 from app.services.journal_tool_executor import JournalToolExecutor
+from app.services import daily_status_service
+from app.messaging import execution_context
 
 
 class ScriptedModel:
@@ -65,7 +68,7 @@ async def test_create_action_logs_a_meal_and_reports_it_canonically():
         reply = await agent.run(session, context)
         await session.commit()
 
-    assert "Notat: mic dejun" in reply
+    assert "Logged: mic dejun" in reply
     assert "600 kcal" in reply
 
     async with session_scope() as session:
@@ -164,6 +167,47 @@ async def test_delete_is_soft_and_undo_restores_it():
     async with session_scope() as session:
         entry = (await session.execute(select(FoodEntry).where(FoodEntry.id == entry_id))).scalar_one()
         assert entry.deleted_at is None
+
+
+@pytest.mark.asyncio
+async def test_create_edit_delete_and_undo_mark_the_pinned_total_dirty_inside_message_execution():
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 334, "Tester", "Europe/Bucharest")
+        user_id = user.id
+        await session.commit()
+
+    async def run_action(tool_id, action):
+        model = ScriptedModel([AgentReply(None, [_tool_call(tool_id, "apply_journal_actions", actions=[action])])])
+        tools = JournalToolExecutor(refresh_daily_status=daily_status_service.refresh_for_tool_executor)
+        agent = JournalAgent(model, tools, max_tool_calls=10)
+        async with session_scope() as session:
+            user = await _reload_user(session, user_id)
+            await execution_context.run(lambda: agent.run(session, AgentContext(user=user, chat_id="334", romanian=False, message="update")))
+            await session.commit()
+
+    await run_action("create", {"type": "CREATE", "description": "meal", "calories": 100})
+    async with session_scope() as session:
+        entry = (await session.execute(select(FoodEntry).where(FoodEntry.user_id == user_id))).scalar_one()
+        entry_id = entry.id
+        pinned = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user_id))).scalar_one()
+        assert pinned.desired_version == 1 and "100 kcal" in pinned.desired_text
+
+    await run_action("edit", {"type": "EDIT", "entryId": entry_id, "calories": 250})
+    await run_action("delete", {"type": "DELETE", "entryId": entry_id})
+
+    model = ScriptedModel([AgentReply(None, [_tool_call("undo", "undo_last_change")])])
+    tools = JournalToolExecutor(refresh_daily_status=daily_status_service.refresh_for_tool_executor)
+    agent = JournalAgent(model, tools, max_tool_calls=10)
+    async with session_scope() as session:
+        user = await _reload_user(session, user_id)
+        await execution_context.run(lambda: agent.run(session, AgentContext(user=user, chat_id="334", romanian=False, message="undo")))
+        await session.commit()
+
+    async with session_scope() as session:
+        pinned = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user_id))).scalar_one()
+        assert pinned.desired_version == 4
+        assert pinned.delivered_version == 0
+        assert "250 kcal" in pinned.desired_text
 
 
 @pytest.mark.asyncio

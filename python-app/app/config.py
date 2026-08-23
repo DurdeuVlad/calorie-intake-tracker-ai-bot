@@ -84,7 +84,9 @@ class Settings(BaseSettings):
     # Scheduling / polling
     management_port: int = Field(default=8081, alias="MANAGEMENT_PORT")
     food_journal_scheduling_enabled: bool = Field(default=True, alias="FOOD_JOURNAL_SCHEDULING_ENABLED")
-    food_journal_outbox_delay_ms: int = Field(default=5000, alias="FOOD_JOURNAL_OUTBOX_DELAY_MS")
+    # Normally bypassed by the durable-outbox wake signal; this remains a
+    # conservative recovery poll if a signal is missed or the process restarts.
+    food_journal_outbox_delay_ms: int = Field(default=1000, alias="FOOD_JOURNAL_OUTBOX_DELAY_MS")
     food_journal_inbox_delay_ms: int = Field(default=500, alias="FOOD_JOURNAL_INBOX_DELAY_MS")
 
     @field_validator("agent_max_tool_calls")

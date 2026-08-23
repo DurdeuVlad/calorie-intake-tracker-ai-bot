@@ -107,8 +107,9 @@ def tool_definitions() -> list[dict[str, Any]]:
         ),
         _tool(
             "apply_journal_actions",
-            "Apply independent journal mutations immediately. Each CREATE needs description and either calories or "
-            "quoteId; quantity is optional when calories are explicit. EDIT/MOVE/DELETE need entryId. EDIT calories "
+            "Apply independent journal mutations immediately. Each CREATE needs description and either calories or a server-issued "
+            "quoteId; quantity is optional when calories are explicit. Never provide source URLs: provenance is copied only from "
+            "the selected server quote. EDIT/MOVE/DELETE need entryId. EDIT calories "
             "is the entry's replacement total, never an increment or delta. MOVE also needs date. Actions succeed or "
             "fail independently and the result reports each outcome.",
             _object({"actions": {"type": "array", "minItems": 1, "items": action}}, ["actions"]),

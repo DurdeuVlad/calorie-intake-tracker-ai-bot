@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.messaging.inbound_message import Attachment, InboundMessage
 from app.db.models.messaging import MessagingInboxMessage
+
+logger = logging.getLogger(__name__)
 
 
 def _serialize(message: InboundMessage) -> str:
@@ -34,7 +37,7 @@ def deserialize(payload: str) -> InboundMessage:
     )
 
 
-async def accept(session: AsyncSession, message: InboundMessage) -> None:
+async def accept(session: AsyncSession, message: InboundMessage) -> bool:
     """Idempotent on (provider, event_id) -- at-least-once provider delivery
     (e.g. Telegram retrying its webhook call) must not create duplicate rows."""
     row = MessagingInboxMessage(
@@ -46,5 +49,9 @@ async def accept(session: AsyncSession, message: InboundMessage) -> None:
     session.add(row)
     try:
         await session.commit()
+        logger.info("Inbox accepted: provider=%s event_id=%s", message.provider, message.event_id)
+        return True
     except IntegrityError:
         await session.rollback()
+        logger.info("Inbox duplicate ignored: provider=%s event_id=%s", message.provider, message.event_id)
+        return False

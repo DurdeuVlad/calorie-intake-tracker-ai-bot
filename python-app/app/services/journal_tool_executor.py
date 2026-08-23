@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entries import FoodEntry, FoodItem
 from app.db.models.journal_changes import JournalChangeSet
-from app.db.models.nutrition import NutritionSourceCache, PendingNutritionQuote, PrivateFood
+from app.db.models.nutrition import NutritionEvidence, NutritionSourceCache, PendingNutritionQuote, PrivateFood
 from app.domain.agent_types import AgentContext, AgentToolFailure, AgentToolResult, ToolCall
 from app.domain.journal_intent import MealItem
 from app.domain import journal_entry_snapshot as snapshot
@@ -35,6 +35,7 @@ from app.repositories import (
     private_food_repo,
 )
 from app.services import nutrition_resolver
+from app.services import openfoodfacts_cache
 
 MAX_ACTIONS_PER_BATCH = 20
 MAX_REDIRECTS = 5
@@ -46,7 +47,7 @@ MAX_WEB_SEARCH_URL_CHARS = 1024
 MAX_WEB_SEARCH_SNIPPET_CHARS = 1024
 _DATE_WORDS_TODAY = {"today", "azi", "astăzi", "astazi"}
 _DATE_WORDS_YESTERDAY = {"yesterday", "yersterday", "ieri"}
-_VALID_SOURCES = {"manual", "private", "open_food_facts_estimate", "ai_estimate", "mixed"}
+_VALID_SOURCES = {"manual", "private", "open_food_facts", "open_food_facts_estimate", "ai_estimate", "mixed"}
 _VALID_CONFIDENCE = {"high", "estimate", "unknown"}
 
 RefreshDailyStatus = Callable[[AsyncSession, Any, str], Awaitable[None]]
@@ -118,6 +119,11 @@ def _quantity_unit(raw: str | None, quantity: float | None) -> str:
 def _normalize(raw: str | None, fallback: str, allowed: set[str]) -> str:
     value = (raw or fallback).lower()
     return value if value in allowed else fallback
+
+
+def _unverified_source_claim(raw: str | None) -> bool:
+    """Only server-issued quotes may establish a non-manual nutrition source."""
+    return raw is not None and raw.strip().lower() != "manual"
 
 
 def _summary(entry: FoodEntry) -> dict[str, Any]:
@@ -332,6 +338,10 @@ class JournalToolExecutor:
             result["barcode"] = quote.barcode
         if quote.source_url:
             result["sourceUrl"] = quote.source_url
+        # This is provenance returned by a server-side Open Food Facts client;
+        # callers cannot supply or replace it in an action.
+        if quote.quote_type == "PACKAGED_MATCH":
+            result["evidenceClaim"] = "verified_source"
         return result
 
     def _item_summary(self, item: MealItem, source: str, confidence: str) -> dict[str, Any]:
@@ -347,11 +357,16 @@ class JournalToolExecutor:
         batch_id = uuid.uuid4()
         products = []
         now = datetime.now(timezone.utc)
-        for result in await self.off.search_by_name(name, _str(args, "brand")):
+        lookup = await openfoodfacts_cache.packaged_name(session, self.off, name, _str(args, "brand"), now)
+        if lookup.status in {"RATE_LIMITED", "TEMPORARY_FAILURE"}:
+            return AgentToolResult.failure("TEMPORARY_FAILURE", "Packaged-food lookup is temporarily unavailable; please retry later.")
+        for result in lookup.value or []:
             quote = PendingNutritionQuote(
                 quote_id=uuid.uuid4(), batch_id=batch_id, user_id=context.user.id, quote_type="PACKAGED_MATCH",
                 product_name=result.product_name, brand=result.brand, grams=Decimal(str(grams)),
                 calories_per_100g=result.calories_per_100g, barcode=result.barcode, source_url=result.source_url,
+                source_query=" ".join(part for part in (name.strip(), (_str(args, "brand") or "").strip()) if part),
+                source_fetched_at=lookup.source_fetched_at, source_cache_hit=lookup.cache_hit,
                 created_at=now, expires_at=now + timedelta(minutes=30),
             )
             session.add(quote)
@@ -385,7 +400,7 @@ class JournalToolExecutor:
         quote = await self._owned_quote(session, context, _quote_id(args), "PACKAGED_MATCH")
         if quote is None:
             return AgentToolResult.failure("NOT_FOUND", "That packaged-food choice is unavailable or expired.")
-        return AgentToolResult.success({"quoteId": str(quote.quote_id), "item": self._item_summary(self._quote_item(quote), "open_food_facts_estimate", "estimate"), "source": "Open Food Facts"})
+        return AgentToolResult.success({"quoteId": str(quote.quote_id), "item": self._item_summary(self._quote_item(quote), "open_food_facts", "high"), "source": "Open Food Facts", "evidenceClaim": "verified_source"})
 
     async def _estimate_food(self, session, context, args, todos) -> AgentToolResult:
         item = _meal_item(args)
@@ -528,11 +543,23 @@ class JournalToolExecutor:
             raise AgentToolFailure(AgentToolResult.failure("NOT_FOUND", "No matching journal entry exists."))
         return entry
 
-    def _action_success(self, action_type: str, entry: FoodEntry, timezone_name: str) -> dict[str, Any]:
+    def _action_success(
+        self, action_type: str, entry: FoodEntry, timezone_name: str, receipt: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         from zoneinfo import ZoneInfo
 
         local_date = entry.eaten_at.astimezone(ZoneInfo(timezone_name)).date()
-        return {"ok": True, "type": action_type, "entry": _summary(entry), "date": local_date.isoformat()}
+        result = {
+            "ok": True,
+            "type": action_type,
+            "entry": _summary(entry),
+            "date": local_date.isoformat(),
+            "nutritionSource": entry.nutrition_source,
+            "nutritionConfidence": entry.confidence,
+        }
+        if receipt:
+            result["receipt"] = receipt
+        return result
 
     def _action_failure(self, action_type: str, message: str) -> dict[str, Any]:
         return {"ok": False, "type": action_type, "message": message}
@@ -542,11 +569,28 @@ class JournalToolExecutor:
         if not description:
             raise ValidationError("A description is required.")
         calories: int | None = int(args["calories"]) if "calories" in args and args["calories"] is not None else None
-        source = _normalize(_str(args, "nutritionSource"), "manual", _VALID_SOURCES)
+        requested_source = _str(args, "nutritionSource")
+        source = _normalize(requested_source, "manual", _VALID_SOURCES)
         confidence = _normalize(_str(args, "nutritionConfidence"), "high" if source == "manual" else "estimate", _VALID_CONFIDENCE)
         quantity = _decimal_number(args, "quantity")
         unit = _quantity_unit(_str(args, "unit"), quantity)
         consumed: list[PendingNutritionQuote] = []
+        receipt: dict[str, Any] = {"quantity": quantity, "unit": unit}
+        unverified_source = args.get("quoteId") is None and _unverified_source_claim(requested_source)
+
+        # A model can label an explicit number however it likes; it must not be
+        # able to turn that into a verified external-source claim. Only an
+        # owned, active quote can establish Open Food Facts provenance.
+        if args.get("quoteId") is None and source in {"open_food_facts", "open_food_facts_estimate"}:
+            raise ValidationError("Open Food Facts provenance requires a server-issued quoteId.")
+
+        # Private foods and AI estimates do not have a caller-selectable
+        # provenance token. Until they do, a model's label is just text: retain
+        # the explicit calorie value as manual/unverified rather than storing a
+        # claim the server cannot prove.
+        if unverified_source:
+            source = "manual"
+            confidence = "unknown"
 
         if args.get("quoteId") is not None:
             quote_id = _quote_id(args)
@@ -557,9 +601,12 @@ class JournalToolExecutor:
             calories = quoted.total_calories
             quantity = quoted.grams
             unit = QuantityUnit.G.value
+            receipt.update({"quantity": quantity, "unit": unit})
             description = description or quoted.name
-            source = "open_food_facts_estimate" if quote.quote_type == "PACKAGED_MATCH" else "ai_estimate"
-            confidence = "estimate"
+            source = "open_food_facts" if quote.quote_type == "PACKAGED_MATCH" else "ai_estimate"
+            confidence = "high" if quote.quote_type == "PACKAGED_MATCH" else "estimate"
+            if quote.quote_type == "AI_ESTIMATE":
+                receipt.update({"caloriesPer100g": quote.calories_per_100g, "basis": quote.estimate_basis or "AI estimate"})
             consumed.append(quote)
 
         if calories is None or calories <= 0 or calories > 10000:
@@ -581,12 +628,45 @@ class JournalToolExecutor:
         for quote in consumed:
             if quote.quote_type == "PACKAGED_MATCH":
                 await self._cache_selected(session, quote)
+                self._record_packaged_evidence(session, entry, item, quote, now)
             await session.delete(quote)
 
         after = snapshot.capture(entry, [item])
         if change_set is not None:
             change_set.add_mutation("CREATE", None, after)
-        return self._action_success("CREATE", entry, timezone_name)
+        if unverified_source:
+            receipt["basis"] = "unverified source label ignored; calories supplied in the message"
+        elif source == "manual":
+            receipt["basis"] = "user-provided calories"
+        return self._action_success("CREATE", entry, timezone_name, receipt)
+
+    def _record_packaged_evidence(
+        self, session: AsyncSession, entry: FoodEntry, item: FoodItem, quote: PendingNutritionQuote, captured_at: datetime
+    ) -> None:
+        """Copy an ephemeral, server-selected quote into durable audit evidence.
+
+        No action argument can influence provider, URL, candidate, basis, or
+        derivation: those values originate with the stored quote/Open Food Facts
+        response and the deterministic calorie calculation.
+        """
+        total = round(float(quote.grams) * quote.calories_per_100g / 100.0)
+        candidate = json.dumps(
+            {"name": quote.product_name, "brand": quote.brand, "barcode": quote.barcode},
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        grams = Decimal(str(quote.grams))
+        derivation = f"round({grams} g × {quote.calories_per_100g} kcal / 100 g) = {total} kcal"
+        session.add(
+            NutritionEvidence(
+                evidence_id=uuid.uuid4(), food_entry_id=entry.id, food_item_id=item.id,
+                selected_quote_id=quote.quote_id, provider="open_food_facts", source_name="Open Food Facts",
+                source_url=quote.source_url, source_query=quote.source_query, selected_candidate=candidate,
+                quantity_grams=grams, calories_per_100g=quote.calories_per_100g, total_calories=total,
+                derivation=derivation, confidence="high", source_fetched_at=quote.source_fetched_at,
+                source_cache_hit=quote.source_cache_hit, captured_at=captured_at,
+            )
+        )
 
     async def _edit_action(self, session, context, args, change_set: JournalChangeSet | None, timezone_name: str) -> dict[str, Any]:
         entry = await self._owned_entry(session, context, args)

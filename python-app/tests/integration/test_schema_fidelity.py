@@ -158,7 +158,8 @@ async def test_full_round_trip_through_every_aggregate():
         await session.flush()
         pinned.retry(pinned.lease_token)
         await session.commit()
-        assert pinned.delivered_version == pinned.desired_version
+        assert pinned.delivered_version < pinned.desired_version
+        assert pinned.status == "RETRY_1"
 
         loaded_user = (await session.execute(select(FoodUser).where(FoodUser.id == user.id))).scalar_one()
         assert loaded_user.display_name == "Schema Check"

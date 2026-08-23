@@ -10,6 +10,7 @@ from app.db.base import Base
 LEASE_SECONDS = 60
 INBOX_MAX_ATTEMPTS = 3
 OUTBOX_MAX_BACKOFF_SECONDS = 300
+PINNED_STATUS_MAX_BACKOFF_SECONDS = 300
 
 
 def _utcnow() -> datetime:
@@ -176,7 +177,7 @@ class PinnedDailyStatus(Base):
     delivered_version: Mapped[int] = mapped_column(BigInteger, default=0)
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     updated_at: Mapped[datetime] = mapped_column()
-    status: Mapped[str] = mapped_column(String(32), default="PENDING")  # PENDING|IN_PROGRESS
+    status: Mapped[str] = mapped_column(String(32), default="PENDING")  # PENDING|RETRY_n|IN_PROGRESS
     lease_expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     lease_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
@@ -209,15 +210,29 @@ class PinnedDailyStatus(Base):
         self.telegram_message_id = message_id
 
     def retry(self, token: uuid.UUID) -> None:
-        """Deliberate 'give up rather than truly retry' semantics (ported from the Java app):
-        a failed delivery still marks the current desired version as delivered, so a
-        persistently broken chat doesn't loop forever."""
+        """Persist a bounded exponential retry for the undelivered version.
+
+        ``status`` carries the retry count so this remains durable without a
+        schema change; ``updated_at`` is the next eligible retry time while the
+        row is in a RETRY state. A new desired version resets the attempt count.
+        """
         if token != self.lease_token:
             return
-        self.delivered_version = self.desired_version
-        self.status = "PENDING"
+        attempt = _pinned_retry_attempt(self.status) + 1
+        self.status = f"RETRY_{attempt}"
+        self.updated_at = _utcnow() + timedelta(seconds=min(PINNED_STATUS_MAX_BACKOFF_SECONDS, 2 ** min(attempt, 16)))
         self.lease_token = None
         self.lease_expires_at = None
 
     def clear_telegram_message(self) -> None:
         self.telegram_message_id = None
+
+
+def _pinned_retry_attempt(status: str) -> int:
+    """Return the persisted retry count, tolerating rows from older releases."""
+    if not status.startswith("RETRY_"):
+        return 0
+    try:
+        return max(0, int(status.removeprefix("RETRY_")))
+    except ValueError:
+        return 0

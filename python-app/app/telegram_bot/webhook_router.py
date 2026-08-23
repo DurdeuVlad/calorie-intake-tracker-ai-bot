@@ -1,6 +1,5 @@
 import hmac
 import logging
-
 from aiogram.types import Update
 from fastapi import APIRouter, Header, Request, Response
 
@@ -71,6 +70,7 @@ async def telegram_webhook(
         return Response(status_code=200)
 
     async with session_scope() as session:
-        await ingress.accept(session, inbound)
+        accepted = await ingress.accept(session, inbound)
+    logger.info("Telegram webhook handled: event_id=%s accepted=%s", update.update_id, accepted)
 
     return Response(status_code=200)

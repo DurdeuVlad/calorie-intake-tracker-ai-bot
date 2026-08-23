@@ -163,7 +163,17 @@ class JournalApplicationService:
         self.default_timezone = default_timezone
         self._agent = agent
 
-    async def handle(self, session, user: FoodUser, chat_id: str, message: str) -> str:
+    async def handle(
+        self,
+        session,
+        user: FoodUser,
+        chat_id: str,
+        message: str,
+        *,
+        media_kind: str | None = None,
+        media_text: str | None = None,
+        media_caption: str | None = None,
+    ) -> str:
         settings = await food_user_repo.get_settings(session, user.id)
 
         if message.startswith("/"):
@@ -179,6 +189,14 @@ class JournalApplicationService:
         settings.set_preferred_language("ro" if romanian else "en")
 
         if self._agent is not None:
-            context = AgentContext(user=user, chat_id=chat_id, romanian=romanian, message=message)
+            context = AgentContext(
+                user=user,
+                chat_id=chat_id,
+                romanian=romanian,
+                message=message,
+                media_kind=media_kind,
+                media_text=media_text,
+                media_caption=media_caption,
+            )
             return await self._agent.run(session, context)
         return unavailable(romanian)

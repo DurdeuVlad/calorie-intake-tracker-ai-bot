@@ -2,6 +2,7 @@ import logging
 
 import httpx
 from aiogram import Bot
+from aiogram.enums import ChatAction
 from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.token import TokenValidationError
 
@@ -42,6 +43,12 @@ class TelegramFrontend:
     async def send(self, conversation_id: str, text: str) -> str:
         message = await self._bot.send_message(chat_id=int(conversation_id), text=text)
         return str(message.message_id)
+
+    async def send_typing(self, conversation_id: str) -> None:
+        """Show immediate, ephemeral progress while a durable inbox job runs."""
+        if self._bot is None:
+            return
+        await self._bot.send_chat_action(chat_id=int(conversation_id), action=ChatAction.TYPING)
 
     async def edit(self, conversation_id: str, message_id: str, text: str) -> None:
         await self._bot.edit_message_text(chat_id=int(conversation_id), message_id=int(message_id), text=text)

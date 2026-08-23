@@ -20,12 +20,26 @@ class FoodMediaType(str, Enum):
 
 
 def _prompt(media_type: FoodMediaType) -> str:
-    kind = "image" if media_type is FoodMediaType.PHOTO else "PDF"
-    return (
-        f"Extract only food and nutrition-label evidence visible in this {kind}. State food names, portions, "
-        "serving sizes, calories and macros only when legible. Do not invent missing values. Return a concise "
-        "plain-text meal description suitable for a food journal."
-    )
+    if media_type is FoodMediaType.DOCUMENT:
+        return (
+            "Read this food-related PDF. Extract only food and nutrition-label evidence that is actually visible. "
+            "State food names, portions, serving sizes, calories and macros only when legible. Do not invent "
+            "missing values. Return a concise plain-text meal description suitable for a food journal."
+        )
+
+    return """Analyze this food photo visually. This is not an OCR-only task: identify the actual plated, prepared,
+or packaged food from its appearance, even if there is no readable text. Use visible text only as supporting evidence.
+
+Return exactly these concise sections:
+Interpretation: the most likely food or dish, including visible components and preparation when distinguishable.
+Estimate: a rough visible portion (household measure or grams only when reasonably inferable); say "portion unclear"
+when the image provides no reliable scale.
+Confidence: high, medium, or low, followed by a short reason grounded in what is visible.
+Question: one specific question only if the answer would materially change the food or portion estimate; otherwise "none".
+
+Do not claim an exact weight, nutrition value, recipe, or brand unless it is visible. If the image is packaging or a
+nutrition label, identify the product only from legible evidence and distinguish serving information from what was
+actually eaten. If it is not food or cannot be interpreted, say so plainly with low confidence."""
 
 
 def _supported_mime_type(mime_type: str | None, media_type: FoodMediaType) -> str:

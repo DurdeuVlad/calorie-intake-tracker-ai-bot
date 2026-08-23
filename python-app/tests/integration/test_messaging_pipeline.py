@@ -5,17 +5,19 @@ the daily-status flood-control storm fix (see daily_status_dispatcher.py):
 a failing daily-status edit must give up rather than be reclaimed by the very
 next tick with zero backoff."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 
 from app.db.base import session_scope
 from app.db.models.users import FoodUser
-from app.messaging import daily_status_dispatcher, ingress, inbox_worker, outbox_dispatcher
+from app.messaging import daily_status_dispatcher, ingress, inbox_worker, outbox, outbox_dispatcher
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import InboundMessage
-from app.db.models.messaging import MessagingDailyStatus, MessagingOutboundMessage
+from app.db.models.messaging import MessagingDailyStatus, MessagingOutboundMessage, TelegramAccessGrant
 from app.config import get_settings
 
 
@@ -25,6 +27,7 @@ class StubFrontend:
         self._limit = limit
         self.fail = fail
         self.sent: list[tuple[str, str]] = []
+        self.typing: list[str] = []
 
     def provider(self) -> str:
         return self._provider
@@ -41,6 +44,9 @@ class StubFrontend:
         self.sent.append((conversation_id, text))
         return "1"
 
+    async def send_typing(self, conversation_id: str) -> None:
+        self.typing.append(conversation_id)
+
     async def edit(self, conversation_id: str, message_id: str, text: str) -> None:
         pass
 
@@ -48,10 +54,24 @@ class StubFrontend:
         raise NotImplementedError
 
 
-@pytest.fixture(autouse=True)
-def _allow_test_user(monkeypatch):
+@pytest_asyncio.fixture(autouse=True)
+async def _allow_test_user(monkeypatch):
+    """Exercise the durable access policy with an explicitly granted account."""
     settings = get_settings()
-    monkeypatch.setattr(type(settings), "allowed_telegram_user_id_set", property(lambda self: {"42"}))
+    monkeypatch.setattr(settings, "telegram_frontend_enabled", True)
+    now = datetime.now(timezone.utc)
+    async with session_scope() as session:
+        session.add(
+            TelegramAccessGrant(
+                telegram_user_id=42,
+                is_admin=False,
+                active=True,
+                granted_by=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await session.commit()
     yield
 
 
@@ -70,8 +90,14 @@ async def test_inbound_message_travels_through_inbox_to_outbox():
     async with session_scope() as session:
         await ingress.accept(session, inbound)
 
-    processed = await inbox_worker.process_one()
+    frontend = StubFrontend()
+    # The worker gives Telegram immediate visual feedback before producing the
+    # durable final response; dispatcher delivery remains a separate step.
+    processed = await inbox_worker.process_one(
+        inbox_worker.InboxWorkerDeps(journal=inbox_worker.JournalApplicationService(get_settings().default_timezone), frontends=FrontendRegistry([frontend]))
+    )
     assert processed is True
+    assert frontend.typing == ["42"]
 
     async with session_scope() as session:
         rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
@@ -79,6 +105,15 @@ async def test_inbound_message_travels_through_inbox_to_outbox():
     # back to the canned "unavailable" reply -- see test_journal_application_service.py
     # for slash-command and onboarding coverage.
     assert any("cannot process" in r.text for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_outbox_wake_signal_releases_idle_dispatcher_without_polling_delay():
+    outbox.begin_dispatch_cycle()
+    waiter = asyncio.create_task(outbox.wait_for_dispatch(30))
+    await asyncio.sleep(0)
+    outbox.request_dispatch()
+    await asyncio.wait_for(waiter, timeout=0.1)
 
 
 @pytest.mark.asyncio
