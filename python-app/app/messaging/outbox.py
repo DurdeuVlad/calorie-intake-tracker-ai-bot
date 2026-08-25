@@ -1,10 +1,9 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.messaging import MessagingOutboundMessage
-
 
 # This process-local notification complements (never replaces) the durable
 # outbox table.  A restart or a missed notification simply falls back to the
@@ -35,7 +34,7 @@ async def reply(session: AsyncSession, provider: str, conversation_id: str, text
             provider=provider,
             conversation_id=conversation_id,
             text=text,
-            next_attempt_at=datetime.now(timezone.utc),
+            next_attempt_at=datetime.now(UTC),
         )
     )
 

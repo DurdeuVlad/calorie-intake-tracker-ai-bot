@@ -4,7 +4,7 @@ status message) -- both exist in parallel, matching the Java predecessor."""
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +50,7 @@ async def refresh(session: AsyncSession, user: FoodUser, chat_id: int) -> None:
     text = _status_text(len(rows), calories, settings.calorie_target)
 
     existing = await pinned_daily_status_repo.find_by_user_and_chat_id(session, user, chat_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if existing is not None:
         existing.request(today, text, now)
     else:

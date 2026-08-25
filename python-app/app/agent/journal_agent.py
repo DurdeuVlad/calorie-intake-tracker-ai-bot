@@ -8,16 +8,25 @@ module docstring for why)."""
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.openai_model_client import AgentProviderUnavailableError, OpenAiJournalAgentModel
+from app.agent.openai_model_client import (
+    AgentProviderUnavailableError,
+    OpenAiJournalAgentModel,
+)
 from app.agent.portion_followup import estimate_followup_context
 from app.agent.trace_sink import AgentTraceSink, NoopTraceSink
 from app.db.models.conversation import ConversationMemory
-from app.domain.agent_types import AgentContext, AgentExchange, AgentToolFailure, AgentToolResult, ToolCall
+from app.domain.agent_types import (
+    AgentContext,
+    AgentExchange,
+    AgentToolFailure,
+    AgentToolResult,
+    ToolCall,
+)
 from app.repositories import nutrition_evidence_repo
 from app.services.journal_tool_executor import JournalToolExecutor
 
@@ -76,7 +85,7 @@ class JournalAgent:
                     raw = await self._tools.execute(session, active, call, todos)
                 except AgentToolFailure as failure:
                     raw = failure.result
-                except Exception:  # noqa: BLE001
+                except Exception:
                     logger.exception("Tool execution failed: %s", call.name)
                     raw = AgentToolResult.failure("TEMPORARY_FAILURE", "That operation could not be completed now.")
 
@@ -88,6 +97,26 @@ class JournalAgent:
                 rendered = await self._canonical_reply(session, active, call, result)
                 if rendered is not None:
                     return self._complete(rendered)
+
+    async def run_undo(self, session: AsyncSession, context: AgentContext) -> str:
+        """Deterministic entry point for the /undo slash command. Invokes the
+        same undo_last_change tool the agent calls for natural-language undo
+        ("undo that", "anuleaza"), without spending a model turn -- undo must
+        stay instant and free even though the slash-command dispatch table in
+        journal_application_service.py does not go through the model loop."""
+        call = ToolCall(id="slash-undo", name="undo_last_change", arguments="{}")
+        try:
+            result = await self._tools.execute(session, context, call, [])
+        except AgentToolFailure as failure:
+            result = failure.result
+        except Exception:
+            logger.exception("Tool execution failed: %s", call.name)
+            result = AgentToolResult.failure("TEMPORARY_FAILURE", "That operation could not be completed now.")
+        self._trace.tool_result(call, result)
+        if result.ok:
+            return self._complete("Am anulat ultima schimbare din jurnal." if context.romanian else "Undid the latest journal change.")
+        fallback = "Nu am putut anula schimbarea." if context.romanian else "That could not be undone right now."
+        return self._complete(result.user_hint or fallback)
 
     def _complete(self, reply: str) -> str:
         self._trace.completed(reply)
@@ -259,7 +288,7 @@ class JournalAgent:
     def _source_state(cache_hit: bool, fetched_at: datetime | None) -> str:
         if not cache_hit:
             return "fetched from provider"
-        if fetched_at is not None and fetched_at <= datetime.now(timezone.utc) - timedelta(days=30):
+        if fetched_at is not None and fetched_at <= datetime.now(UTC) - timedelta(days=30):
             return "cached/stale; not a live lookup"
         return "cached; not a live lookup"
 

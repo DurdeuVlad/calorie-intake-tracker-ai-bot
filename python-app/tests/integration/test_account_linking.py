@@ -4,7 +4,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db.base import session_scope
 from app.db.models.messaging import MessagingIdentity, MessagingOutboundMessage
-from app.messaging import ingress, inbox_worker
+from app.messaging import inbox_worker, ingress
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import InboundMessage
 from app.messaging.inbox_worker import InboxWorkerDeps

@@ -4,7 +4,7 @@ graceful fallback if anything in that chain fails -- mirrors
 MessagingInboxWorker.process()'s attachment branch exactly."""
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db.base import session_scope
 from app.db.models.messaging import MessagingOutboundMessage, TelegramAccessGrant
-from app.messaging import ingress, inbox_worker
+from app.messaging import inbox_worker, ingress
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import Attachment, AttachmentKind, InboundMessage
 from app.messaging.inbox_worker import InboxWorkerDeps
@@ -88,7 +88,7 @@ async def _allow_test_user(monkeypatch):
     """Exercise the durable access policy with an explicitly granted account."""
     settings = get_settings()
     monkeypatch.setattr(settings, "telegram_frontend_enabled", True)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     async with session_scope() as session:
         session.add(
             TelegramAccessGrant(

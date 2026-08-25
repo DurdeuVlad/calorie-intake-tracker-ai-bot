@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ async def record_turn(session: AsyncSession, user: FoodUser, user_message: str, 
     predecessor did exactly that at one call site and double-recorded memory for
     the same logical turn. Keep this called from exactly one place: the inbox
     worker's main message-handling path, right after computing the real reply."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     session.add(ConversationMemory(user_id=user.id, role="user", content=_truncate(user_message), created_at=now))
     session.add(ConversationMemory(user_id=user.id, role="assistant", content=_truncate(assistant_message), created_at=now))
     await session.flush()

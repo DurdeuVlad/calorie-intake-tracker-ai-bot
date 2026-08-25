@@ -72,7 +72,7 @@ class OpenAiJournalAgentModel:
                 for call in (message.get("tool_calls") or [])
             ]
             return AgentReply(message.get("content"), calls)
-        except Exception as failure:  # noqa: BLE001 - any transport/parse failure maps to the same outcome
+        except Exception as failure:
             raise AgentProviderUnavailableError("Agent provider unavailable") from failure
 
     @staticmethod

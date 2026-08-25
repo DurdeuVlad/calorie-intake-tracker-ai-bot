@@ -122,8 +122,7 @@ class Settings(BaseSettings):
     def asyncpg_dsn(self) -> str:
         """Convert the JDBC-style DATABASE_URL (jdbc:postgresql://host:port/db) into an asyncpg DSN."""
         url = self.database_url
-        if url.startswith("jdbc:"):
-            url = url[len("jdbc:") :]
+        url = url.removeprefix("jdbc:")
         # url is now postgresql://host:port/db[?params]
         if url.startswith("postgresql://"):
             url = "postgresql+asyncpg://" + url[len("postgresql://") :]

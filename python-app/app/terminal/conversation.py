@@ -11,13 +11,13 @@ from dataclasses import dataclass
 
 from app.config import Settings
 from app.db.base import session_scope
+from app.messaging import inbox_worker as inbox_worker_module
 from app.messaging import ingress, outbox_dispatcher
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import InboundMessage
 from app.messaging.inbox_worker import InboxWorkerDeps
-from app.messaging import inbox_worker as inbox_worker_module
 from app.terminal.terminal_frontend import TerminalFrontend
-from app.terminal.trace_collector import Trace, TerminalTraceCollector
+from app.terminal.trace_collector import TerminalTraceCollector, Trace
 
 REPLY_TIMEOUT_SECONDS = 45
 

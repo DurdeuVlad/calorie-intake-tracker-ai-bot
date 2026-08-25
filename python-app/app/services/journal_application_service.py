@@ -28,6 +28,8 @@ MAX_CALORIE_TARGET = 5000
 class Agent(Protocol):
     async def run(self, session: AsyncSession, context: AgentContext) -> str: ...
 
+    async def run_undo(self, session: AsyncSession, context: AgentContext) -> str: ...
+
 
 def onboarding_prompt(settings: UserSettings, romanian: bool) -> str:
     if settings.onboarding_stage == "CALORIE_TARGET":
@@ -123,11 +125,11 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
         return (
             "Pot nota mai multe mese dintr-un singur mesaj, inclusiv pe zile trecute; pot estima nutriția, muta, corecta "
             "sau șterge direct și poți folosi Undo timp de 10 minute.\n\nComenzi: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy" + admin_commands
+            "/settings, /cancel, /privacy, /undo" + admin_commands
             if romanian
             else "I can log several meals from one message, including past dates; estimate nutrition; and move, edit, "
             "or delete entries immediately with a 10-minute Undo window.\n\nCommands: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy" + admin_commands
+            "/settings, /cancel, /privacy, /undo" + admin_commands
         )
     if cmd in ("/today", "/report"):
         return await _today_text(session, user, settings, romanian)
@@ -178,6 +180,16 @@ class JournalApplicationService:
 
         if message.startswith("/"):
             romanian = settings.preferred_language == "ro"
+            cmd = message.strip().lower().split(maxsplit=1)[0]
+            if cmd == "/undo":
+                # Deliberately bypasses command()'s deterministic-only dispatch:
+                # undo reverses a journal mutation, which lives behind the same
+                # undo_last_change tool that natural-language undo ("undo that",
+                # "anuleaza") already calls through the agent.
+                if self._agent is None:
+                    return unavailable(romanian)
+                context = AgentContext(user=user, chat_id=chat_id, romanian=romanian, message=message)
+                return await self._agent.run_undo(session, context)
             is_private_admin = (
                 user.telegram_user_id is not None
                 and chat_id == str(user.telegram_user_id)

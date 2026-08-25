@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,7 @@ async def find_by_user_and_chat_id(session: AsyncSession, user: FoodUser, chat_i
 
 
 async def lock_pending(session: AsyncSession) -> PinnedDailyStatus | None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(PinnedDailyStatus)
         .where(

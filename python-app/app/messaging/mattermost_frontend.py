@@ -4,7 +4,10 @@ posts are fed by mattermost_websocket_listener.py."""
 import httpx
 
 from app.config import Settings
-from app.domain.media_exceptions import MediaProcessingCategory, MediaProcessingException
+from app.domain.media_exceptions import (
+    MediaProcessingCategory,
+    MediaProcessingException,
+)
 from app.messaging.inbound_message import Attachment, AttachmentKind
 
 MESSAGE_LIMIT = 16000
@@ -47,7 +50,7 @@ class MattermostFrontend:
             if not response.content:
                 raise RuntimeError("media unavailable")
             return response.content
-        except Exception as failure:  # noqa: BLE001
+        except Exception as failure:
             raise MediaProcessingException(MediaProcessingCategory.TELEGRAM_DOWNLOAD, "Messaging media download failed", failure) from failure
 
     async def attachment(self, file_id: str) -> Attachment:

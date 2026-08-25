@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 import uuid
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -22,9 +22,9 @@ def _evidence(**kwargs) -> NutritionEvidence:
         "evidence_id": uuid.uuid4(), "food_entry_id": 1, "food_item_id": 2, "provider": "open_food_facts",
         "source_name": "Open Food Facts", "source_url": "https://world.openfoodfacts.org/product/123",
         "selected_candidate": '{"name":"Greek yogurt","brand":"Acme","barcode":"123"}',
-        "quantity_grams": Decimal("150"), "calories_per_100g": 97, "total_calories": 146,
+        "quantity_grams": Decimal(150), "calories_per_100g": 97, "total_calories": 146,
         "derivation": "round(150 g × 97 kcal / 100 g) = 146 kcal", "confidence": "high",
-        "source_fetched_at": datetime.now(timezone.utc), "source_cache_hit": False, "captured_at": datetime.now(timezone.utc),
+        "source_fetched_at": datetime.now(UTC), "source_cache_hit": False, "captured_at": datetime.now(UTC),
     }
     values.update(kwargs)
     return NutritionEvidence(**values)
@@ -75,7 +75,7 @@ def test_cached_and_stale_receipts_do_not_claim_a_live_lookup():
     )
     stale = _agent()._meal_receipt(
         _context(), {"description": "yogurt", "calories": 146}, {},
-        _evidence(source_cache_hit=True, source_fetched_at=datetime.now(timezone.utc) - timedelta(days=31)),
+        _evidence(source_cache_hit=True, source_fetched_at=datetime.now(UTC) - timedelta(days=31)),
     )
 
     assert "cached; not a live lookup" in "\n".join(recent)

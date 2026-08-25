@@ -3,8 +3,8 @@ import logging
 
 from app.config import get_settings
 from app.db.base import session_scope
-from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging import outbox
+from app.messaging.frontend_registry import FrontendRegistry
 from app.repositories import messaging_outbox_repo
 
 logger = logging.getLogger(__name__)

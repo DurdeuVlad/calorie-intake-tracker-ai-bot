@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,7 @@ async def get_or_create_by_telegram_user_id(
     user = await find_by_telegram_user_id(session, telegram_user_id)
     if user is not None:
         return user
-    user = FoodUser(telegram_user_id=telegram_user_id, display_name=display_name, created_at=datetime.now(timezone.utc))
+    user = FoodUser(telegram_user_id=telegram_user_id, display_name=display_name, created_at=datetime.now(UTC))
     session.add(user)
     await session.flush()
     session.add(UserSettings(user_id=user.id, timezone=default_timezone))

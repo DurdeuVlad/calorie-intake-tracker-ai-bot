@@ -1,13 +1,13 @@
 import json
 import logging
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.messaging.inbound_message import Attachment, InboundMessage
 from app.db.models.messaging import MessagingInboxMessage
+from app.messaging.inbound_message import Attachment, InboundMessage
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ async def accept(session: AsyncSession, message: InboundMessage) -> bool:
         provider=message.provider,
         event_id=message.event_id,
         payload=_serialize(message),
-        next_attempt_at=datetime.now(timezone.utc),
+        next_attempt_at=datetime.now(UTC),
     )
     session.add(row)
     try:

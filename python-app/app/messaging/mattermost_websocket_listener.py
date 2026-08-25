@@ -39,8 +39,10 @@ class MattermostWebSocketListener:
             self._task.cancel()
             try:
                 await self._task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            except asyncio.CancelledError:
                 pass
+            except Exception:
+                logger.exception("Mattermost websocket listener task raised during shutdown")
 
     async def _run(self) -> None:
         url = self._settings.mattermost_internal_url.replace("http", "ws", 1) + "/api/v4/websocket"
@@ -54,7 +56,7 @@ class MattermostWebSocketListener:
                         await self._handle_frame(raw)
             except asyncio.CancelledError:
                 raise
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning("Mattermost websocket connection error, reconnecting in %ss", RECONNECT_DELAY_SECONDS, exc_info=True)
             if self._running:
                 await asyncio.sleep(RECONNECT_DELAY_SECONDS)
@@ -64,7 +66,7 @@ class MattermostWebSocketListener:
             frame = json.loads(raw)
             if frame.get("event") == "posted":
                 await self._posted(frame)
-        except Exception:  # noqa: BLE001 - a malformed third-party event is not journal input
+        except Exception:
             logger.debug("Ignoring malformed Mattermost websocket frame", exc_info=True)
 
     async def _posted(self, frame: dict) -> None:

@@ -9,18 +9,23 @@ from sqlalchemy import select
 from app.config import Settings, get_settings
 from app.db.base import session_scope
 from app.db.models.users import FoodUser
-from app.domain.media_exceptions import MediaProcessingCategory, MediaProcessingException
+from app.domain.media_exceptions import (
+    MediaProcessingCategory,
+    MediaProcessingException,
+)
 from app.integrations.openai_transcription import OpenAiVoiceTranscriber
 from app.integrations.openai_vision import FoodMediaType, OpenAiFoodMediaExtractor
 from app.messaging import execution_context, ingress, outbox
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import AttachmentKind, InboundMessage
-from app.repositories import messaging_identity_repo
-from app.repositories import telegram_access_repo
+from app.repositories import messaging_identity_repo, telegram_access_repo
 from app.repositories.food_user_repo import get_or_create_by_telegram_user_id
 from app.repositories.messaging_inbox_repo import lock_ready
-from app.services import message_link_service, messaging_daily_status_service
-from app.services import telegram_admin_service
+from app.services import (
+    message_link_service,
+    messaging_daily_status_service,
+    telegram_admin_service,
+)
 from app.services.conversation_memory_service import record_turn
 from app.services.journal_application_service import JournalApplicationService
 
@@ -44,9 +49,7 @@ async def allowed(session, message: InboundMessage, settings: Settings) -> bool:
         return await telegram_access_repo.allowed(session, int(message.user_id))
     if message.provider == "mattermost":
         return settings.mattermost_enabled and message.user_id in settings.allowed_mattermost_user_id_set
-    if message.provider == "terminal":
-        return True
-    return False
+    return message.provider == "terminal"
 
 
 async def _load_user_by_id(session, user_id: int) -> FoodUser:
@@ -94,7 +97,7 @@ async def _typing_heartbeat(frontend, conversation_id: str, stop: asyncio.Event)
             return
         try:
             await frontend.send_typing(conversation_id)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- typing indicator is best-effort, never fatal
             logger.info("Telegram typing action failed: conversation_id=%s", conversation_id)
             return
 
@@ -109,7 +112,7 @@ async def _start_typing(deps: InboxWorkerDeps, message: InboundMessage) -> tuple
     try:
         # Do this inline so even a very fast handler gives visible feedback.
         await frontend.send_typing(message.conversation_id)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- typing indicator is best-effort, never fatal
         logger.info("Telegram typing action failed: conversation_id=%s", message.conversation_id)
         return None, None
     return stop, asyncio.create_task(_typing_heartbeat(frontend, message.conversation_id, stop), name="telegram-typing")
@@ -182,9 +185,7 @@ async def handle_message(session, message: InboundMessage, settings: Settings, d
                     media_text = text
                 logger.info("Inbox stage complete: provider=%s event_id=%s stage=media elapsed_ms=%d", message.provider, message.event_id, (perf_counter() - stage_started) * 1000)
             except Exception:
-                logger.error(
-                    "Media processing failed: provider=%s kind=%s", message.provider, message.attachments[0].kind, exc_info=True
-                )
+                logger.exception("Media processing failed: provider=%s kind=%s", message.provider, message.attachments[0].kind)
                 # A user-written caption remains usable when transcription
                 # fails; label the missing transcript in the final receipt
                 # instead of silently treating the caption as audio content.

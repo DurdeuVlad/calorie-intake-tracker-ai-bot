@@ -34,7 +34,7 @@ class TerminalFrontend:
     async def await_reply(self, timeout: float) -> str | None:
         try:
             return await asyncio.wait_for(self._deliveries.get(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
 
     def reset(self) -> None:

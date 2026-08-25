@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from app.db.models.messaging import MessagingInboxMessage
 async def lock_ready(session: AsyncSession) -> MessagingInboxMessage | None:
     """SELECT ... FOR UPDATE SKIP LOCKED, one row, respecting the retry backoff.
     Mirrors messaging_inbox's idx_messaging_inbox_ready(status, next_attempt_at, id)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(MessagingInboxMessage)
         .where(

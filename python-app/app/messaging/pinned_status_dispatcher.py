@@ -34,7 +34,7 @@ async def dispatch_once(telegram: TelegramFrontend) -> bool:
 
             try:
                 await telegram.pin(str(status.chat_id), str(message_id))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # Treat pinning as part of delivery. The retry is idempotent for
                 # Telegram and prevents an unpinned replacement from becoming a
                 # silently accepted final state.

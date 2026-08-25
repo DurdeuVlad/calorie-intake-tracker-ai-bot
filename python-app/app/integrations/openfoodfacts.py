@@ -8,7 +8,11 @@ from dataclasses import dataclass
 import httpx
 
 from app.config import Settings
-from app.integrations.openfoodfacts_types import NutritionProfile, OpenFoodFactsUnavailable, PackagedFoodResult
+from app.integrations.openfoodfacts_types import (
+    NutritionProfile,
+    OpenFoodFactsUnavailable,
+    PackagedFoodResult,
+)
 
 _BARCODE_RE = re.compile(r"\d{8,14}")
 
