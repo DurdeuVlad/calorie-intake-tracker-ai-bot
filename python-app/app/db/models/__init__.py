@@ -14,7 +14,13 @@ from app.db.models.messaging import (
     PinnedDailyStatus,
     TelegramAccessGrant,
 )
-from app.db.models.nutrition import OpenFoodFactsLookupCache, NutritionEvidence, NutritionSourceCache, PendingNutritionQuote, PrivateFood
+from app.db.models.nutrition import (
+    NutritionEvidence,
+    NutritionSourceCache,
+    OpenFoodFactsLookupCache,
+    PendingNutritionQuote,
+    PrivateFood,
+)
 from app.db.models.reports import ReportDelivery
 from app.db.models.users import FoodUser, UserSettings
 
@@ -22,22 +28,22 @@ __all__ = [
     "ConversationMemory",
     "FoodEntry",
     "FoodItem",
+    "FoodUser",
+    "FrontendLinkCode",
     "JournalChangeMutation",
     "JournalChangeSet",
-    "FrontendLinkCode",
     "MessagingDailyStatus",
     "MessagingIdentity",
     "MessagingInboxMessage",
     "MessagingOutboundMessage",
     "MessagingRoute",
-    "PinnedDailyStatus",
-    "TelegramAccessGrant",
-    "NutritionSourceCache",
     "NutritionEvidence",
+    "NutritionSourceCache",
     "OpenFoodFactsLookupCache",
     "PendingNutritionQuote",
+    "PinnedDailyStatus",
     "PrivateFood",
     "ReportDelivery",
-    "FoodUser",
+    "TelegramAccessGrant",
     "UserSettings",
 ]

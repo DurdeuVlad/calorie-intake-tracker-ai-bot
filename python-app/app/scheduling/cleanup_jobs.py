@@ -3,7 +3,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete
 
@@ -17,7 +17,7 @@ CLEANUP_INTERVAL_SECONDS = 300
 
 
 async def purge_expired() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     async with session_scope() as session:
         await session.execute(delete(PendingNutritionQuote).where(PendingNutritionQuote.expires_at < now))
         await session.execute(delete(JournalChangeSet).where(JournalChangeSet.expires_at < now))
@@ -32,5 +32,5 @@ async def run_forever(stop_event: asyncio.Event) -> None:
             logger.exception("Cleanup job tick failed")
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=CLEANUP_INTERVAL_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass

@@ -15,7 +15,12 @@ from app.config import get_settings
 from app.integrations.openai_transcription import OpenAiVoiceTranscriber
 from app.integrations.openai_vision import OpenAiFoodMediaExtractor
 from app.main import app as public_app
-from app.messaging import daily_status_dispatcher, inbox_worker, outbox_dispatcher, pinned_status_dispatcher
+from app.messaging import (
+    daily_status_dispatcher,
+    inbox_worker,
+    outbox_dispatcher,
+    pinned_status_dispatcher,
+)
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbox_worker import InboxWorkerDeps
 from app.messaging.mattermost_frontend import MattermostFrontend

@@ -4,7 +4,10 @@ OpenAiVoiceTranscriber.java."""
 import httpx
 
 from app.config import Settings
-from app.domain.media_exceptions import MediaProcessingCategory, MediaProcessingException
+from app.domain.media_exceptions import (
+    MediaProcessingCategory,
+    MediaProcessingException,
+)
 
 MAX_VOICE_BYTES = 20_000_000
 
@@ -50,7 +53,7 @@ class OpenAiVoiceTranscriber:
             raise _provider_failure(failure.response, failure) from failure
         except httpx.TransportError as failure:
             raise MediaProcessingException(MediaProcessingCategory.PROVIDER_TEMPORARY, "OpenAI is temporarily unavailable", failure) from failure
-        except Exception as failure:  # noqa: BLE001
+        except Exception as failure:
             raise MediaProcessingException(MediaProcessingCategory.PROVIDER_RESPONSE, "OpenAI returned an invalid transcription response", failure) from failure
 
     async def close(self) -> None:

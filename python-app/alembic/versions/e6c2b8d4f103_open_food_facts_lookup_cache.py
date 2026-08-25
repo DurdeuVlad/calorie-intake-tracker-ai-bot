@@ -1,8 +1,8 @@
 """Add durable Open Food Facts lookup cache and provenance freshness fields."""
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "e6c2b8d4f103"
 down_revision = "d4f1a7c8e902"

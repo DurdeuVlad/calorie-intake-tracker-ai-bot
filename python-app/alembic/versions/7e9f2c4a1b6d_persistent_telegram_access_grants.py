@@ -1,11 +1,12 @@
 """Add persistent Telegram access grants."""
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
+
 revision: str = "7e9f2c4a1b6d"
-down_revision: Union[str, Sequence[str], None] = "585aef501d2c"
+down_revision: str | Sequence[str] | None = "585aef501d2c"
 branch_labels = None
 depends_on = None
 

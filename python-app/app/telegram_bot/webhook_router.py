@@ -1,5 +1,6 @@
 import hmac
 import logging
+
 from aiogram.types import Update
 from fastapi import APIRouter, Header, Request, Response
 
@@ -61,7 +62,7 @@ async def telegram_webhook(
     body = await request.json()
     try:
         update = Update.model_validate(body)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- untrusted webhook body, must never crash the worker
         logger.warning("Rejected malformed Telegram update payload")
         return Response(status_code=200)
 

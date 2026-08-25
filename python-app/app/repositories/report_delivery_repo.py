@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,6 @@ async def claim(session: AsyncSession, user_id: int, report_type: str, local_dat
             "VALUES (:user_id, :report_type, :local_date, :delivered_at) "
             "ON CONFLICT (user_id, report_type, local_date) DO NOTHING"
         ),
-        {"user_id": user_id, "report_type": report_type, "local_date": local_date, "delivered_at": datetime.now(timezone.utc)},
+        {"user_id": user_id, "report_type": report_type, "local_date": local_date, "delivered_at": datetime.now(UTC)},
     )
     return result.rowcount

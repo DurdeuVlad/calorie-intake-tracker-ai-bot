@@ -8,14 +8,12 @@ that was down across a user's report time."""
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import date, datetime, time, timedelta, timezone
-from typing import Any
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.db.base import session_scope
 from app.db.models.messaging import MessagingOutboundMessage, MessagingRoute
 from app.db.models.users import UserSettings
@@ -45,10 +43,10 @@ async def _send(session: AsyncSession, settings: UserSettings, report_type: str,
 
     routes = (await session.execute(select(MessagingRoute).where(MessagingRoute.user_id == settings.user_id))).scalars().all()
     for route in routes:
-        session.add(MessagingOutboundMessage(provider=route.provider, conversation_id=route.conversation_id, text=text, next_attempt_at=datetime.now(timezone.utc)))
+        session.add(MessagingOutboundMessage(provider=route.provider, conversation_id=route.conversation_id, text=text, next_attempt_at=datetime.now(UTC)))
 
 
-async def deliver_due_reports(now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+async def deliver_due_reports(now_fn: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
     async with session_scope() as session:
         all_settings = (await session.execute(select(UserSettings))).scalars().all()
         for settings in all_settings:
@@ -56,7 +54,8 @@ async def deliver_due_reports(now_fn: Callable[[], datetime] = lambda: datetime.
                 continue
             try:
                 zone = ZoneInfo(settings.timezone)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 -- one user's bad timezone must not stop the whole tick
+                logger.warning("Skipping report delivery for user_id=%s: invalid timezone %r", settings.user_id, settings.timezone)
                 continue
             now = now_fn().astimezone(zone)
             if now.time() >= settings.morning_report_time:
@@ -79,5 +78,5 @@ async def run_forever(stop_event: asyncio.Event) -> None:
             logger.exception("Report scheduler tick failed")
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=60)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass

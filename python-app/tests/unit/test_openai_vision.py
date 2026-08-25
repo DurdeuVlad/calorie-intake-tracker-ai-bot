@@ -4,7 +4,10 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.domain.media_exceptions import MediaProcessingCategory, MediaProcessingException
+from app.domain.media_exceptions import (
+    MediaProcessingCategory,
+    MediaProcessingException,
+)
 from app.integrations.openai_vision import FoodMediaType, OpenAiFoodMediaExtractor
 
 

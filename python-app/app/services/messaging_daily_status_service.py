@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.messaging import MessagingDailyStatus
 from app.db.models.users import FoodUser
-from app.repositories import food_entry_repo, food_user_repo, messaging_daily_status_repo
+from app.repositories import (
+    food_entry_repo,
+    food_user_repo,
+    messaging_daily_status_repo,
+)
 
 
 async def refresh(session: AsyncSession, user: FoodUser, provider: str, conversation_id: str) -> None:

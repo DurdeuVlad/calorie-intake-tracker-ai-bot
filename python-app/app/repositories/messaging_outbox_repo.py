@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ async def lock_ready(session: AsyncSession, limit: int = 10) -> list[MessagingOu
     here MUST stay filtered by next_attempt_at, mirroring the inbox query exactly.
     Do not "simplify" this back to `status='PENDING' or (...)`.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         select(MessagingOutboundMessage)
         .where(

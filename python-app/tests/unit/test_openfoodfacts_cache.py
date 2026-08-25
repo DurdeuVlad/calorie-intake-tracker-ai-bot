@@ -1,8 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.integrations.openfoodfacts_types import OpenFoodFactsUnavailable, PackagedFoodResult
+from app.integrations.openfoodfacts_types import (
+    OpenFoodFactsUnavailable,
+    PackagedFoodResult,
+)
 from app.services import openfoodfacts_cache as cache
 
 
@@ -41,7 +44,7 @@ def _result():
 
 @pytest.mark.asyncio
 async def test_packaged_cache_miss_calls_provider_then_hit_does_not(memory_repo):
-    session, off, now = _Session(), _Off(_result()), datetime.now(timezone.utc)
+    session, off, now = _Session(), _Off(_result()), datetime.now(UTC)
 
     first = await cache.packaged_name(session, off, "Cola", "Acme", now)
     second = await cache.packaged_name(session, off, "COLA", "acme", now + timedelta(minutes=1))
@@ -54,7 +57,7 @@ async def test_packaged_cache_miss_calls_provider_then_hit_does_not(memory_repo)
 
 @pytest.mark.asyncio
 async def test_expired_cache_refreshes_from_provider(memory_repo):
-    session, off, now = _Session(), _Off(_result()), datetime.now(timezone.utc)
+    session, off, now = _Session(), _Off(_result()), datetime.now(UTC)
     await cache.packaged_name(session, off, "Cola", None, now)
     key = cache.cache_key("PACKAGED_NAME", "Cola", "")
     session.rows[key].expires_at = now - timedelta(seconds=1)
@@ -68,7 +71,7 @@ async def test_expired_cache_refreshes_from_provider(memory_repo):
 
 @pytest.mark.asyncio
 async def test_negative_result_is_cached(memory_repo):
-    session, off, now = _Session(), _Off([]), datetime.now(timezone.utc)
+    session, off, now = _Session(), _Off([]), datetime.now(UTC)
 
     first = await cache.packaged_name(session, off, "unknown food", None, now)
     second = await cache.packaged_name(session, off, "unknown food", None, now + timedelta(minutes=1))
@@ -83,7 +86,7 @@ async def test_negative_result_is_cached(memory_repo):
 async def test_rate_limit_is_short_cached_and_does_not_retry_immediately(memory_repo):
     session = _Session()
     off = _Off(error=OpenFoodFactsUnavailable("slow down", rate_limited=True))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     first = await cache.packaged_name(session, off, "Cola", None, now)
     second = await cache.packaged_name(session, off, "Cola", None, now + timedelta(minutes=1))
@@ -96,7 +99,7 @@ async def test_rate_limit_is_short_cached_and_does_not_retry_immediately(memory_
 
 @pytest.mark.asyncio
 async def test_rate_limit_serves_stale_success_without_hammering_provider(memory_repo):
-    session, now = _Session(), datetime.now(timezone.utc)
+    session, now = _Session(), datetime.now(UTC)
     healthy = _Off(_result())
     await cache.packaged_name(session, healthy, "Cola", None, now)
     key = cache.cache_key("PACKAGED_NAME", "Cola", "")

@@ -1,9 +1,9 @@
 """Persist server-selected Open Food Facts nutrition provenance."""
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
 
 revision = "d4f1a7c8e902"
 down_revision = "7e9f2c4a1b6d"

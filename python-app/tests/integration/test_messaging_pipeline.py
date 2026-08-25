@@ -6,19 +6,29 @@ a failing daily-status edit must give up rather than be reclaimed by the very
 next tick with zero backoff."""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.db.base import session_scope
+from app.db.models.messaging import (
+    MessagingDailyStatus,
+    MessagingOutboundMessage,
+    TelegramAccessGrant,
+)
 from app.db.models.users import FoodUser
-from app.messaging import daily_status_dispatcher, ingress, inbox_worker, outbox, outbox_dispatcher
+from app.messaging import (
+    daily_status_dispatcher,
+    inbox_worker,
+    ingress,
+    outbox,
+    outbox_dispatcher,
+)
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import InboundMessage
-from app.db.models.messaging import MessagingDailyStatus, MessagingOutboundMessage, TelegramAccessGrant
-from app.config import get_settings
 
 
 class StubFrontend:
@@ -59,7 +69,7 @@ async def _allow_test_user(monkeypatch):
     """Exercise the durable access policy with an explicitly granted account."""
     settings = get_settings()
     monkeypatch.setattr(settings, "telegram_frontend_enabled", True)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     async with session_scope() as session:
         session.add(
             TelegramAccessGrant(
@@ -128,7 +138,7 @@ async def test_outbox_respects_backoff_and_does_not_resend_immediately_on_failur
     async with session_scope() as session:
         session.add(
             MessagingOutboundMessage(
-                provider="telegram", conversation_id="42", text="will fail", next_attempt_at=datetime.now(timezone.utc)
+                provider="telegram", conversation_id="42", text="will fail", next_attempt_at=datetime.now(UTC)
             )
         )
         await session.commit()
@@ -140,7 +150,7 @@ async def test_outbox_respects_backoff_and_does_not_resend_immediately_on_failur
         row = (await session.execute(select(MessagingOutboundMessage))).scalar_one()
         assert row.status == "PENDING"
         assert row.attempts == 1
-        assert row.next_attempt_at > datetime.now(timezone.utc)
+        assert row.next_attempt_at > datetime.now(UTC)
 
     # Immediately try again -- with backoff respected, nothing should be claimed.
     processed_second = await outbox_dispatcher.dispatch_batch(registry)
@@ -149,7 +159,7 @@ async def test_outbox_respects_backoff_and_does_not_resend_immediately_on_failur
     # Once the backoff has elapsed, the row becomes claimable again and can succeed.
     async with session_scope() as session:
         row = (await session.execute(select(MessagingOutboundMessage))).scalar_one()
-        row.next_attempt_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        row.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.commit()
 
     working_frontend = StubFrontend(fail=False)
@@ -169,7 +179,7 @@ async def test_outbox_truncates_over_limit_text():
     async with session_scope() as session:
         session.add(
             MessagingOutboundMessage(
-                provider="telegram", conversation_id="42", text=long_text, next_attempt_at=datetime.now(timezone.utc)
+                provider="telegram", conversation_id="42", text=long_text, next_attempt_at=datetime.now(UTC)
             )
         )
         await session.commit()
@@ -194,7 +204,7 @@ async def test_daily_status_gives_up_instead_of_looping_forever_on_failure():
     nothing was claimed) -- an unbounded busy loop that exhausted the bot's
     global Telegram rate limit and delayed delivery for every other chat."""
     async with session_scope() as session:
-        user = FoodUser(telegram_user_id=8131572669, display_name="Stuck Chat", created_at=datetime.now(timezone.utc))
+        user = FoodUser(telegram_user_id=8131572669, display_name="Stuck Chat", created_at=datetime.now(UTC))
         session.add(user)
         await session.flush()
         session.add(

@@ -70,7 +70,7 @@ async def _repl(chat: TerminalConversation) -> None:
             print(f"bot> {result.reply}")
             if trace_enabled:
                 _print_trace(result.trace)
-        except Exception as failure:
+        except Exception as failure:  # noqa: BLE001 -- interactive REPL, one bad turn must not kill the session
             print(f"bot> Local processing failed: {type(failure).__name__}")
 
 

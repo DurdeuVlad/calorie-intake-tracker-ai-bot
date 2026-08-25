@@ -15,11 +15,11 @@ from app.db.models.entries import FoodEntry
 from app.db.models.messaging import PinnedDailyStatus
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext, AgentReply, ToolCall
+from app.messaging import execution_context
 from app.repositories import food_entry_repo
 from app.repositories.food_user_repo import get_or_create_by_telegram_user_id
-from app.services.journal_tool_executor import JournalToolExecutor
 from app.services import daily_status_service
-from app.messaging import execution_context
+from app.services.journal_tool_executor import JournalToolExecutor
 
 
 class ScriptedModel:

@@ -3,7 +3,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from sqlalchemy import DateTime
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import get_settings
@@ -13,7 +18,7 @@ class Base(DeclarativeBase):
     # Every TIMESTAMPTZ column in the real schema is timezone-aware; map Python's
     # bare `datetime` annotation to DateTime(timezone=True) everywhere instead of
     # repeating it on every column (the real DB has no naive-timestamp columns).
-    type_annotation_map = {
+    type_annotation_map = {  # noqa: RUF012 -- SQLAlchemy requires a plain dict here, never mutated at runtime
         datetime: DateTime(timezone=True),
     }
 

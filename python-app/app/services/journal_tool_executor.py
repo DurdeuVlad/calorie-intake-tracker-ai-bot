@@ -10,21 +10,36 @@ this rewrite already dropped by explicit decision.
 import json
 import socket
 import uuid
-from datetime import date as date_type, datetime, timedelta, timezone
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
+from datetime import date as date_type
 from decimal import Decimal
-from typing import Any, Callable, Awaitable
+from typing import Any, ClassVar
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entries import FoodEntry, FoodItem
 from app.db.models.journal_changes import JournalChangeSet
-from app.db.models.nutrition import NutritionEvidence, NutritionSourceCache, PendingNutritionQuote, PrivateFood
-from app.domain.agent_types import AgentContext, AgentToolFailure, AgentToolResult, ToolCall
-from app.domain.journal_intent import MealItem
+from app.db.models.nutrition import (
+    NutritionEvidence,
+    NutritionSourceCache,
+    PendingNutritionQuote,
+    PrivateFood,
+)
 from app.domain import journal_entry_snapshot as snapshot
+from app.domain.agent_types import (
+    AgentContext,
+    AgentToolFailure,
+    AgentToolResult,
+    ToolCall,
+)
+from app.domain.journal_intent import MealItem
 from app.domain.quantity_unit import QuantityUnit
-from app.integrations.openfoodfacts_types import NullOpenFoodFactsClient, OpenFoodFactsClient
+from app.integrations.openfoodfacts_types import (
+    NullOpenFoodFactsClient,
+    OpenFoodFactsClient,
+)
 from app.repositories import (
     food_entry_repo,
     food_item_repo,
@@ -34,8 +49,7 @@ from app.repositories import (
     pending_nutrition_quote_repo,
     private_food_repo,
 )
-from app.services import nutrition_resolver
-from app.services import openfoodfacts_cache
+from app.services import nutrition_resolver, openfoodfacts_cache
 
 MAX_ACTIONS_PER_BATCH = 20
 MAX_REDIRECTS = 5
@@ -184,11 +198,11 @@ def _resolve_meal_instant(
     aware = local_naive.replace(tzinfo=zone, fold=0)
     # Detect a DST "spring forward" gap: a nonexistent local time round-trips to a
     # different wall clock once normalized through UTC.
-    roundtrip = aware.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
+    roundtrip = aware.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
     if roundtrip != local_naive:
         raise ValidationError("That local time does not exist because of daylight-saving time. Use another time.")
 
-    result = aware.astimezone(timezone.utc)
+    result = aware.astimezone(UTC)
     if result > base:
         raise ValidationError("Future meal times are not allowed.")
     return result
@@ -356,7 +370,7 @@ class JournalToolExecutor:
             return AgentToolResult.failure("VALIDATION_ERROR", "A food name and positive grams are required.")
         batch_id = uuid.uuid4()
         products = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         lookup = await openfoodfacts_cache.packaged_name(session, self.off, name, _str(args, "brand"), now)
         if lookup.status in {"RATE_LIMITED", "TEMPORARY_FAILURE"}:
             return AgentToolResult.failure("TEMPORARY_FAILURE", "Packaged-food lookup is temporarily unavailable; please retry later.")
@@ -377,7 +391,7 @@ class JournalToolExecutor:
         return AgentToolResult.success({"products": products})
 
     async def _pending_quotes(self, session, context, args, todos) -> AgentToolResult:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         first = await pending_nutrition_quote_repo.find_first_by_type(session, context.user, "PACKAGED_MATCH", now)
         if first is None:
             return AgentToolResult.failure("NOT_FOUND", "There are no pending nutrition choices.")
@@ -390,7 +404,7 @@ class JournalToolExecutor:
     async def _owned_quote(self, session, context, quote_id: uuid.UUID | None, expected_type: str) -> PendingNutritionQuote | None:
         if quote_id is None:
             return None
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         quote = await pending_nutrition_quote_repo.lock_owned_active(session, quote_id, context.user, now)
         if quote is None or quote.quote_type != expected_type:
             return None
@@ -407,7 +421,7 @@ class JournalToolExecutor:
         if not _valid_item(item) or not _valid_calories_per_100g(item.calories_per_100g):
             return AgentToolResult.failure("VALIDATION_ERROR", "An estimate needs a food name, positive grams, and calories per 100 g between 1 and 10000.")
         basis = _str(args, "basis") or "AI estimate"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         quote = PendingNutritionQuote(
             quote_id=uuid.uuid4(), batch_id=uuid.uuid4(), user_id=context.user.id, quote_type="AI_ESTIMATE",
             product_name=item.name, grams=Decimal(str(item.grams)), calories_per_100g=item.calories_per_100g,
@@ -431,7 +445,7 @@ class JournalToolExecutor:
         cache_key = query.lower()
         if len(cache_key) > MAX_WEB_SEARCH_QUERY_CHARS:
             return AgentToolResult.failure("VALIDATION_ERROR", "The search query is too long.")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cached = self._web_search_cache.get(cache_key)
         if cached is not None and cached[0] > now - WEB_SEARCH_CACHE_TTL:
             return AgentToolResult.success({"results": cached[1], "cached": True})
@@ -594,7 +608,7 @@ class JournalToolExecutor:
 
         if args.get("quoteId") is not None:
             quote_id = _quote_id(args)
-            quote = await pending_nutrition_quote_repo.lock_owned_active(session, quote_id, context.user, datetime.now(timezone.utc)) if quote_id else None
+            quote = await pending_nutrition_quote_repo.lock_owned_active(session, quote_id, context.user, datetime.now(UTC)) if quote_id else None
             if quote is None:
                 raise AgentToolFailure(AgentToolResult.failure("NOT_FOUND", "The selected nutrition result is unavailable or expired."))
             quoted = self._quote_item(quote)
@@ -727,7 +741,7 @@ class JournalToolExecutor:
         if not quote.barcode:
             return
         existing = await nutrition_source_cache_repo.find_by_barcode(session, quote.barcode)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if existing is None:
             session.add(NutritionSourceCache(barcode=quote.barcode, product_name=quote.product_name, calories_per_100g=quote.calories_per_100g, source_url=quote.source_url or "", fetched_at=now))
         else:
@@ -831,7 +845,7 @@ class JournalToolExecutor:
             return AgentToolResult.failure("VALIDATION_ERROR", "A food name and valid calories per 100 g are required.")
         existing = await private_food_repo.find_by_user_and_name_ignore_case(session, context.user, name)
         if existing is None:
-            session.add(PrivateFood(user_id=context.user.id, name=name, calories_per_100g=kcal, created_at=datetime.now(timezone.utc)))
+            session.add(PrivateFood(user_id=context.user.id, name=name, calories_per_100g=kcal, created_at=datetime.now(UTC)))
         else:
             existing.calories_per_100g = kcal
         return AgentToolResult.success({"name": name, "caloriesPer100g": kcal})
@@ -859,7 +873,7 @@ class JournalToolExecutor:
             s.reports_enabled = value == "true"
         return await self._settings_tool(session, context, args, todos)
 
-    _HANDLERS: dict[str, Callable] = {}
+    _HANDLERS: ClassVar[dict[str, Callable]] = {}
 
 
 JournalToolExecutor._HANDLERS = {

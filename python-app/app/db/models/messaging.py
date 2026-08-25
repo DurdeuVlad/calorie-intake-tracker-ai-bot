@@ -1,5 +1,6 @@
 import uuid
-from datetime import date as date_, datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from datetime import date as date_
 
 from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -14,9 +15,8 @@ PINNED_STATUS_MAX_BACKOFF_SECONDS = 300
 
 
 def _utcnow() -> datetime:
-    from datetime import timezone
 
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class MessagingIdentity(Base):

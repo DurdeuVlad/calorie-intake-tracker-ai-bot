@@ -4,7 +4,7 @@ Mattermost via "link CODE" attaches that Mattermost identity to the SAME
 FoodUser, so both surfaces share one food journal."""
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,13 +26,13 @@ async def issue(session: AsyncSession, user: FoodUser) -> str:
         code = "".join(secrets.choice(_ALPHABET) for _ in range(_CODE_LENGTH))
         if not await frontend_link_code_repo.exists(session, code):
             break
-    session.add(FrontendLinkCode(code=code, user_id=user.id, expires_at=datetime.now(timezone.utc) + _TTL))
+    session.add(FrontendLinkCode(code=code, user_id=user.id, expires_at=datetime.now(UTC) + _TTL))
     await session.flush()
     return code
 
 
 async def redeem(session: AsyncSession, code: str, provider: str, external_user_id: str, conversation_id: str) -> FoodUser:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     link = await frontend_link_code_repo.find_by_code(session, code)
     if link is None or not link.redeemable(now):
         raise LinkError("invalid or expired link code")
@@ -42,7 +42,7 @@ async def redeem(session: AsyncSession, code: str, provider: str, external_user_
     from sqlalchemy import select
 
     user = (await session.execute(select(FoodUser).where(FoodUser.id == link.user_id))).scalar_one()
-    identity = await messaging_identity_repo.create(session, user, provider, external_user_id)
+    await messaging_identity_repo.create(session, user, provider, external_user_id)
     await messaging_identity_repo.ensure_route(session, user, provider, conversation_id)
     link.consume(now)
     return user

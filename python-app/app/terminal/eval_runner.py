@@ -6,7 +6,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -241,14 +241,14 @@ def _baseline_delta(current: eval_scorer.Score, terminal: TerminalSettings) -> d
             delta[name] = round((value - float(old_score["categories"][name])) * 10) / 10
         delta["baseline"] = terminal.eval_baseline_file
         return delta
-    except Exception:
+    except Exception:  # noqa: BLE001 -- dev-only eval report tool, a bad baseline file must not crash the run
         return {"error": "baseline unreadable"}
 
 
 def _report_path(terminal: TerminalSettings) -> Path:
     if terminal.report_file:
         return Path(terminal.report_file)
-    return Path("eval-reports") / f"live-eval-{int(datetime.now(timezone.utc).timestamp() * 1000)}.json"
+    return Path("eval-reports") / f"live-eval-{int(datetime.now(UTC).timestamp() * 1000)}.json"
 
 
 def _print(score: eval_scorer.Score, output: Path) -> None:
@@ -309,7 +309,7 @@ async def run(fixture_path: str, chat: TerminalConversation, settings: Settings,
     output = _report_path(terminal)
     output.parent.mkdir(parents=True, exist_ok=True)
     report = {
-        "ranAt": datetime.now(timezone.utc).isoformat(),
+        "ranAt": datetime.now(UTC).isoformat(),
         "fixture": fixture_path,
         "fixtureVersion": fixture.version,
         "model": settings.openai_model,

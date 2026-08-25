@@ -1,18 +1,36 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
 
 from app.db.base import session_scope
-from app.db.models.conversation import ConversationMemory
 from app.db.models.messaging import TelegramAccessGrant
 from app.db.models.users import FoodUser
+from app.domain.agent_types import AgentContext
 from app.repositories.food_user_repo import get_or_create_by_telegram_user_id
 from app.services.journal_application_service import JournalApplicationService
 
 
 async def _make_user(session, telegram_user_id: int = 555) -> FoodUser:
     return await get_or_create_by_telegram_user_id(session, telegram_user_id, "Tester", "Europe/Bucharest")
+
+
+class _FakeAgent:
+    """Records whether run()/run_undo() were invoked, without touching OpenAI
+    or the tool executor -- these tests only assert routing, not undo's own
+    tool-level behavior (covered separately in journal_tool_executor tests)."""
+
+    def __init__(self, undo_reply: str = "Undid the latest journal change.") -> None:
+        self.undo_reply = undo_reply
+        self.run_calls: list[str] = []
+        self.run_undo_calls: list[AgentContext] = []
+
+    async def run(self, session, context: AgentContext) -> str:
+        self.run_calls.append(context.message)
+        return "agent reply"
+
+    async def run_undo(self, session, context: AgentContext) -> str:
+        self.run_undo_calls.append(context)
+        return self.undo_reply
 
 
 @pytest.mark.asyncio
@@ -32,7 +50,7 @@ async def test_help_lists_all_commands():
         user = await _make_user(session)
         await session.commit()
         reply = await journal.handle(session, user, "1", "/help")
-    for cmd in ("/start", "/help", "/today", "/settings", "/cancel", "/privacy"):
+    for cmd in ("/start", "/help", "/today", "/settings", "/cancel", "/privacy", "/undo"):
         assert cmd in reply
     assert "/adduser" not in reply
 
@@ -42,7 +60,7 @@ async def test_private_admin_help_includes_access_commands_but_group_help_does_n
     journal = JournalApplicationService(default_timezone="Europe/Bucharest")
     async with session_scope() as session:
         user = await _make_user(session, 777)
-        session.add(TelegramAccessGrant(telegram_user_id=777, is_admin=True, active=True, granted_by=None, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)))
+        session.add(TelegramAccessGrant(telegram_user_id=777, is_admin=True, active=True, granted_by=None, created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
         await session.commit()
         private_reply = await journal.handle(session, user, "777", "/help")
         group_reply = await journal.handle(session, user, "-1001", "/help")
@@ -116,3 +134,35 @@ async def test_slash_commands_do_not_change_preferred_language():
         assert settings.preferred_language == "ro"
         reply = await journal.handle(session, user, "1", "/help")  # should stay Romanian
     assert "Comenzi" in reply
+
+
+@pytest.mark.asyncio
+async def test_undo_slash_command_invokes_the_agent_undo_tool_not_the_unknown_command_fallback():
+    """Regression test: /undo used to fall through to command()'s deterministic
+    dispatch table, which does not list /undo, so it silently returned "Unknown
+    command. Use /help." with no test catching it. /undo must reach the same
+    undo_last_change tool that natural-language undo already uses."""
+    agent = _FakeAgent()
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest", agent=agent)
+    async with session_scope() as session:
+        user = await _make_user(session, 90001)
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/undo")
+
+    assert len(agent.run_undo_calls) == 1
+    assert agent.run_undo_calls[0].message == "/undo"
+    assert reply == agent.undo_reply
+    assert "unknown" not in reply.lower() and "necunosc" not in reply.lower()
+    assert not agent.run_calls  # must not spend a full model turn for a slash command
+
+
+@pytest.mark.asyncio
+async def test_undo_slash_command_without_an_agent_is_unavailable_not_unknown():
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session, 90002)
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/undo")
+    # New users default to preferred_language="ro" (see UserSettings.preferred_language).
+    assert "nu pot procesa" in reply.lower()
+    assert "unknown" not in reply.lower() and "necunosc" not in reply.lower()

@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 import uuid
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -8,8 +8,7 @@ from app.agent.tool_schemas import tool_definitions
 from app.db.models.entries import FoodEntry, FoodItem
 from app.db.models.nutrition import NutritionEvidence, PendingNutritionQuote
 from app.domain.agent_types import AgentContext
-from app.services.journal_tool_executor import JournalToolExecutor
-from app.services.journal_tool_executor import ValidationError
+from app.services.journal_tool_executor import JournalToolExecutor, ValidationError
 
 
 class _RecordingSession:
@@ -31,7 +30,7 @@ class _RecordingSession:
 
 
 def test_selected_packaged_quote_is_copied_to_durable_server_owned_evidence():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     quote_id = uuid.uuid4()
     quote = PendingNutritionQuote(
         quote_id=quote_id,
@@ -40,7 +39,7 @@ def test_selected_packaged_quote_is_copied_to_durable_server_owned_evidence():
         quote_type="PACKAGED_MATCH",
         product_name="Cola",
         brand="Acme",
-        grams=Decimal("330"),
+        grams=Decimal(330),
         calories_per_100g=42,
         barcode="5941234567890",
         source_url="https://world.openfoodfacts.org/product/5941234567890",
@@ -64,7 +63,7 @@ def test_selected_packaged_quote_is_copied_to_durable_server_owned_evidence():
     assert evidence.source_url == quote.source_url
     assert evidence.source_query == "cola acme"
     assert evidence.selected_candidate == '{"barcode":"5941234567890","brand":"Acme","name":"Cola"}'
-    assert evidence.quantity_grams == Decimal("330")
+    assert evidence.quantity_grams == Decimal(330)
     assert evidence.calories_per_100g == 42
     assert evidence.total_calories == 139
     assert evidence.derivation == "round(330 g × 42 kcal / 100 g) = 139 kcal"
@@ -90,7 +89,7 @@ async def test_model_cannot_claim_open_food_facts_without_a_server_quote():
             None,
             {"description": "claimed product", "calories": 100, "nutritionSource": "open_food_facts"},
             None,
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
             "Europe/Bucharest",
         )
 
@@ -120,10 +119,10 @@ async def test_forged_private_source_is_stored_as_manual_unverified_value():
 
 @pytest.mark.asyncio
 async def test_server_issued_ai_quote_keeps_its_estimate_provenance(monkeypatch):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     quote = PendingNutritionQuote(
         quote_id=uuid.uuid4(), batch_id=uuid.uuid4(), user_id=1, quote_type="AI_ESTIMATE",
-        product_name="curry", grams=Decimal("250"), calories_per_100g=200,
+        product_name="curry", grams=Decimal(250), calories_per_100g=200,
         estimate_basis="visible bowl portion", created_at=now, expires_at=now + timedelta(minutes=30),
     )
 

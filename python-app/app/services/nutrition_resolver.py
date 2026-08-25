@@ -7,7 +7,7 @@
 """
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,7 +71,7 @@ async def resolve(
         return ResolvedMealItem(replace(item, total_calories=_round(item.calories_per_100g, factor)), "manual")
 
     if item.barcode is not None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cached_lookup = await openfoodfacts_cache.barcode(session, off, item.barcode, now)
         profile: NutritionProfile | None = None
         if isinstance(cached_lookup.value, NutritionProfile):

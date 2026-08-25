@@ -10,7 +10,12 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.nutrition import OpenFoodFactsLookupCache
-from app.integrations.openfoodfacts_types import NutritionProfile, OpenFoodFactsClient, OpenFoodFactsUnavailable, PackagedFoodResult
+from app.integrations.openfoodfacts_types import (
+    NutritionProfile,
+    OpenFoodFactsClient,
+    OpenFoodFactsUnavailable,
+    PackagedFoodResult,
+)
 from app.repositories import openfoodfacts_lookup_cache_repo
 
 SUCCESS_TTL = timedelta(days=30)

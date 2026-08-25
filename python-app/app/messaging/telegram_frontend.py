@@ -2,8 +2,9 @@ import logging
 
 import httpx
 from aiogram import Bot
-from aiogram.enums import ChatAction
 from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ChatAction
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.utils.token import TokenValidationError
 
 from app.config import Settings
@@ -51,7 +52,18 @@ class TelegramFrontend:
         await self._bot.send_chat_action(chat_id=int(conversation_id), action=ChatAction.TYPING)
 
     async def edit(self, conversation_id: str, message_id: str, text: str) -> None:
-        await self._bot.edit_message_text(chat_id=int(conversation_id), message_id=int(message_id), text=text)
+        try:
+            await self._bot.edit_message_text(chat_id=int(conversation_id), message_id=int(message_id), text=text)
+        except TelegramBadRequest as failure:
+            # Telegram rejects an edit whose content exactly matches the message's
+            # current content. That is a functional no-op success (the displayed
+            # text is already correct), not a delivery failure -- without this,
+            # every dispatcher calling edit() logs a spurious ERROR and marks a
+            # successful delivery for retry whenever nothing actually changed.
+            if "message is not modified" in failure.message.lower():
+                logger.info("Telegram edit was a no-op (content unchanged): conversation_id=%s message_id=%s", conversation_id, message_id)
+                return
+            raise
 
     async def pin(self, conversation_id: str, message_id: str) -> None:
         await self._bot.pin_chat_message(
@@ -69,7 +81,7 @@ class TelegramFrontend:
         against the corrected Java implementation."""
         file = await self._bot.get_file(attachment.handle)
         file_path = file.file_path or ""
-        raw_path = file_path[1:] if file_path.startswith("/") else file_path
+        raw_path = file_path.removeprefix("/")
         token = self._settings.telegram_bot_token
         url = f"https://api.telegram.org/file/bot{token}/{raw_path}"
         response = await self._http.get(url)
