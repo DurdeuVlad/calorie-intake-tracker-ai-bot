@@ -110,8 +110,15 @@ async def _today_text(session, user: FoodUser, settings: UserSettings, romanian:
     return f"Today: {calories} kcal" + ("." if target is None else f" of {target} kcal.")
 
 
+def _command_token(raw: str) -> str:
+    """Extract the leading slash-command token (e.g. '/undo' from '/undo foo'),
+    lower-cased and stripped. Used by both handle()'s pre-dispatch and command()'s
+    table lookup so the two paths parse the command identically."""
+    return raw.strip().lower().split(maxsplit=1)[0]
+
+
 async def command(session, user: FoodUser, settings: UserSettings, raw: str, romanian: bool, is_admin: bool = False) -> str:
-    cmd = raw.strip().lower().split(maxsplit=1)[0]
+    cmd = _command_token(raw)
     if cmd == "/start":
         if settings.onboarding_completed:
             return (
@@ -180,7 +187,7 @@ class JournalApplicationService:
 
         if message.startswith("/"):
             romanian = settings.preferred_language == "ro"
-            cmd = message.strip().lower().split(maxsplit=1)[0]
+            cmd = _command_token(message)
             if cmd == "/undo":
                 # Deliberately bypasses command()'s deterministic-only dispatch:
                 # undo reverses a journal mutation, which lives behind the same

@@ -19,7 +19,11 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import Settings
-from app.integrations.openai_vision import FoodMediaType, MAX_MEDIA_BYTES, OpenAiFoodMediaExtractor
+from app.integrations.openai_vision import (
+    MAX_MEDIA_BYTES,
+    FoodMediaType,
+    OpenAiFoodMediaExtractor,
+)
 
 
 @dataclass(frozen=True)
