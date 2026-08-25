@@ -60,8 +60,10 @@ class TelegramFrontend:
             # text is already correct), not a delivery failure -- without this,
             # every dispatcher calling edit() logs a spurious ERROR and marks a
             # successful delivery for retry whenever nothing actually changed.
-            if "message is not modified" not in failure.message.lower():
-                raise
+            if "message is not modified" in failure.message.lower():
+                logger.info("Telegram edit was a no-op (content unchanged): conversation_id=%s message_id=%s", conversation_id, message_id)
+                return
+            raise
 
     async def pin(self, conversation_id: str, message_id: str) -> None:
         await self._bot.pin_chat_message(

@@ -6,7 +6,13 @@ import pytest
 
 from app.agent.journal_agent import JournalAgent
 from app.db.models.nutrition import NutritionEvidence
-from app.domain.agent_types import AgentContext, AgentToolResult, ToolCall
+from app.domain.agent_types import (
+    AgentContext,
+    AgentToolFailure,
+    AgentToolResult,
+    ToolCall,
+)
+from app.terminal.trace_collector import TerminalTraceCollector
 
 
 def _agent() -> JournalAgent:
@@ -14,7 +20,9 @@ def _agent() -> JournalAgent:
 
 
 def _context(**kwargs) -> AgentContext:
-    return AgentContext(user=None, chat_id="1", romanian=False, message="meal", **kwargs)
+    defaults = {"user": None, "chat_id": "1", "romanian": False, "message": "meal"}
+    defaults.update(kwargs)
+    return AgentContext(**defaults)
 
 
 def _evidence(**kwargs) -> NutritionEvidence:
@@ -179,3 +187,74 @@ def test_photo_receipt_surfaces_the_material_question():
         "Estimate: portion unclear; confidence: low; no scale.",
         "Question: Was this one or two servings?",
     ]
+
+
+class _StubTools:
+    """Stand-in for JournalToolExecutor that returns a canned result without
+    touching the database -- run_undo's contract is "call the undo_last_change
+    tool and render its result", not "actually undo anything" (that is covered
+    by the integration suite)."""
+
+    def __init__(self, result: AgentToolResult) -> None:
+        self._result = result
+
+    async def execute(self, session, context, call, todos):
+        return self._result
+
+
+@pytest.mark.asyncio
+async def test_run_undo_records_a_trace_so_eval_assertions_can_see_the_tool_call():
+    """Regression test: run_undo used to skip self._trace.started(context), so
+    TerminalTraceCollector never opened an active trace and tool_result()/
+    completed() were no-ops -- eval_runner would see trace=None and any
+    tool_required: undo_last_change assertion on a /undo turn would silently
+    fail even though the tool actually executed."""
+    traces = TerminalTraceCollector()
+    tools = _StubTools(AgentToolResult.success({"changeSetId": uuid.uuid4(), "actions": 1}))
+    agent = JournalAgent(model=None, tools=tools, max_tool_calls=1, trace=traces)
+    context = _context(message="/undo")
+
+    await agent.run_undo(session=None, context=context)
+
+    trace = traces.await_trace()
+    assert trace is not None
+    assert [(t.name, t.outcome) for t in trace.tools] == [("undo_last_change", "OK")]
+    assert trace.model_turns == 0  # /undo deliberately skips the model loop
+    assert trace.reply_length == len("Undid the latest journal change.")
+
+
+@pytest.mark.asyncio
+async def test_run_undo_records_a_trace_even_on_tool_failure():
+    """The trace must be recorded regardless of tool outcome, so eval
+    assertions like tool_outcome: undo_last_change:NOT_FOUND still work."""
+    traces = TerminalTraceCollector()
+    tools = _StubTools(AgentToolResult.failure("NOT_FOUND", "There is no recent journal change to undo."))
+    agent = JournalAgent(model=None, tools=tools, max_tool_calls=1, trace=traces)
+    context = _context(message="/undo", romanian=False)
+
+    await agent.run_undo(session=None, context=context)
+
+    trace = traces.await_trace()
+    assert trace is not None
+    assert [(t.name, t.outcome) for t in trace.tools] == [("undo_last_change", "NOT_FOUND")]
+
+
+@pytest.mark.asyncio
+async def test_run_undo_surfaces_agent_tool_failure_results_in_the_trace():
+    """AgentToolFailure is the short-circuit path the real tool executor uses
+    for NOT_FOUND/VALIDATION_ERROR; run_undo must unwrap it the same way run()
+    does, and the trace must reflect the unwrapped code, not the exception."""
+    traces = TerminalTraceCollector()
+
+    class _FailingTools:
+        async def execute(self, session, context, call, todos):
+            raise AgentToolFailure(AgentToolResult.failure("NOT_FOUND", "nothing to undo"))
+
+    agent = JournalAgent(model=None, tools=_FailingTools(), max_tool_calls=1, trace=traces)
+    context = _context(message="/undo", romanian=False)
+
+    await agent.run_undo(session=None, context=context)
+
+    trace = traces.await_trace()
+    assert trace is not None
+    assert [(t.name, t.outcome) for t in trace.tools] == [("undo_last_change", "NOT_FOUND")]

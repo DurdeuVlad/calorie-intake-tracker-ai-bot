@@ -104,6 +104,7 @@ class JournalAgent:
         ("undo that", "anuleaza"), without spending a model turn -- undo must
         stay instant and free even though the slash-command dispatch table in
         journal_application_service.py does not go through the model loop."""
+        self._trace.started(context)
         call = ToolCall(id="slash-undo", name="undo_last_change", arguments="{}")
         try:
             result = await self._tools.execute(session, context, call, [])

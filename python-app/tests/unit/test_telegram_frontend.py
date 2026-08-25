@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from aiogram.exceptions import TelegramBadRequest
 
@@ -39,17 +41,23 @@ async def test_edit_succeeds_normally_when_telegram_accepts_the_change():
 
 
 @pytest.mark.asyncio
-async def test_edit_swallows_the_benign_message_is_not_modified_error():
+async def test_edit_swallows_the_benign_message_is_not_modified_error(caplog):
     """Regression test: dispatchers used to log a spurious ERROR and schedule a
     retry for a successful delivery whenever the edited text was already
     displayed -- Telegram treats that as a Bad Request, not a delivery
-    failure."""
+    failure. The no-op is logged at INFO so the event is observable without
+    polluting logs as an error."""
     frontend, fake_bot = _frontend_with_fake_bot(
         error_message="Bad Request: message is not modified: specified new message content and reply markup are "
         "exactly the same as a current content and reply markup of the message"
     )
-    await frontend.edit("123", "456", "same text")  # must not raise
+    with caplog.at_level(logging.INFO, logger="app.messaging.telegram_frontend"):
+        await frontend.edit("123", "456", "same text")  # must not raise
     assert fake_bot.calls == [(123, 456, "same text")]
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert len(info_records) == 1
+    assert "no-op" in info_records[0].message
+    assert "123" in info_records[0].message and "456" in info_records[0].message
 
 
 @pytest.mark.asyncio
