@@ -22,7 +22,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("telegram_user_id"),
     )
-    # Preserve every Telegram identity already admitted by the Java service.
+    # Preserve every Telegram identity already admitted by the baseline service.
     op.execute(sa.text("""
         INSERT INTO telegram_access_grants
             (telegram_user_id, is_admin, active, granted_by, created_at, updated_at)

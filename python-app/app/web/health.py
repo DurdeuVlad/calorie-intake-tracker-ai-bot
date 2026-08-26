@@ -1,7 +1,4 @@
-"""Health endpoints. `/health` is the plain public check (mirrors the Java app's
-HealthController). `/health/readiness` also checks DB connectivity and is meant to
-run on the separate MANAGEMENT_PORT, never exposed through a public reverse proxy
--- this is what Coolify's health check should be pointed at."""
+"""Health endpoints for the public and private management ASGI applications."""
 
 from fastapi import APIRouter, FastAPI, Response
 from sqlalchemy import text
@@ -35,8 +32,7 @@ async def liveness() -> dict:
 
 
 def create_management_app() -> FastAPI:
-    """A second, separate ASGI app for the management port, matching the Java app's
-    posture of never exposing readiness/liveness/metrics on the public port."""
+    """Build the separate management app without exposing private checks publicly."""
     app = FastAPI(title="food-journal-bot-management")
     app.include_router(management_router)
     return app

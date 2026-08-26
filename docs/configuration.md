@@ -1,6 +1,6 @@
 # Configuration Reference
 
-All application settings are declared via environment variables or standard Spring properties (`application.yml`).
+All canonical application settings are declared via environment variables and loaded by the Python `pydantic-settings` configuration.
 
 ---
 
@@ -68,19 +68,16 @@ All application settings are declared via environment variables or standard Spri
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
 | `DEFAULT_TIMEZONE` | No | `Europe/Bucharest` | Default IANA timezone used prior to user onboarding. |
-| `MANAGEMENT_PORT` | No | `8081` | Spring Actuator management port (health/metrics). |
+| `MANAGEMENT_PORT` | No | `8081` | Private Python management port for health checks. |
 | `FOOD_JOURNAL_SCHEDULING_ENABLED` | No | `true` | Set `false` to disable background report schedulers and outbox processing. |
 | `FOOD_JOURNAL_OUTBOX_DELAY_MS` | No | `5000` | Outbox worker poll frequency in milliseconds. |
 
 ---
 
-### Local Terminal Profile (`SPRING_PROFILES_ACTIVE=terminal`)
+### Local Terminal Settings
 
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `TERMINAL_DATABASE_URL` | No | `jdbc:postgresql://localhost:5432/foodjournal_dev` | Isolated dev database URL for terminal mode. |
-| `TERMINAL_DATABASE_USERNAME` | No | `foodjournal` | Dev database username. |
-| `TERMINAL_DATABASE_PASSWORD` | No | `change-me` | Dev database password. |
 | `TERMINAL_TELEGRAM_USER_ID` | No | `123456789` | Simulated user ID (must be present in `ALLOWED_TELEGRAM_USER_IDS`). |
 | `TERMINAL_DISPLAY_NAME` | No | `Local developer` | Display name for interactive terminal session. |
 | `TERMINAL_EVAL_REPEATS` | No | `3` | Iterations per evaluation scenario when running automated prompt evals. |

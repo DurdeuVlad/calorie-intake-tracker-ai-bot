@@ -23,7 +23,7 @@ async def record_turn(session: AsyncSession, user: FoodUser, user_message: str, 
     """Records exactly one user+assistant pair for a genuine inbound turn. Callers
     MUST NOT invoke this for internal/system-triggered calls (e.g. the identity
     bootstrap that provisions a first-time user) -- a real bug in the Java
-    predecessor did exactly that at one call site and double-recorded memory for
+    former implementation did exactly that at one call site and double-recorded memory for
     the same logical turn. Keep this called from exactly one place: the inbox
     worker's main message-handling path, right after computing the real reply."""
     now = datetime.now(UTC)

@@ -1,6 +1,6 @@
-"""Slash commands + onboarding stage machine, ported from JournalApplicationService.java.
+"""Slash commands and the onboarding stage machine.
 
-Note on onboarding: continueOnboarding() exists in the Java source but is
+Note on onboarding: continue_onboarding() is
 confirmed (by direct investigation) to have NO call site in handle() -- in
 production, once agent != null (always true when OPENAI_API_KEY is set), the
 onboarding-stage transition actually happens through the agent calling the

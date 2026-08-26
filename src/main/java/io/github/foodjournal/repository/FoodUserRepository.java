@@ -1,3 +1,0 @@
-package io.github.foodjournal.repository;
-import io.github.foodjournal.domain.FoodUser; import jakarta.persistence.LockModeType; import java.util.Optional; import org.springframework.data.jpa.repository.JpaRepository; import org.springframework.data.jpa.repository.Lock; import org.springframework.data.jpa.repository.Query; import org.springframework.data.repository.query.Param;
-public interface FoodUserRepository extends JpaRepository<FoodUser,Long>{ Optional<FoodUser> findByTelegramUserId(long telegramUserId); @Lock(LockModeType.PESSIMISTIC_WRITE) @Query("select u from FoodUser u where u.id = :id") Optional<FoodUser> lockById(@Param("id") Long id); }

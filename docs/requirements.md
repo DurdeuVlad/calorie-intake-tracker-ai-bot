@@ -5,7 +5,7 @@
 ## Core Business Rules
 
 1. **Idempotency & Deduplication**:
-   - Each inbound update (Telegram `update_id` or Mattermost `post_id`) is claimed atomically in PostgreSQL (`processed_updates`).
+   - Each inbound update (Telegram `update_id` or Mattermost `post_id`) is claimed atomically in PostgreSQL (`messaging_inbox`, unique on provider and event ID).
    - Network retries or replayed webhooks produce zero duplicate food entries or outbox messages.
 
 2. **Strict User Ownership & Access Control**:
@@ -50,7 +50,7 @@
 | Domain | Acceptance Criteria | Verification Method |
 | --- | --- | --- |
 | **Authentication** | Senders not on allowlist are rejected cleanly without side effects. | Integration test & manual check. |
-| **Idempotency** | Sending the same update twice creates exactly one food entry and one reply message. | `processed_updates` ledger assertions. |
+| **Idempotency** | Sending the same update twice creates exactly one food entry and one reply message. | `messaging_inbox` uniqueness and worker assertions. |
 | **Natural Language** | Text, voice, photos, and document inputs extract food items, quantities, and calories. | Automated eval suite & integration tests. |
 | **10-Minute Undo** | `/undo` within 10 minutes reverts the exact previous message mutations; `/undo` after 10 minutes fails gracefully. | ChangeSet expiration integration tests. |
 | **Nutrition Lookup** | Open Food Facts and SearxNG return valid nutrition data; failure falls back to AI estimation with `AI_ESTIMATE` provenance. | Mocked tool boundary tests. |

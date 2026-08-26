@@ -1,8 +1,6 @@
 """Container entrypoint. Runs the public app (port 8080), the management app
 (MANAGEMENT_PORT, default 8081, never publicly exposed), and the inbox/outbox
-background workers as asyncio tasks -- mirroring the Java app's separate main
-port / Actuator management port split plus its @Scheduled pollers, all inside
-one process.
+background workers as asyncio tasks in one process.
 """
 
 import asyncio

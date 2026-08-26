@@ -1,2 +1,0 @@
-package io.github.foodjournal.repository; import io.github.foodjournal.domain.*; import java.util.*; import org.springframework.data.jpa.repository.*;
-public interface MessagingDailyStatusRepository extends JpaRepository<MessagingDailyStatus,Long>{ Optional<MessagingDailyStatus> findByUserAndProviderAndConversationId(FoodUser user,String provider,String conversationId); @Query(value="select * from messaging_daily_status where dirty=true order by id limit 1 for update skip locked",nativeQuery=true) List<MessagingDailyStatus> lockDirty(); }

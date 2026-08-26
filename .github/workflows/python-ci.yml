@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - 'python-app/**'
-      - 'src/main/resources/db/migration/**'
       - '.github/workflows/python-ci.yml'
   push:
     branches: [master]
@@ -17,7 +16,9 @@ defaults:
     working-directory: python-app
 
 jobs:
-  test:
+  # Keep the protected master branch's required check name stable while the
+  # implementation behind it moves from Java/Maven to Python/pytest.
+  build-test:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -40,7 +41,7 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: pip install --no-cache-dir '.[dev]'
-      - name: Set up test database (replays the real Flyway V1-V17 schema, never Base.metadata.create_all)
+      - name: Set up test database (replays the real PostgreSQL baseline, never Base.metadata.create_all)
         env:
           PGHOST: localhost
           PGPORT: 5432

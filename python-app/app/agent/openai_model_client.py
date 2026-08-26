@@ -1,6 +1,4 @@
-"""OpenAI Chat Completions transport, ported from OpenAiJournalAgentModel.java.
-Raw HTTP (not the openai SDK) to mirror the Java app's hand-rolled RestClient
-call exactly and keep the request/response shape fully under test control."""
+"""OpenAI Chat Completions transport with an explicit, testable model boundary."""
 
 import json
 from typing import Any
