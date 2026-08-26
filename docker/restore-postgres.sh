@@ -16,7 +16,7 @@ if [[ ! -f "${backup_file}" ]]; then
   exit 1
 fi
 
-docker compose exec -T postgres dropdb --if-exists --username foodjournal "${restore_database}"
-docker compose exec -T postgres createdb --username foodjournal "${restore_database}"
-cat "${backup_file}" | docker compose exec -T postgres psql --set ON_ERROR_STOP=1 --username foodjournal --dbname "${restore_database}"
-echo "Restore completed in isolated database ${restore_database}. Verify Flyway history and journal data before using it."
+docker compose -f python-app/compose.yaml exec -T postgres dropdb --if-exists --username foodjournal "${restore_database}"
+docker compose -f python-app/compose.yaml exec -T postgres createdb --username foodjournal "${restore_database}"
+cat "${backup_file}" | docker compose -f python-app/compose.yaml exec -T postgres psql --set ON_ERROR_STOP=1 --username foodjournal --dbname "${restore_database}"
+echo "Restore completed in isolated database ${restore_database}. Verify migration history and journal data before using it."

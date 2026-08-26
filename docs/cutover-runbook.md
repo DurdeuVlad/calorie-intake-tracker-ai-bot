@@ -8,12 +8,12 @@ This runbook guides operators through launching a new production instance of **F
 
 Before registering the live webhook or enabling user traffic, ensure all prerequisites are met:
 
-- [x] Protected `master` commit passed all automated Maven and Docker CI checks.
+- [ ] Protected `master` commit passed the current Python and Docker CI checks.
 - [x] PostgreSQL 16 database provisioned with persistent storage volume and daily backup schedule configured.
 - [x] High-entropy `TELEGRAM_WEBHOOK_SECRET` generated.
 - [ ] Bootstrap administrator ID configured in `ADMIN_TELEGRAM_USER_IDS`; keep the old `ALLOWED_TELEGRAM_USER_IDS` only until its grants are migrated.
 - [x] Valid `OPENAI_API_KEY` supplied.
-- [x] Public HTTPS endpoint (Coolify, Caddy, Traefik, or Cloudflare Tunnel) configured to forward `/telegram/webhook` to app port `8080`.
+- [x] Public HTTPS endpoint (Coolify, Caddy, Traefik, or Cloudflare Tunnel) configured to forward `/webhook` to app port `8080`.
 
 ---
 
@@ -21,13 +21,17 @@ Before registering the live webhook or enabling user traffic, ensure all prerequ
 
 ### Step 1: Deploy Database & Run Migrations
 1. Deploy PostgreSQL and the application container (`app`).
-2. Verify Flyway migration logs:
+2. If the database already contains the PostgreSQL V1–V17 schema, run the Alembic revisions:
    ```text
-   Successfully applied 17 migrations to schema "public"
+   Alembic upgrade head completed successfully
    ```
-3. Verify Actuator readiness probe returns HTTP 200 OK:
+   For a fresh database, first replay `python-app/alembic/flyway_baseline/V1__*.sql`
+   through `V17__*.sql` in numeric order with `psql` from a controlled migration
+   runner, then run `alembic upgrade head`. Never run the baseline replay against
+   a non-empty production database.
+3. Verify the Python management readiness probe returns HTTP 200 OK:
    ```bash
-   curl -i http://localhost:8081/actuator/health/readiness
+    curl -i http://localhost:8081/health/readiness
    ```
 
 ### Step 2: Register Telegram Webhook
@@ -37,7 +41,7 @@ Register the public HTTPS URL with Telegram using your bot token and secret head
 curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
      -H "Content-Type: application/json" \
      -d '{
-           "url": "https://your-domain.com/telegram/webhook",
+           "url": "https://your-domain.com/webhook",
            "secret_token": "<TELEGRAM_WEBHOOK_SECRET>"
          }'
 ```
@@ -63,5 +67,5 @@ If an operational anomaly occurs post-cutover:
    ```bash
    curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteWebhook"
    ```
-2. **Preserve PostgreSQL Volume**: Do **NOT** drop PostgreSQL database volumes or delete Flyway migration history during incident handling.
-3. **Inspect Outbox & Logs**: Query `processed_updates`, `messaging_outbound_messages`, and application logs to diagnose issues.
+2. **Preserve PostgreSQL Volume**: Do **NOT** drop PostgreSQL database volumes or delete migration history during incident handling.
+3. **Inspect Outbox & Logs**: Query `messaging_inbox`, `messaging_outbox`, and application logs to diagnose issues.

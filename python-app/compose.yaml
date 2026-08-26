@@ -23,9 +23,7 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp
-    # Python doesn't self-inflate memory against host RAM the way the JVM did with
-    # -XX:MaxRAMPercentage (the root cause of a prior host-wide OOM incident in the
-    # Java app), but keep a deliberate ceiling anyway rather than an unbounded one.
+    # Keep a deliberate memory ceiling rather than allowing an unbounded process.
     mem_limit: 512m
     mem_reservation: 256m
     environment:
@@ -84,7 +82,7 @@ services:
     environment:
       MM_SQLSETTINGS_DRIVERNAME: postgres
       MM_SQLSETTINGS_DATASOURCE: postgres://mattermost:${MATTERMOST_DATABASE_PASSWORD:-change-me-before-production}@mattermost-db:5432/mattermost?sslmode=disable&connect_timeout=10
-      MM_SERVICESETTINGS_SITEURL: ${MATTERMOST_PUBLIC_URL}
+      MM_SERVICESETTINGS_SITEURL: ${MATTERMOST_PUBLIC_URL:-http://localhost:8065}
       MM_SERVICESETTINGS_LISTENADDRESS: :8065
     volumes: [mattermost-data:/opt/mattermost/data]
     ports: ["127.0.0.1:8065:8065"]

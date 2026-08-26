@@ -1,6 +1,6 @@
 # Data Model Reference
 
-The application uses PostgreSQL 16 with schema evolution managed strictly via Flyway migrations (`V1` through `V17`).
+The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 PostgreSQL baseline under `python-app/alembic/flyway_baseline/` and schema evolution managed strictly through Alembic revisions.
 
 ---
 
@@ -23,11 +23,11 @@ The application uses PostgreSQL 16 with schema evolution managed strictly via Fl
 
 | Table | Migration | Purpose & Key Constraints |
 | --- | --- | --- |
-| `processed_updates` | V1 | Telegram idempotency ledger (`update_id` UNIQUE). Prevents duplicate processing of replayed webhooks. |
+| `processed_telegram_updates` | V1 | Legacy Telegram idempotency ledger retained for schema compatibility. Current Python ingress deduplicates through `messaging_inbox`. |
 | `messaging_identities` | V13 | Unified messaging identity mapping Telegram and Mattermost accounts (`user_id` FK, platform, platform_user_id). |
 | `frontend_link_codes` | V13 | Temporary 10-minute one-time authentication codes for linking Mattermost accounts (`code` UNIQUE, `user_id` FK, `expires_at`). |
-| `messaging_inbox_messages` | V14 | Inbound platform-agnostic messaging queue (`message_id`, platform, platform_user_id, raw content). |
-| `messaging_outbound_messages` | V14 | Provider-neutral outbox queue for outbound platform replies (`platform`, destination, content, retry state). |
+| `messaging_inbox` | V14 | Inbound platform-agnostic messaging queue (`id`, provider, event_id, payload, retry state). |
+| `messaging_outbox` | V14 | Provider-neutral outbox queue for outbound platform replies (`provider`, conversation, text, retry state). |
 | `messaging_routes` | V14 | Maps user messaging routing preferences to active frontend adapters. |
 | `messaging_daily_status` | V15 | Outbox ledger for sending and updating daily status summary messages across frontends. |
 | `pinned_status` | V3 | Stores the current pinned Telegram daily status message reference (`user_id` FK, `chat_id`, `message_id`). |

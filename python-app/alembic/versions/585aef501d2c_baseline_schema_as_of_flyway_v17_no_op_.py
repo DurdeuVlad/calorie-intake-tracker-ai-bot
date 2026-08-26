@@ -1,7 +1,7 @@
 """baseline: schema as of Flyway V17 (no-op, stamp only)
 
 This revision intentionally does nothing. The 18 live tables already exist in the
-shared production Postgres database, created by the Java app's Flyway migrations
+shared production Postgres database, created by the retained PostgreSQL baseline
 (V1-V17). On first deploy of this app against that database, run:
 
     alembic stamp 585aef501d2c
@@ -10,7 +10,7 @@ NOT `alembic upgrade head` -- stamping just records this revision as applied
 without attempting to (re)create any table. All future schema changes should be
 ordinary `alembic revision --autogenerate` migrations layered on top of this
 baseline. `flyway_schema_history` is left in place, untouched, as a historical
-record; Flyway itself is retired.
+record.
 
 Revision ID: 585aef501d2c
 Revises:

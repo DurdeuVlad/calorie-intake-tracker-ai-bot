@@ -1,9 +1,9 @@
-"""The bounded ReAct tool loop, ported from JournalAgent.java. The model is
+"""The bounded ReAct tool loop. The model is
 never given repositories or provider credentials -- it can only call typed
 tools through JournalToolExecutor.
 
 Note: the `create_food_entry` legacy tool's canonical-reply branch from the
-Java source is intentionally dropped here (see journal_tool_executor.py's
+predecessor is intentionally dropped here (see journal_tool_executor.py's
 module docstring for why)."""
 
 import json

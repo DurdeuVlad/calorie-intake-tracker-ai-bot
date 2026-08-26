@@ -15,7 +15,7 @@ Tracking calorie intake and macro nutrition is one of the most effective tools f
 A self-hosted, private messaging bot designed to turn natural human communication into a accurate, database-backed food journal.
 
 - **Conversation First**: Speak, type, or photograph what you ate in plain English, Romanian, or mixed language.
-- **AI Reasoning + Validated Transactional Execution**: OpenAI handles natural language and image processing, while strict Spring Boot application code enforces ownership, validation, macro calculations, and database mutations.
+- **AI Reasoning + Validated Transactional Execution**: OpenAI handles natural language and image processing, while strict Python application code enforces ownership, validation, macro calculations, and database mutations.
 - **Private & Multi-Frontend**: Chat seamlessly over **Telegram** or **Mattermost (over Tailscale)**.
 
 ---

@@ -19,11 +19,9 @@ This guide outlines how to deploy **Food Journal Messaging Bot** on a self-hoste
 - Select **New Resource** -> **Application** -> **GitHub Repository**.
 - Select the `calorie-intake-tracker-ai-bot` repository and the `master` branch.
 - Choose **Dockerfile** as the build mechanism.
-- For the Python cutover, set the application **Base Directory / Build Context** to
+- Set the application **Base Directory / Build Context** to
   `/python-app` and the **Dockerfile** to `Dockerfile` (relative to that directory).
-  This makes Coolify build `python-app/Dockerfile` while leaving the root Java
-  `Dockerfile` intact for the legacy implementation. Do not point Coolify at the
-  repository root until the Java-to-Python cutover has been intentionally completed.
+  This makes Coolify build the canonical `python-app/Dockerfile`.
 
 ### 2. Configure Environment Variables
 In the Coolify Application Environment settings, populate all required variables (see [Configuration Reference](configuration.md)):
@@ -33,7 +31,7 @@ DATABASE_URL=jdbc:postgresql://postgres-service:5432/foodjournal
 DATABASE_USERNAME=foodjournal
 DATABASE_PASSWORD=your-secure-db-password
 
-TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_BOT_TOKEN=replace-with-telegram-bot-token
 TELEGRAM_WEBHOOK_SECRET=your-random-webhook-secret
 ADMIN_TELEGRAM_USER_IDS=123456789
 
@@ -57,9 +55,9 @@ Configure Coolify liveness/readiness health probes to point to the Python manage
   is the first Python deployment and the database is still stamped at the
   baseline, this applies the persistent Telegram access-grants migration.
 - Monitor application logs to confirm the container starts and the existing PostgreSQL
-  schema is compatible. The Python image does not run the Java Flyway migrations;
-  its baseline Alembic revision is intentionally a no-op against the existing V1–V17
-  schema. Apply future Python migrations through the normal Alembic migration process.
+  schema is compatible. The retained PostgreSQL baseline is included with the
+  canonical app for clean bootstrap and CI; existing databases are not rewritten.
+  Apply future changes through Alembic.
   Verify readiness with:
   ```text
   GET http://<internal-host>:8081/health/readiness

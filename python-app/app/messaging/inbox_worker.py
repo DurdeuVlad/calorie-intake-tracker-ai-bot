@@ -59,7 +59,7 @@ async def _load_user_by_id(session, user_id: int) -> FoodUser:
 async def resolve_identity_user(session, message: InboundMessage, default_timezone: str) -> FoodUser | None:
     """Resolves the FoodUser for this inbound message's identity, creating a new
     FoodUser + MessagingIdentity on first contact for self-service providers
-    (telegram, terminal). Unlike the Java predecessor, this never calls back
+    (telegram, terminal). This never calls back
     into the command/agent handler to bootstrap the account -- it creates the
     row directly -- so there is no call site here that could accidentally
     double-record conversation memory for an internal system-triggered turn."""

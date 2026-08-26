@@ -14,7 +14,7 @@ if [[ -e "${backup_file}" ]]; then
 fi
 
 trap 'rm -f "${temporary_file}"' EXIT
-docker compose exec -T postgres pg_dump --clean --if-exists --username foodjournal --dbname foodjournal > "${temporary_file}"
+docker compose -f python-app/compose.yaml exec -T postgres pg_dump --clean --if-exists --username foodjournal --dbname foodjournal > "${temporary_file}"
 mv "${temporary_file}" "${backup_file}"
 trap - EXIT
 echo "Created ${backup_file}. Encrypt and move it to protected storage."

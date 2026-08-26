@@ -1,6 +1,0 @@
-package io.github.foodjournal.domain;
-import jakarta.persistence.*; import java.time.*;
-@Entity @Table(name="messaging_daily_status",uniqueConstraints=@UniqueConstraint(columnNames={"user_id","provider","conversation_id"})) public class MessagingDailyStatus {
- @Id @GeneratedValue(strategy=GenerationType.IDENTITY) private Long id; @ManyToOne(optional=false) @JoinColumn(name="user_id") private FoodUser user; @Column(nullable=false) private String provider; @Column(name="conversation_id",nullable=false) private String conversationId; @Column(nullable=false,columnDefinition="text") private String text; @Column(name="remote_message_id") private String remoteMessageId; private boolean dirty=true;
- protected MessagingDailyStatus(){} public MessagingDailyStatus(FoodUser user,String provider,String conversationId,String text){this.user=user;this.provider=provider;this.conversationId=conversationId;this.text=text;} public Long getId(){return id;} public String getProvider(){return provider;} public String getConversationId(){return conversationId;} public String getText(){return text;} public String getRemoteMessageId(){return remoteMessageId;} public boolean isDirty(){return dirty;} public void request(String value){text=value;dirty=true;} public void delivered(String id){remoteMessageId=id;dirty=false;}
-}

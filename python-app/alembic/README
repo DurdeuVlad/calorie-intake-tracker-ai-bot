@@ -1,1 +1,6 @@
-Generic single-database configuration with an async dbapi.
+Canonical Python schema management.
+
+The `flyway_baseline/` directory contains the retained PostgreSQL V1–V17
+baseline required to bootstrap existing deployments and clean CI databases.
+Future schema changes must be new Alembic revisions under `versions/`; never
+edit an applied baseline or revision.

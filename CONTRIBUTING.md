@@ -5,9 +5,9 @@ Thanks for helping. Keep changes small, tested, and reviewable.
 ## Before opening a pull request
 
 - Never commit tokens, `.env` files, user data, Telegram updates, media, or n8n exports.
-- Use Java 21 and run `mvn verify` before requesting review.
+- Use Python 3.11+ and run `python -m pytest tests` from `python-app` before requesting review.
 - Add or update tests for behavioural changes.
-- Add a Flyway migration for persisted-schema changes; never alter an applied migration.
+- Add an Alembic migration for persisted-schema changes; never alter an applied migration.
 - Update the relevant `docs/` page and ADR when a design decision changes.
 
 ## Pull requests
