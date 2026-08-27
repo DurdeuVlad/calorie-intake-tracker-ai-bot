@@ -4,6 +4,7 @@ of calling the real OpenAI API. This exercises the exact same code path a
 real conversation would, just with the LLM itself replaced."""
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select
@@ -46,6 +47,34 @@ def _tool_call(tool_id: str, name: str, **arguments) -> ToolCall:
 
 async def _reload_user(session, user_id: int) -> FoodUser:
     return (await session.execute(select(FoodUser).where(FoodUser.id == user_id))).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_create_action_accepts_hour_only_local_time_from_a_natural_language_request():
+    model = ScriptedModel(
+        [
+            AgentReply(
+                None,
+                [_tool_call("c1", "apply_journal_actions", actions=[{"type": "CREATE", "description": "cafea", "calories": 20, "localTime": "9"}])],
+            )
+        ]
+    )
+    agent = JournalAgent(model, JournalToolExecutor(), max_tool_calls=10)
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 110, "Tester", "Europe/Bucharest")
+        await session.commit()
+        reply = await agent.run(
+            session,
+            AgentContext(user=user, chat_id="1", romanian=True, message="noteaza pe ora 9", started_at=started_at),
+        )
+        await session.commit()
+
+    assert "Logged: cafea" in reply
+    async with session_scope() as session:
+        entry = (await session.execute(select(FoodEntry).where(FoodEntry.user_id == user.id))).scalar_one()
+    assert entry.eaten_at == datetime(2026, 4, 1, 6, 0, tzinfo=UTC)
 
 
 @pytest.mark.asyncio
