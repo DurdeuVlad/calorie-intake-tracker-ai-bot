@@ -8,10 +8,11 @@ this rewrite already dropped by explicit decision.
 """
 
 import json
+import re
 import socket
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from datetime import date as date_type
 from decimal import Decimal
 from typing import Any, ClassVar
@@ -63,6 +64,9 @@ _DATE_WORDS_TODAY = {"today", "azi", "astăzi", "astazi"}
 _DATE_WORDS_YESTERDAY = {"yesterday", "yersterday", "ieri"}
 _VALID_SOURCES = {"manual", "private", "open_food_facts", "open_food_facts_estimate", "ai_estimate", "mixed"}
 _VALID_CONFIDENCE = {"high", "estimate", "unknown"}
+_LOCAL_TIME_RE = re.compile(
+    r"^(?P<hour>\d{1,2})(?::(?P<minute>\d{1,2})(?::(?P<second>\d{1,2}))?)?$"
+)
 
 RefreshDailyStatus = Callable[[AsyncSession, Any, str], Awaitable[None]]
 
@@ -161,6 +165,27 @@ def _search_date(context: AgentContext, requested: str | None, today: date_type)
         raise ValidationError("Use today, yesterday, or an ISO date.")
 
 
+def _parse_local_time(value: str) -> time:
+    """Parse compact local-time forms extracted from natural-language input.
+
+    Hour-only input is intentional: Romanian phrases such as "pe ora 9" are
+    unambiguous and commonly arrive from the model as ``"9"``. Keep the
+    accepted surface narrow so arbitrary natural-language text is still
+    rejected at this deterministic boundary.
+    """
+    match = _LOCAL_TIME_RE.fullmatch(value.strip())
+    if match is None:
+        raise ValidationError("Use a valid local time such as 18:30.")
+    try:
+        return time(
+            hour=int(match.group("hour")),
+            minute=int(match.group("minute") or 0),
+            second=int(match.group("second") or 0),
+        )
+    except ValueError as failure:
+        raise ValidationError("Use a valid local time such as 18:30.") from failure
+
+
 def _resolve_meal_instant(
     context: AgentContext, timezone_name: str, requested_date: str | None, requested_time: str | None, existing: datetime | None = None
 ) -> datetime:
@@ -184,11 +209,7 @@ def _resolve_meal_instant(
         raise ValidationError("Future meal dates are not allowed.")
 
     if requested_time:
-        try:
-            hour, minute = (int(p) for p in requested_time.strip().split(":")[:2])
-            target_time = datetime.min.time().replace(hour=hour, minute=minute)
-        except (ValueError, IndexError):
-            raise ValidationError("Use a valid local time such as 18:30.")
+        target_time = _parse_local_time(requested_time)
     elif existing is not None:
         target_time = existing.astimezone(zone).time()
     else:

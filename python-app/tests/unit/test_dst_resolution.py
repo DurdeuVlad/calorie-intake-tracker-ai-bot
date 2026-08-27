@@ -33,6 +33,24 @@ def test_accepts_a_normal_time_shortly_before_the_gap():
     assert result is not None
 
 
+def test_accepts_hour_only_local_time():
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+    context = _context(started_at)
+
+    result = _resolve_meal_instant(context, "Europe/Bucharest", "today", "9")
+
+    assert result == datetime(2026, 4, 1, 6, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("requested_time", ["9:60", "9:00:99", "24:00", "10.45", "9 am"])
+def test_rejects_invalid_local_time_forms(requested_time: str):
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+    context = _context(started_at)
+
+    with pytest.raises(ValidationError, match="valid local time"):
+        _resolve_meal_instant(context, "Europe/Bucharest", "today", requested_time)
+
+
 def test_ambiguous_fall_back_hour_resolves_to_the_first_earlier_offset():
     # 2026-10-25 is the last Sunday of October; 03:00-04:00 local occurs twice
     # (once at UTC+3 DST, once at UTC+2 standard). The first (DST) offset wins.
