@@ -272,6 +272,46 @@ async def test_invalid_calories_are_retried_by_the_model_instead_of_surfaced_raw
 
 
 @pytest.mark.asyncio
+async def test_mixed_batch_with_one_failure_is_reported_immediately_without_retrying():
+    """A partial failure must not re-loop the model: the already-created action
+    is committed with no idempotency check, so resending the batch on retry
+    would duplicate it. The system prompt tells the model to summarize mixed
+    results itself, so the canonical reply must render on the first pass."""
+    model = ScriptedModel(
+        [
+            AgentReply(
+                None,
+                [
+                    _tool_call(
+                        "c1",
+                        "apply_journal_actions",
+                        actions=[
+                            {"type": "CREATE", "description": "supa", "calories": 200},
+                            {"type": "CREATE", "description": "prajitura", "calories": 999999},
+                        ],
+                    )
+                ],
+            )
+        ]
+    )
+    agent = JournalAgent(model, JournalToolExecutor(), max_tool_calls=10)
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 557, "Tester", "Europe/Bucharest")
+        await session.commit()
+        reply = await agent.run(session, AgentContext(user=user, chat_id="1", romanian=False, message="supa 200 kcal si prajitura"))
+        await session.commit()
+
+    assert model.calls == 1
+    assert "Logged: supa" in reply
+    assert "200 kcal" in reply
+
+    async with session_scope() as session:
+        entries = (await session.execute(select(FoodEntry).where(FoodEntry.user_id == user.id))).scalars().all()
+    assert len(entries) == 1
+    assert entries[0].calories == 200
+
+
+@pytest.mark.asyncio
 async def test_hits_the_max_tool_call_limit():
     tool_calls = [_tool_call(f"c{i}", "get_today_summary") for i in range(5)]
     model = ScriptedModel([AgentReply(None, tool_calls)])
