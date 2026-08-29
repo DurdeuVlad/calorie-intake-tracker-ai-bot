@@ -134,6 +134,12 @@ class JournalAgent:
             rows = [r for r in rows if isinstance(r, dict)]
             if not rows:
                 return "Nu am putut aplica nicio schimbare." if context.romanian else "No journal changes could be applied."
+            if any(row.get("ok") is not True for row in rows):
+                # A per-action validation failure (e.g. bad calories) is already
+                # serialized back to the model as the tool result -- let the loop
+                # retry with corrected arguments instead of surfacing the raw
+                # error to the user immediately.
+                return None
 
             created_ids = [
                 row.get("entry", {}).get("id")

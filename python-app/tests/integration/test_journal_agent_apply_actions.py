@@ -240,6 +240,38 @@ async def test_create_edit_delete_and_undo_mark_the_pinned_total_dirty_inside_me
 
 
 @pytest.mark.asyncio
+async def test_invalid_calories_are_retried_by_the_model_instead_of_surfaced_raw():
+    model = ScriptedModel(
+        [
+            AgentReply(
+                None,
+                [_tool_call("c1", "apply_journal_actions", actions=[{"type": "CREATE", "description": "orez", "calories": 999999}])],
+            ),
+            AgentReply(
+                None,
+                [_tool_call("c2", "apply_journal_actions", actions=[{"type": "CREATE", "description": "orez", "calories": 650}])],
+            ),
+        ]
+    )
+    agent = JournalAgent(model, JournalToolExecutor(), max_tool_calls=10)
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 556, "Tester", "Europe/Bucharest")
+        await session.commit()
+        reply = await agent.run(session, AgentContext(user=user, chat_id="1", romanian=False, message="orez 50g"))
+        await session.commit()
+
+    assert model.calls == 2
+    assert "Logged: orez" in reply
+    assert "650 kcal" in reply
+    assert "Calories must be" not in reply
+
+    async with session_scope() as session:
+        entries = (await session.execute(select(FoodEntry).where(FoodEntry.user_id == user.id))).scalars().all()
+    assert len(entries) == 1
+    assert entries[0].calories == 650
+
+
+@pytest.mark.asyncio
 async def test_hits_the_max_tool_call_limit():
     tool_calls = [_tool_call(f"c{i}", "get_today_summary") for i in range(5)]
     model = ScriptedModel([AgentReply(None, tool_calls)])
