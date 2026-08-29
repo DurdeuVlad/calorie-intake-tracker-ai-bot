@@ -134,6 +134,19 @@ class JournalAgent:
             rows = [r for r in rows if isinstance(r, dict)]
             if not rows:
                 return "Nu am putut aplica nicio schimbare." if context.romanian else "No journal changes could be applied."
+            if all(row.get("ok") is not True for row in rows):
+                # Every action in the batch failed validation (e.g. bad
+                # calories) and nothing was applied, so there is nothing a
+                # retry could duplicate. The failure detail is already
+                # serialized back to the model as the tool result -- let the
+                # loop retry with corrected arguments instead of surfacing the
+                # raw error to the user immediately. A *mixed* batch (some
+                # actions already applied) still renders here per the system
+                # prompt's "list every success and every failure" contract --
+                # resending the whole batch on retry would re-create the
+                # already-successful actions since apply_journal_actions has
+                # no idempotency check.
+                return None
 
             created_ids = [
                 row.get("entry", {}).get("id")
