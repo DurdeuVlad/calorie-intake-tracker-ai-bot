@@ -35,3 +35,22 @@ def test_feedback_instructions_cover_unprompted_capture_frustration_and_privacy_
     submit_feedback = next(tool for tool in tool_definitions() if tool["function"]["name"] == "submit_feedback")
     assert "not a food log" in submit_feedback["function"]["description"]
     assert submit_feedback["function"]["parameters"]["required"] == ["message"]
+
+
+def test_onboarding_instructions_explain_capabilities_and_drive_settings_to_completion():
+    """continue_onboarding() never runs in production (see
+    journal_application_service.py's module docstring) -- update_settings is the
+    only path that reaches real onboarding users, so the prompt must tell the
+    model to complete it, not just set a timezone and move on."""
+    prompt = instructions(romanian=False)
+
+    assert "The first user reply after your /start welcome message is their timezone" in prompt
+    assert "briefly explain what you do" in prompt
+    assert "logged from text, a voice note, or a photo" in prompt
+    assert "ask once for a daily calorie target between 1200 and 5000, or invite them to say skip" in prompt
+    assert "call update_settings again with calorieTarget or skipCalorieTarget true" in prompt
+    assert "do not ask about the target again in this or any later conversation" in prompt
+
+    update_settings = next(tool for tool in tool_definitions() if tool["function"]["name"] == "update_settings")
+    assert "skipCalorieTarget" in update_settings["function"]["parameters"]["properties"]
+    assert "completes onboarding" in update_settings["function"]["description"]

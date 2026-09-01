@@ -125,8 +125,16 @@ def tool_definitions() -> list[dict[str, Any]]:
         _tool("save_private_food", "Save a household food.", _object({"name": _string(), "caloriesPer100g": _integer()}, ["name", "caloriesPer100g"])),
         _tool(
             "update_settings",
-            "Update settings.",
-            _object({"timezone": _string(), "calorieTarget": _integer(), "reportsEnabled": {"type": "boolean"}}),
+            "Update settings. During onboarding, setting timezone advances onboarding to the calorie-target step; "
+            "setting calorieTarget or skipCalorieTarget true completes onboarding.",
+            _object(
+                {
+                    "timezone": _string(),
+                    "calorieTarget": _integer(),
+                    "skipCalorieTarget": {"type": "boolean"},
+                    "reportsEnabled": {"type": "boolean"},
+                }
+            ),
         ),
         _tool(
             "submit_feedback",

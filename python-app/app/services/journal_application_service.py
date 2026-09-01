@@ -39,9 +39,11 @@ def onboarding_prompt(settings: UserSettings, romanian: bool) -> str:
             else "What is your daily calorie target (1200-5000), or say skip?"
         )
     return (
-        "Bun venit. Trimite fusul IANA, de exemplu Europe/Bucharest."
+        "Bun venit! Sunt jurnalul tău privat de calorii -- scrie-mi ce ai mâncat (text, notă vocală sau poză) și "
+        "îl notez cu calorii. Mai întâi, care este fusul tău orar? Trimite formatul IANA, de exemplu Europe/Bucharest."
         if romanian
-        else "Welcome. Send your IANA timezone, for example Europe/Bucharest."
+        else "Welcome! I'm your private food journal -- just tell me what you ate (text, a voice note, or a photo) "
+        "and I'll log it with calories. First, what's your timezone? Send the IANA format, for example Europe/Bucharest."
     )
 
 

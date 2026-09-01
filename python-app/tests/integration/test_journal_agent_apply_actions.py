@@ -18,7 +18,7 @@ from app.db.models.messaging import PinnedDailyStatus
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext, AgentReply, ToolCall
 from app.messaging import execution_context
-from app.repositories import food_entry_repo
+from app.repositories import food_entry_repo, food_user_repo
 from app.repositories.food_user_repo import get_or_create_by_telegram_user_id
 from app.services import daily_status_service
 from app.services.journal_tool_executor import JournalToolExecutor
@@ -121,6 +121,98 @@ async def test_submit_feedback_tool_rejects_empty_text():
         result = await executor.execute(session, context, _tool_call("f2", "submit_feedback", message="   "), [])
 
     assert result.ok is False
+
+
+@pytest.mark.asyncio
+async def test_update_settings_advances_onboarding_from_timezone_to_calorie_target():
+    """continue_onboarding() has no call site in production (see
+    journal_application_service.py's module docstring) -- update_settings, called
+    by the agent during ordinary conversation, is the only path that actually
+    reaches real onboarding users, so it must drive the same stage transitions."""
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 113, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="Bucharest", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s1", "update_settings", timezone="Europe/Bucharest"), [])
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.timezone == "Europe/Bucharest"
+    assert settings.onboarding_stage == "CALORIE_TARGET"
+    assert settings.onboarding_completed is False
+
+
+@pytest.mark.asyncio
+async def test_update_settings_completes_onboarding_with_a_calorie_target():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 114, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.require_calorie_target()
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="1900", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s2", "update_settings", calorieTarget=1900), [])
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.calorie_target == 1900
+    assert settings.onboarding_stage == "COMPLETE"
+    assert settings.onboarding_completed is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_completes_onboarding_with_an_explicit_skip():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 115, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.require_calorie_target()
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="skip", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s3", "update_settings", skipCalorieTarget=True), [])
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.calorie_target is None
+    assert settings.onboarding_stage == "COMPLETE"
+    assert settings.onboarding_completed is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_does_not_touch_onboarding_state_once_already_complete():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 116, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.require_calorie_target()
+        settings.calorie_target = 1800
+        settings.skip_calorie_target()
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="move to London time", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s4", "update_settings", timezone="Europe/London"), [])
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.timezone == "Europe/London"
+    assert settings.onboarding_stage == "COMPLETE"
+    assert settings.onboarding_completed is True
 
 
 @pytest.mark.asyncio

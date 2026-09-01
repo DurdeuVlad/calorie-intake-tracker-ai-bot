@@ -44,6 +44,21 @@ async def test_start_shows_onboarding_prompt_for_a_new_user():
 
 
 @pytest.mark.asyncio
+async def test_start_explains_what_the_bot_does_before_asking_for_a_timezone():
+    """A new user's only guidance before this was a bare timezone request --
+    confirmed live against a real onboarded user who was never told the bot
+    logs meals from text/voice/photo and got stuck with no calorie target."""
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/start")
+    lowered = reply.lower()
+    assert "voice" in lowered or "vocală" in lowered
+    assert "photo" in lowered or "poză" in lowered
+
+
+@pytest.mark.asyncio
 async def test_help_lists_all_commands():
     journal = JournalApplicationService(default_timezone="Europe/Bucharest")
     async with session_scope() as session:
