@@ -42,6 +42,7 @@ from app.integrations.openfoodfacts_types import (
     OpenFoodFactsClient,
 )
 from app.repositories import (
+    feedback_repo,
     food_entry_repo,
     food_item_repo,
     food_user_repo,
@@ -53,6 +54,7 @@ from app.repositories import (
 from app.services import nutrition_resolver, openfoodfacts_cache
 
 MAX_ACTIONS_PER_BATCH = 20
+MAX_FEEDBACK_CHARS = 2000
 MAX_REDIRECTS = 5
 WEB_SEARCH_CACHE_TTL = timedelta(days=1)
 MAX_WEB_SEARCH_CACHE_ENTRIES = 256
@@ -894,6 +896,15 @@ class JournalToolExecutor:
             s.reports_enabled = value == "true"
         return await self._settings_tool(session, context, args, todos)
 
+    # --- feedback -----------------------------------------------------
+
+    async def _submit_feedback(self, session, context, args, todos) -> AgentToolResult:
+        message = _str(args, "message")
+        if not message or not message.strip():
+            return AgentToolResult.failure("VALIDATION_ERROR", "Feedback text is required.")
+        await feedback_repo.create(session, context.user, "ai_detected", message.strip()[:MAX_FEEDBACK_CHARS], datetime.now(UTC))
+        return AgentToolResult.success({"recorded": True})
+
     _HANDLERS: ClassVar[dict[str, Callable]] = {}
 
 
@@ -917,4 +928,5 @@ JournalToolExecutor._HANDLERS = {
     "complete_todo": JournalToolExecutor._complete_todo,
     "save_private_food": JournalToolExecutor._save_private,
     "update_settings": JournalToolExecutor._update_settings,
+    "submit_feedback": JournalToolExecutor._submit_feedback,
 }

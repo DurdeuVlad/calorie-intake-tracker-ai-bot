@@ -50,7 +50,7 @@ async def test_help_lists_all_commands():
         user = await _make_user(session)
         await session.commit()
         reply = await journal.handle(session, user, "1", "/help")
-    for cmd in ("/start", "/help", "/today", "/settings", "/cancel", "/privacy", "/undo"):
+    for cmd in ("/start", "/help", "/today", "/settings", "/cancel", "/privacy", "/undo", "/feedback"):
         assert cmd in reply
     assert "/adduser" not in reply
 
@@ -77,6 +77,48 @@ async def test_today_reports_zero_for_a_fresh_user():
         await session.commit()
         reply = await journal.handle(session, user, "1", "/today")
     assert "0 kcal" in reply
+
+
+@pytest.mark.asyncio
+async def test_feedback_command_stores_the_message_and_confirms():
+    from sqlalchemy import select
+
+    from app.db.models.feedback import UserFeedback
+
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/feedback a weekly summary chart would help")
+        await session.commit()
+
+    assert "thank" in reply.lower() or "mulțumesc" in reply.lower()
+
+    async with session_scope() as session:
+        rows = (await session.execute(select(UserFeedback).where(UserFeedback.user_id == user.id))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].message == "a weekly summary chart would help"
+    assert rows[0].source == "command"
+
+
+@pytest.mark.asyncio
+async def test_feedback_command_without_text_prompts_for_it_and_stores_nothing():
+    from sqlalchemy import select
+
+    from app.db.models.feedback import UserFeedback
+
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/feedback")
+        await session.commit()
+
+    assert "/feedback" in reply
+
+    async with session_scope() as session:
+        rows = (await session.execute(select(UserFeedback).where(UserFeedback.user_id == user.id))).scalars().all()
+    assert rows == []
 
 
 @pytest.mark.asyncio
