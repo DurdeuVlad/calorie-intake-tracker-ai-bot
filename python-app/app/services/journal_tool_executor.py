@@ -670,7 +670,7 @@ class JournalToolExecutor:
         if change_set is not None:
             change_set.add_mutation("CREATE", None, after)
         if unverified_source:
-            receipt["basis"] = "unverified source label ignored; calories supplied in the message"
+            receipt["basis"] = "unverified source label ignored; no confirmed source for this calorie value"
         elif source == "manual":
             receipt["basis"] = "user-provided calories"
         return self._action_success("CREATE", entry, timezone_name, receipt)

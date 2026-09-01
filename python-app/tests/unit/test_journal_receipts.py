@@ -149,7 +149,7 @@ def test_forged_source_label_is_rendered_as_unverified_manual_value():
         {
             "nutritionSource": "manual",
             "nutritionConfidence": "unknown",
-            "receipt": {"basis": "unverified source label ignored; calories supplied in the message"},
+            "receipt": {"basis": "unverified source label ignored; no confirmed source for this calorie value"},
         },
         None,
     )
@@ -157,7 +157,7 @@ def test_forged_source_label_is_rendered_as_unverified_manual_value():
     reply = "\n".join(lines)
     assert "private" not in reply.lower()
     assert "Source: manual value; confidence: unknown." in reply
-    assert "Basis: unverified source label ignored; calories supplied in the message." in reply
+    assert "Basis: unverified source label ignored; no confirmed source for this calorie value." in reply
 
 
 def test_non_evidence_per_100g_result_gets_a_deterministic_formula():
