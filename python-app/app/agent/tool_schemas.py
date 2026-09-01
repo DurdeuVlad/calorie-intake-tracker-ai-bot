@@ -128,4 +128,11 @@ def tool_definitions() -> list[dict[str, Any]]:
             "Update settings.",
             _object({"timezone": _string(), "calorieTarget": _integer(), "reportsEnabled": {"type": "boolean"}}),
         ),
+        _tool(
+            "submit_feedback",
+            "Record feedback, a bug report, or a feature request about the bot itself -- not a food log. Call this "
+            "whenever the user volunteers an opinion or problem about the bot (unprompted or in reply to being asked), "
+            "even mid-conversation about something else. Store their words faithfully; do not paraphrase away detail.",
+            _object({"message": _string()}, ["message"]),
+        ),
     ]

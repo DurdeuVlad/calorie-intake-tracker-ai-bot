@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.language import is_romanian
 from app.db.models.users import FoodUser, UserSettings
 from app.domain.agent_types import AgentContext
-from app.repositories import food_entry_repo, food_user_repo, telegram_access_repo
+from app.repositories import feedback_repo, food_entry_repo, food_user_repo, telegram_access_repo
 
 MIN_CALORIE_TARGET = 1200
 MAX_CALORIE_TARGET = 5000
@@ -132,11 +132,11 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
         return (
             "Pot nota mai multe mese dintr-un singur mesaj, inclusiv pe zile trecute; pot estima nutriția, muta, corecta "
             "sau șterge direct și poți folosi Undo timp de 10 minute.\n\nComenzi: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy, /undo" + admin_commands
+            "/settings, /cancel, /privacy, /undo, /feedback" + admin_commands
             if romanian
             else "I can log several meals from one message, including past dates; estimate nutrition; and move, edit, "
             "or delete entries immediately with a 10-minute Undo window.\n\nCommands: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy, /undo" + admin_commands
+            "/settings, /cancel, /privacy, /undo, /feedback" + admin_commands
         )
     if cmd in ("/today", "/report"):
         return await _today_text(session, user, settings, romanian)
@@ -148,13 +148,25 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
         return f"Settings: timezone {settings.timezone}, target {target_text}, reports {reports_text}. You can change these conversationally."
     if cmd == "/cancel":
         return "Am anulat draftul conversațional curent." if romanian else "I cancelled the current conversational draft."
+    if cmd == "/feedback":
+        from datetime import UTC, datetime
+
+        text = raw.strip()[len(cmd):].strip()
+        if not text:
+            return (
+                "Scrie feedback-ul după comandă, de exemplu: /feedback ar fi util un grafic săptămânal."
+                if romanian
+                else "Add your feedback after the command, e.g. /feedback a weekly chart would help."
+            )
+        await feedback_repo.create(session, user, "command", text, datetime.now(UTC))
+        return "Mulțumesc, am notat feedback-ul." if romanian else "Thanks, I've recorded your feedback."
     if cmd == "/privacy":
         return (
-            "Păstrez intrările jurnalului, cel mult 10 mesaje recente și change-set-uri Undo temporare. "
-            "Fișierele originale nu sunt păstrate."
+            "Păstrez intrările jurnalului, cel mult 10 mesaje recente, change-set-uri Undo temporare și feedback-ul "
+            "trimis prin /feedback sau prin conversație. Fișierele originale nu sunt păstrate."
             if romanian
-            else "I retain journal entries, at most 10 recent messages, and temporary Undo change sets. "
-            "Original media files are not retained."
+            else "I retain journal entries, at most 10 recent messages, temporary Undo change sets, and any "
+            "feedback sent via /feedback or in conversation. Original media files are not retained."
         )
     return "Comandă necunoscută. Folosește /help." if romanian else "Unknown command. Use /help."
 

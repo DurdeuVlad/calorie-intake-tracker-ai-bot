@@ -13,6 +13,7 @@ from app.agent.journal_agent import JournalAgent
 from app.agent.openai_model_client import AgentProviderUnavailableError
 from app.db.base import session_scope
 from app.db.models.entries import FoodEntry
+from app.db.models.feedback import UserFeedback
 from app.db.models.messaging import PinnedDailyStatus
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext, AgentReply, ToolCall
@@ -75,6 +76,51 @@ async def test_create_action_accepts_hour_only_local_time_from_a_natural_languag
     async with session_scope() as session:
         entry = (await session.execute(select(FoodEntry).where(FoodEntry.user_id == user.id))).scalar_one()
     assert entry.eaten_at == datetime(2026, 4, 1, 6, 0, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_submit_feedback_tool_stores_the_message_and_lets_the_model_confirm_in_its_own_words():
+    """submit_feedback has no canonical-reply branch (like save_private_food and
+    update_settings), so the loop continues to a second model turn for the
+    confirmation text -- this exercises that full round trip, not just the tool."""
+    model = ScriptedModel(
+        [
+            AgentReply(None, [_tool_call("f1", "submit_feedback", message="please add a weekly summary chart")]),
+            AgentReply("Thanks, I've noted that.", []),
+        ]
+    )
+    agent = JournalAgent(model, JournalToolExecutor(), max_tool_calls=10)
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 111, "Tester", "Europe/Bucharest")
+        await session.commit()
+        reply = await agent.run(
+            session,
+            AgentContext(user=user, chat_id="1", romanian=False, message="you should add a weekly chart", started_at=started_at),
+        )
+        await session.commit()
+
+    assert reply == "Thanks, I've noted that."
+    async with session_scope() as session:
+        rows = (await session.execute(select(UserFeedback).where(UserFeedback.user_id == user.id))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].message == "please add a weekly summary chart"
+    assert rows[0].source == "ai_detected"
+
+
+@pytest.mark.asyncio
+async def test_submit_feedback_tool_rejects_empty_text():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 112, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("f2", "submit_feedback", message="   "), [])
+
+    assert result.ok is False
 
 
 @pytest.mark.asyncio
