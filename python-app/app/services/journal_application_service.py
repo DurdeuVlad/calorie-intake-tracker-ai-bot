@@ -23,7 +23,6 @@ from app.repositories import feedback_repo, food_entry_repo, food_user_repo, tel
 
 MIN_CALORIE_TARGET = 1200
 MAX_CALORIE_TARGET = 5000
-MAX_FEEDBACK_CHARS = 2000
 
 
 class Agent(Protocol):
@@ -159,7 +158,7 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
                 if romanian
                 else "Add your feedback after the command, e.g. /feedback a weekly chart would help."
             )
-        await feedback_repo.create(session, user, "command", text[:MAX_FEEDBACK_CHARS], datetime.now(UTC))
+        await feedback_repo.create(session, user, "command", text, datetime.now(UTC))
         return "Mulțumesc, am notat feedback-ul." if romanian else "Thanks, I've recorded your feedback."
     if cmd == "/privacy":
         return (

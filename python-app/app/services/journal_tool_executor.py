@@ -54,7 +54,6 @@ from app.repositories import (
 from app.services import nutrition_resolver, openfoodfacts_cache
 
 MAX_ACTIONS_PER_BATCH = 20
-MAX_FEEDBACK_CHARS = 2000
 MAX_REDIRECTS = 5
 WEB_SEARCH_CACHE_TTL = timedelta(days=1)
 MAX_WEB_SEARCH_CACHE_ENTRIES = 256
@@ -902,7 +901,7 @@ class JournalToolExecutor:
         message = _str(args, "message")
         if not message or not message.strip():
             return AgentToolResult.failure("VALIDATION_ERROR", "Feedback text is required.")
-        await feedback_repo.create(session, context.user, "ai_detected", message.strip()[:MAX_FEEDBACK_CHARS], datetime.now(UTC))
+        await feedback_repo.create(session, context.user, "ai_detected", message.strip(), datetime.now(UTC))
         return AgentToolResult.success({"recorded": True})
 
     _HANDLERS: ClassVar[dict[str, Callable]] = {}
