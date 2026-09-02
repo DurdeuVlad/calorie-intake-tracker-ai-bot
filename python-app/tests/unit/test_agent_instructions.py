@@ -37,6 +37,21 @@ def test_feedback_instructions_cover_unprompted_capture_frustration_and_privacy_
     assert submit_feedback["function"]["parameters"]["required"] == ["message"]
 
 
+def test_a_why_question_about_an_estimate_is_answered_not_logged_as_feedback():
+    """Live production regression (user_feedback rows 1-2): the user asked "why
+    is this 710 kcal" about a KFC estimate and "why so many calories" about a
+    total -- both genuine questions about a number the agent already produced,
+    not complaints -- and the agent silently filed them as feedback instead of
+    answering. The user flagged this themselves, unprompted, in row 3."""
+    prompt = instructions(romanian=False)
+
+    assert '"why is this 710 kcal", "why so many calories"' in prompt
+    assert "is a request to see your own reasoning, not a complaint" in prompt
+    assert "answer it directly from the entry's basis or derivation" in prompt
+    assert "for a daily total, by naming the entries that make it up" in prompt
+    assert "only call submit_feedback if they push back after that explanation or are clearly complaining rather than asking" in prompt
+
+
 def test_onboarding_instructions_explain_capabilities_and_drive_settings_to_completion():
     """continue_onboarding() never runs in production (see
     journal_application_service.py's module docstring) -- update_settings is the
