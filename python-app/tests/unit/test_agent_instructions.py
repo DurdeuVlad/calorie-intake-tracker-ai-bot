@@ -26,6 +26,15 @@ def test_feedback_instructions_cover_unprompted_capture_frustration_and_privacy_
     assert "call submit_feedback with their own words before replying" in prompt
     assert "correcting a meal you logged wrong is an EDIT/DELETE, not feedback" in prompt
     assert "offer once to note it as feedback even though they did not ask" in prompt
+    assert "do not offer again in the same conversation" in prompt
+    assert "ask one short clarifying question" in prompt
+    assert "submit whatever they already gave you rather than asking again" in prompt
+    assert "answer directly from here rather than deflecting to /privacy" in prompt
+    assert "original media files are not retained" in prompt
+
+    submit_feedback = next(tool for tool in tool_definitions() if tool["function"]["name"] == "submit_feedback")
+    assert "not a food log" in submit_feedback["function"]["description"]
+    assert submit_feedback["function"]["parameters"]["required"] == ["message"]
 
 
 def test_a_why_question_about_an_estimate_is_answered_not_logged_as_feedback():
@@ -39,16 +48,8 @@ def test_a_why_question_about_an_estimate_is_answered_not_logged_as_feedback():
     assert '"why is this 710 kcal", "why so many calories"' in prompt
     assert "is a request to see your own reasoning, not a complaint" in prompt
     assert "answer it directly from the entry's basis or derivation" in prompt
+    assert "for a daily total, by naming the entries that make it up" in prompt
     assert "only call submit_feedback if they push back after that explanation or are clearly complaining rather than asking" in prompt
-    assert "do not offer again in the same conversation" in prompt
-    assert "ask one short clarifying question" in prompt
-    assert "submit whatever they already gave you rather than asking again" in prompt
-    assert "answer directly from here rather than deflecting to /privacy" in prompt
-    assert "original media files are not retained" in prompt
-
-    submit_feedback = next(tool for tool in tool_definitions() if tool["function"]["name"] == "submit_feedback")
-    assert "not a food log" in submit_feedback["function"]["description"]
-    assert submit_feedback["function"]["parameters"]["required"] == ["message"]
 
 
 def test_onboarding_instructions_explain_capabilities_and_drive_settings_to_completion():
