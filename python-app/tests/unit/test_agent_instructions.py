@@ -73,3 +73,18 @@ def test_onboarding_instructions_explain_capabilities_and_drive_settings_to_comp
     update_settings = next(tool for tool in tool_definitions() if tool["function"]["name"] == "update_settings")
     assert "skipCalorieTarget" in update_settings["function"]["parameters"]["properties"]
     assert "completes onboarding" in update_settings["function"]["description"]
+
+
+def test_day_boundary_instructions_explain_the_setting_and_its_reminder():
+    prompt = instructions(romanian=False)
+
+    assert "Every user's tracking day starts at midnight by default, but that boundary is configurable" in prompt
+    assert "update_settings dayBoundaryHour (0-23; 0 is midnight)" in prompt
+    assert "This changes which tracking day a meal counts toward, not the meal's own logged time" in prompt
+    assert "update_settings dayBoundaryReminderEnabled true; off is the default" in prompt
+
+    update_settings = next(tool for tool in tool_definitions() if tool["function"]["name"] == "update_settings")
+    properties = update_settings["function"]["parameters"]["properties"]
+    assert "dayBoundaryHour" in properties
+    assert "dayBoundaryReminderEnabled" in properties
+    assert "tracking day starts at" in update_settings["function"]["description"]

@@ -18,8 +18,8 @@ from app.repositories import (
 async def refresh(session: AsyncSession, user: FoodUser, provider: str, conversation_id: str) -> None:
     settings = await food_user_repo.get_settings(session, user.id)
     zone = ZoneInfo(settings.timezone)
-    today = datetime.now(zone).date()
-    start, end = food_entry_repo.day_bounds(today, zone)
+    today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
+    start, end = food_entry_repo.day_bounds(today, zone, settings.day_boundary_hour)
     rows = await food_entry_repo.find_between(session, user, start, end)
     total = sum(r.calories or 0 for r in rows)
     text = f"Today: {len(rows)} entries, {total} kcal logged."

@@ -270,8 +270,8 @@ class JournalToolExecutor:
         from zoneinfo import ZoneInfo
 
         zone = ZoneInfo(settings.timezone)
-        today = datetime.now(zone).date()
-        start, end = food_entry_repo.day_bounds(today, zone)
+        today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
+        start, end = food_entry_repo.day_bounds(today, zone, settings.day_boundary_hour)
         return await food_entry_repo.find_between(session, context.user, start, end)
 
     async def _today(self, session, context, args, todos) -> AgentToolResult:
@@ -290,20 +290,20 @@ class JournalToolExecutor:
         from zoneinfo import ZoneInfo
 
         zone = ZoneInfo(settings.timezone)
-        today = context.started_at.astimezone(zone).date()
+        today = food_entry_repo.local_tracking_date(context.started_at, zone, settings.day_boundary_hour)
 
         rows: list[FoodEntry]
         if date_arg:
             day = _search_date(context, date_arg, today)
-            start, end = food_entry_repo.day_bounds(day, zone)
+            start, end = food_entry_repo.day_bounds(day, zone, settings.day_boundary_hour)
             rows = await food_entry_repo.find_between(session, context.user, start, end)
         elif from_arg or to_arg:
             start_date = _search_date(context, from_arg or to_arg, today)
             end_date = _search_date(context, to_arg or from_arg, today)
             if end_date < start_date:
                 return AgentToolResult.failure("VALIDATION_ERROR", "The end date cannot be before the start date.")
-            start, _ = food_entry_repo.day_bounds(start_date, zone)
-            _, end = food_entry_repo.day_bounds(end_date, zone)
+            start, _ = food_entry_repo.day_bounds(start_date, zone, settings.day_boundary_hour)
+            _, end = food_entry_repo.day_bounds(end_date, zone, settings.day_boundary_hour)
             rows = await food_entry_repo.find_between(session, context.user, start, end)
         else:
             rows = await self._for_today(session, context) if not q else await food_entry_repo.search_by_term(session, context.user, q)
@@ -322,7 +322,15 @@ class JournalToolExecutor:
 
     async def _settings_tool(self, session, context, args, todos) -> AgentToolResult:
         s = await self._settings_for(session, context)
-        return AgentToolResult.success({"timezone": s.timezone, "calorieTarget": "unset" if s.calorie_target is None else s.calorie_target, "reportsEnabled": s.reports_enabled})
+        return AgentToolResult.success(
+            {
+                "timezone": s.timezone,
+                "calorieTarget": "unset" if s.calorie_target is None else s.calorie_target,
+                "reportsEnabled": s.reports_enabled,
+                "dayBoundaryHour": s.day_boundary_hour,
+                "dayBoundaryReminderEnabled": s.day_boundary_reminder_enabled,
+            }
+        )
 
     # --- nutrition -----------------------------------------------------
 
@@ -903,6 +911,16 @@ class JournalToolExecutor:
             if value not in ("true", "false"):
                 return AgentToolResult.failure("VALIDATION_ERROR", "reportsEnabled must be true or false.")
             s.reports_enabled = value == "true"
+        if "dayBoundaryHour" in args and args["dayBoundaryHour"] is not None:
+            hour = int(args["dayBoundaryHour"])
+            if hour < 0 or hour > 23:
+                return AgentToolResult.failure("VALIDATION_ERROR", "dayBoundaryHour must be 0-23.")
+            s.day_boundary_hour = hour
+        if "dayBoundaryReminderEnabled" in args and args["dayBoundaryReminderEnabled"] is not None:
+            value = str(args["dayBoundaryReminderEnabled"]).lower()
+            if value not in ("true", "false"):
+                return AgentToolResult.failure("VALIDATION_ERROR", "dayBoundaryReminderEnabled must be true or false.")
+            s.day_boundary_reminder_enabled = value == "true"
         return await self._settings_tool(session, context, args, todos)
 
     # --- feedback -----------------------------------------------------

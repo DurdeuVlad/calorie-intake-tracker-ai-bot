@@ -88,6 +88,74 @@ async def test_report_scheduler_skips_disabled_or_incomplete_users():
 
 
 @pytest.mark.asyncio
+async def test_boundary_reminder_fires_once_within_the_lead_window_and_is_idempotent():
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 1006, "Tester", "Europe/Bucharest")
+        settings = await _reload_settings(session, user.id)
+        settings.onboarding_completed = True
+        settings.reports_enabled = True
+        settings.day_boundary_hour = 4
+        settings.day_boundary_reminder_enabled = True
+        session.add(MessagingRoute(user_id=user.id, provider="telegram", conversation_id="1006"))
+        await session.commit()
+
+    # 03:30 Europe/Bucharest (UTC+3 in June) -- 30 minutes before the 4am
+    # boundary, inside the 60-minute lead window.
+    fixed_now = datetime(2026, 6, 15, 0, 30, tzinfo=UTC)
+    await report_scheduler.deliver_due_reports(now_fn=lambda: fixed_now)
+    await report_scheduler.deliver_due_reports(now_fn=lambda: fixed_now)
+    await report_scheduler.deliver_due_reports(now_fn=lambda: fixed_now)
+
+    async with session_scope() as session:
+        deliveries = (await session.execute(select(ReportDelivery).where(ReportDelivery.user_id == user.id))).scalars().all()
+        outbound = (await session.execute(select(MessagingOutboundMessage).where(MessagingOutboundMessage.conversation_id == "1006"))).scalars().all()
+
+    boundary_deliveries = [d for d in deliveries if d.report_type == "day_boundary"]
+    assert len(boundary_deliveries) == 1  # claimed exactly once despite 3 ticks
+    assert len(outbound) == 1
+    assert "4" in outbound[0].text
+
+
+@pytest.mark.asyncio
+async def test_boundary_reminder_does_not_fire_outside_the_lead_window():
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 1007, "Tester", "Europe/Bucharest")
+        settings = await _reload_settings(session, user.id)
+        settings.onboarding_completed = True
+        settings.reports_enabled = True
+        settings.day_boundary_hour = 4
+        settings.day_boundary_reminder_enabled = True
+        await session.commit()
+
+    # Noon local -- nowhere near the 4am boundary.
+    fixed_now = datetime(2026, 6, 15, 9, 0, tzinfo=UTC)
+    await report_scheduler.deliver_due_reports(now_fn=lambda: fixed_now)
+
+    async with session_scope() as session:
+        deliveries = (await session.execute(select(ReportDelivery).where(ReportDelivery.user_id == user.id))).scalars().all()
+    assert [d for d in deliveries if d.report_type == "day_boundary"] == []
+
+
+@pytest.mark.asyncio
+async def test_boundary_reminder_requires_opt_in():
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 1008, "Tester", "Europe/Bucharest")
+        settings = await _reload_settings(session, user.id)
+        settings.onboarding_completed = True
+        settings.reports_enabled = True
+        settings.day_boundary_hour = 4
+        # day_boundary_reminder_enabled defaults to False -- leave it as-is.
+        await session.commit()
+
+    fixed_now = datetime(2026, 6, 15, 0, 30, tzinfo=UTC)  # inside the lead window
+    await report_scheduler.deliver_due_reports(now_fn=lambda: fixed_now)
+
+    async with session_scope() as session:
+        deliveries = (await session.execute(select(ReportDelivery).where(ReportDelivery.user_id == user.id))).scalars().all()
+    assert [d for d in deliveries if d.report_type == "day_boundary"] == []
+
+
+@pytest.mark.asyncio
 async def test_pinned_status_dispatcher_recovers_after_a_transient_failure_without_another_message():
 
     class FailingTelegram:

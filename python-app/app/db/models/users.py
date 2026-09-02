@@ -32,6 +32,10 @@ class UserSettings(Base):
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     onboarding_stage: Mapped[str] = mapped_column(String(32), default="TIMEZONE", server_default="TIMEZONE")
     preferred_language: Mapped[str] = mapped_column(String(2), default="ro", server_default="ro")
+    # Hour (0-23, local time) the tracking day starts at. 0 (midnight) matches
+    # the original calendar-day behavior every existing user already has.
+    day_boundary_hour: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    day_boundary_reminder_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     user: Mapped[FoodUser] = relationship(back_populates="settings")
 

@@ -104,8 +104,8 @@ async def _today_text(session, user: FoodUser, settings: UserSettings, romanian:
     from zoneinfo import ZoneInfo
 
     zone = ZoneInfo(settings.timezone)
-    today = datetime.now(zone).date()
-    calories, _count = await food_entry_repo.today_totals(session, user, settings.timezone, today)
+    today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
+    calories, _count = await food_entry_repo.today_totals(session, user, settings.timezone, today, settings.day_boundary_hour)
     target = settings.calorie_target
     if romanian:
         return f"Total azi: {calories} kcal" + ("." if target is None else f" din {target} kcal.")
@@ -145,9 +145,18 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
     if cmd == "/settings":
         target_text = ("nesetată" if romanian else "not set") if settings.calorie_target is None else f"{settings.calorie_target} kcal"
         reports_text = ("pornite" if settings.reports_enabled else "oprite") if romanian else ("on" if settings.reports_enabled else "off")
+        boundary_text = "miezul nopții" if settings.day_boundary_hour == 0 else f"ora {settings.day_boundary_hour}:00"
+        reminder_text = ("pornit" if settings.day_boundary_reminder_enabled else "oprit") if romanian else ("on" if settings.day_boundary_reminder_enabled else "off")
         if romanian:
-            return f"Setări: fus {settings.timezone}, țintă {target_text}, rapoarte {reports_text}. Poți modifica aceste setări conversațional."
-        return f"Settings: timezone {settings.timezone}, target {target_text}, reports {reports_text}. You can change these conversationally."
+            return (
+                f"Setări: fus {settings.timezone}, țintă {target_text}, rapoarte {reports_text}, ziua începe la "
+                f"{boundary_text}, memento început zi {reminder_text}. Poți modifica aceste setări conversațional."
+            )
+        boundary_text_en = "midnight" if settings.day_boundary_hour == 0 else f"{settings.day_boundary_hour}:00"
+        return (
+            f"Settings: timezone {settings.timezone}, target {target_text}, reports {reports_text}, day starts at "
+            f"{boundary_text_en}, day-boundary reminder {reminder_text}. You can change these conversationally."
+        )
     if cmd == "/cancel":
         return "Am anulat draftul conversațional curent." if romanian else "I cancelled the current conversational draft."
     if cmd == "/feedback":

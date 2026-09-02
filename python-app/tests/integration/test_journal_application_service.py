@@ -95,6 +95,26 @@ async def test_today_reports_zero_for_a_fresh_user():
 
 
 @pytest.mark.asyncio
+async def test_settings_command_shows_the_day_boundary_and_reminder_state():
+    from app.repositories.food_user_repo import get_settings
+
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        settings = await get_settings(session, user.id)
+        settings.day_boundary_hour = 4
+        settings.day_boundary_reminder_enabled = True
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/settings")
+
+    assert "4:00" in reply
+    # Not a loose "on" in reply.lower() check: both languages' trailing
+    # "conversațional"/"conversationally" already contain the substring "on",
+    # which would make that assertion pass regardless of the actual state.
+    assert "reminder on" in reply or "memento început zi pornit" in reply
+
+
+@pytest.mark.asyncio
 async def test_feedback_command_stores_the_message_and_confirms():
     from sqlalchemy import select
 
