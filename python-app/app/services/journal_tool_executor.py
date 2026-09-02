@@ -883,11 +883,21 @@ class JournalToolExecutor:
             except (ZoneInfoNotFoundError, ValueError, KeyError):
                 return AgentToolResult.failure("VALIDATION_ERROR", "Use a valid IANA timezone.")
             s.timezone = tz
+            # Mirrors continue_onboarding()'s TIMEZONE step: the agent tool is the
+            # only path that actually reaches onboarding users in production (see
+            # journal_application_service.py's module docstring), so it must drive
+            # the same stage transitions or onboarding_completed never becomes true.
+            if not s.onboarding_completed and s.onboarding_stage == "TIMEZONE":
+                s.require_calorie_target()
         if "calorieTarget" in args and args["calorieTarget"] is not None:
             target = int(args["calorieTarget"])
             if target < 1200 or target > 5000:
                 return AgentToolResult.failure("VALIDATION_ERROR", "The calorie target must be 1200-5000.")
             s.calorie_target = target
+            if not s.onboarding_completed and s.onboarding_stage == "CALORIE_TARGET":
+                s.skip_calorie_target()  # despite the name, this marks the stage complete either way
+        elif args.get("skipCalorieTarget") is True and not s.onboarding_completed and s.onboarding_stage == "CALORIE_TARGET":
+            s.skip_calorie_target()
         if "reportsEnabled" in args and args["reportsEnabled"] is not None:
             value = str(args["reportsEnabled"]).lower()
             if value not in ("true", "false"):
