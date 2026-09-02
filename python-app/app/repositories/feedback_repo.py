@@ -1,7 +1,8 @@
-"""Write path for user-submitted feedback -- stored verbatim, never summarized or altered."""
+"""Read/write path for user-submitted feedback -- stored and returned verbatim, never summarized or altered."""
 
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.feedback import UserFeedback
@@ -15,3 +16,13 @@ async def create(session: AsyncSession, user: FoodUser, source: str, message: st
     session.add(feedback)
     await session.flush()
     return feedback
+
+
+async def recent(session: AsyncSession, user: FoodUser, limit: int = 10) -> list[UserFeedback]:
+    stmt = (
+        select(UserFeedback)
+        .where(UserFeedback.user_id == user.id)
+        .order_by(UserFeedback.created_at.desc())
+        .limit(limit)
+    )
+    return list((await session.execute(stmt)).scalars().all())

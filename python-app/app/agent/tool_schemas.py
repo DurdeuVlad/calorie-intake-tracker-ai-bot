@@ -143,4 +143,10 @@ def tool_definitions() -> list[dict[str, Any]]:
             "even mid-conversation about something else. Store their words faithfully; do not paraphrase away detail.",
             _object({"message": _string()}, ["message"]),
         ),
+        _tool(
+            "get_recent_feedback",
+            "Read the caller's own recently submitted feedback. Call this when asked what feedback was logged or "
+            "recorded; never call submit_feedback again just to answer that question.",
+            _object({}),
+        ),
     ]

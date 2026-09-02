@@ -24,6 +24,7 @@ def test_feedback_instructions_cover_unprompted_capture_frustration_and_privacy_
     prompt = instructions(romanian=False)
 
     assert "call submit_feedback with their own words before replying" in prompt
+    assert "call get_recent_feedback and read it back; never call submit_feedback again just to answer that question" in prompt
     assert "correcting a meal you logged wrong is an EDIT/DELETE, not feedback" in prompt
     assert "offer once to note it as feedback even though they did not ask" in prompt
     assert "do not offer again in the same conversation" in prompt
@@ -35,6 +36,9 @@ def test_feedback_instructions_cover_unprompted_capture_frustration_and_privacy_
     submit_feedback = next(tool for tool in tool_definitions() if tool["function"]["name"] == "submit_feedback")
     assert "not a food log" in submit_feedback["function"]["description"]
     assert submit_feedback["function"]["parameters"]["required"] == ["message"]
+
+    get_recent_feedback = next(tool for tool in tool_definitions() if tool["function"]["name"] == "get_recent_feedback")
+    assert "never call submit_feedback again" in get_recent_feedback["function"]["description"]
 
 
 def test_a_why_question_about_an_estimate_is_answered_not_logged_as_feedback():
