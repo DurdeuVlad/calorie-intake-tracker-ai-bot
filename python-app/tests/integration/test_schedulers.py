@@ -151,6 +151,91 @@ async def test_pinned_status_dispatcher_recovers_after_a_transient_failure_witho
         assert status.status == "PENDING"
 
 
+@pytest.mark.asyncio
+async def test_pinned_status_dispatcher_unpins_the_replaced_message_when_editing_fails():
+    """A failed edit falls back to sending a replacement message. Telegram
+    surfaces the pinned message with the latest send date, not the latest
+    pin action, so an orphaned old pin can outrank the fresh one -- the
+    dispatcher must unpin it, not just pin the replacement."""
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 1006, "Tester", "Europe/Bucharest")
+        await session.commit()
+        await daily_status_service.refresh(session, user, 1006)
+        await session.commit()
+        status = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user.id))).scalar_one()
+        status.telegram_message_id = 845
+        await session.commit()
+
+    class ReplacingTelegram:
+        def __init__(self):
+            self.sent = []
+            self.pinned = []
+            self.unpinned = []
+
+        async def edit(self, conversation_id, message_id, text):
+            raise RuntimeError("message to edit not found")
+
+        async def send(self, conversation_id, text):
+            self.sent.append((conversation_id, text))
+            return "1422"
+
+        async def unpin(self, conversation_id, message_id):
+            self.unpinned.append((conversation_id, message_id))
+
+        async def pin(self, conversation_id, message_id):
+            self.pinned.append((conversation_id, message_id))
+
+    telegram = ReplacingTelegram()
+    assert await pinned_status_dispatcher.dispatch_once(telegram) is True
+
+    assert telegram.sent == [("1006", "Today: 0 entries, 0 kcal logged.")]
+    assert telegram.unpinned == [("1006", "845")]
+    assert telegram.pinned == [("1006", "1422")]
+
+    async with session_scope() as session:
+        status = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user.id))).scalar_one()
+        assert status.telegram_message_id == 1422
+        assert status.delivered_version == status.desired_version
+
+
+@pytest.mark.asyncio
+async def test_pinned_status_dispatcher_delivery_survives_a_failed_unpin_of_the_replaced_message():
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 1007, "Tester", "Europe/Bucharest")
+        await session.commit()
+        await daily_status_service.refresh(session, user, 1007)
+        await session.commit()
+        status = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user.id))).scalar_one()
+        status.telegram_message_id = 845
+        await session.commit()
+
+    class UnpinFailsTelegram:
+        def __init__(self):
+            self.pinned = []
+
+        async def edit(self, conversation_id, message_id, text):
+            raise RuntimeError("message to edit not found")
+
+        async def send(self, conversation_id, text):
+            return "1422"
+
+        async def unpin(self, conversation_id, message_id):
+            raise RuntimeError("simulated unpin failure")
+
+        async def pin(self, conversation_id, message_id):
+            self.pinned.append((conversation_id, message_id))
+
+    telegram = UnpinFailsTelegram()
+    assert await pinned_status_dispatcher.dispatch_once(telegram) is True
+    assert telegram.pinned == [("1007", "1422")]
+
+    async with session_scope() as session:
+        status = (await session.execute(select(PinnedDailyStatus).where(PinnedDailyStatus.user_id == user.id))).scalar_one()
+        assert status.delivered_version == status.desired_version
+        assert status.status == "PENDING"
+
+
 def test_pinned_retry_backoff_is_capped_and_uses_persisted_attempts():
     now = datetime.now(UTC)
     token = uuid.uuid4()

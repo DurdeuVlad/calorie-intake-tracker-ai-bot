@@ -42,6 +42,7 @@ from app.integrations.openfoodfacts_types import (
     OpenFoodFactsClient,
 )
 from app.repositories import (
+    feedback_repo,
     food_entry_repo,
     food_item_repo,
     food_user_repo,
@@ -882,17 +883,36 @@ class JournalToolExecutor:
             except (ZoneInfoNotFoundError, ValueError, KeyError):
                 return AgentToolResult.failure("VALIDATION_ERROR", "Use a valid IANA timezone.")
             s.timezone = tz
+            # Mirrors continue_onboarding()'s TIMEZONE step: the agent tool is the
+            # only path that actually reaches onboarding users in production (see
+            # journal_application_service.py's module docstring), so it must drive
+            # the same stage transitions or onboarding_completed never becomes true.
+            if not s.onboarding_completed and s.onboarding_stage == "TIMEZONE":
+                s.require_calorie_target()
         if "calorieTarget" in args and args["calorieTarget"] is not None:
             target = int(args["calorieTarget"])
             if target < 1200 or target > 5000:
                 return AgentToolResult.failure("VALIDATION_ERROR", "The calorie target must be 1200-5000.")
             s.calorie_target = target
+            if not s.onboarding_completed and s.onboarding_stage == "CALORIE_TARGET":
+                s.skip_calorie_target()  # despite the name, this marks the stage complete either way
+        elif args.get("skipCalorieTarget") is True and not s.onboarding_completed and s.onboarding_stage == "CALORIE_TARGET":
+            s.skip_calorie_target()
         if "reportsEnabled" in args and args["reportsEnabled"] is not None:
             value = str(args["reportsEnabled"]).lower()
             if value not in ("true", "false"):
                 return AgentToolResult.failure("VALIDATION_ERROR", "reportsEnabled must be true or false.")
             s.reports_enabled = value == "true"
         return await self._settings_tool(session, context, args, todos)
+
+    # --- feedback -----------------------------------------------------
+
+    async def _submit_feedback(self, session, context, args, todos) -> AgentToolResult:
+        message = _str(args, "message")
+        if not message or not message.strip():
+            return AgentToolResult.failure("VALIDATION_ERROR", "Feedback text is required.")
+        await feedback_repo.create(session, context.user, "ai_detected", message.strip(), datetime.now(UTC))
+        return AgentToolResult.success({"recorded": True})
 
     _HANDLERS: ClassVar[dict[str, Callable]] = {}
 
@@ -917,4 +937,5 @@ JournalToolExecutor._HANDLERS = {
     "complete_todo": JournalToolExecutor._complete_todo,
     "save_private_food": JournalToolExecutor._save_private,
     "update_settings": JournalToolExecutor._update_settings,
+    "submit_feedback": JournalToolExecutor._submit_feedback,
 }

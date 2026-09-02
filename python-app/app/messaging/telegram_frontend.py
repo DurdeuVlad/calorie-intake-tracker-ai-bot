@@ -70,6 +70,16 @@ class TelegramFrontend:
             chat_id=int(conversation_id), message_id=int(message_id), disable_notification=True
         )
 
+    async def unpin(self, conversation_id: str, message_id: str) -> None:
+        try:
+            await self._bot.unpin_chat_message(chat_id=int(conversation_id), message_id=int(message_id))
+        except TelegramBadRequest as failure:
+            # Already unpinned or the message itself is gone -- both leave the
+            # chat in the desired state, so this is not a failure to surface.
+            if "message to unpin not found" in failure.message.lower() or "message not found" in failure.message.lower():
+                return
+            raise
+
     async def download(self, attachment: Attachment) -> bytes:
         """Downloads via a hand-rolled URL, NOT aiogram's bot.download_file() /
         any URL-templating helper. Telegram's file_path can contain internal `/`
