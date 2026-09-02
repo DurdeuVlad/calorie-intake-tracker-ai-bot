@@ -124,6 +124,53 @@ async def test_submit_feedback_tool_rejects_empty_text():
 
 
 @pytest.mark.asyncio
+async def test_get_recent_feedback_returns_the_callers_own_submissions_newest_first():
+    """Live production regression: asked "what feedback did you log?", the
+    agent had no way to answer and called submit_feedback again with the same
+    text, creating a duplicate row. This tool exists so it can answer honestly
+    instead."""
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 117, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="feedback", started_at=started_at)
+        await executor.execute(session, context, _tool_call("f3", "submit_feedback", message="first complaint"), [])
+        await executor.execute(session, context, _tool_call("f4", "submit_feedback", message="second complaint"), [])
+        await session.commit()
+
+        result = await executor.execute(session, context, _tool_call("f5", "get_recent_feedback"), [])
+        await session.commit()
+
+    assert result.ok is True
+    messages = [row["message"] for row in result.data["feedback"]]
+    assert messages == ["second complaint", "first complaint"]
+
+
+@pytest.mark.asyncio
+async def test_get_recent_feedback_is_scoped_to_the_caller_not_other_users():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        owner = await get_or_create_by_telegram_user_id(session, 118, "Tester", "Europe/Bucharest")
+        other = await get_or_create_by_telegram_user_id(session, 119, "Other", "Europe/Bucharest")
+        await session.commit()
+        owner_context = AgentContext(user=owner, chat_id="1", romanian=False, message="feedback", started_at=started_at)
+        other_context = AgentContext(user=other, chat_id="2", romanian=False, message="feedback", started_at=started_at)
+        await executor.execute(session, owner_context, _tool_call("f6", "submit_feedback", message="owner's feedback"), [])
+        await executor.execute(session, other_context, _tool_call("f7", "submit_feedback", message="other user's feedback"), [])
+        await session.commit()
+
+        result = await executor.execute(session, owner_context, _tool_call("f8", "get_recent_feedback"), [])
+
+    assert result.ok is True
+    messages = [row["message"] for row in result.data["feedback"]]
+    assert messages == ["owner's feedback"]
+
+
+@pytest.mark.asyncio
 async def test_update_settings_advances_onboarding_from_timezone_to_calorie_target():
     """continue_onboarding() has no call site in production (see
     journal_application_service.py's module docstring) -- update_settings, called

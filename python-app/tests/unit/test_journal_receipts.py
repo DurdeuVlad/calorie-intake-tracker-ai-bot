@@ -157,7 +157,8 @@ def test_forged_source_label_is_rendered_as_unverified_manual_value():
     reply = "\n".join(lines)
     assert "private" not in reply.lower()
     assert "Source: manual value; confidence: unknown." in reply
-    assert "Basis: unverified source label ignored; no confirmed source for this calorie value." in reply
+    assert "I couldn't verify this number -- let me know if it's wrong." in reply
+    assert "unverified source label ignored" not in reply
 
 
 def test_non_evidence_per_100g_result_gets_a_deterministic_formula():

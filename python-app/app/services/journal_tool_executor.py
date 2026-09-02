@@ -914,6 +914,12 @@ class JournalToolExecutor:
         await feedback_repo.create(session, context.user, "ai_detected", message.strip(), datetime.now(UTC))
         return AgentToolResult.success({"recorded": True})
 
+    async def _recent_feedback(self, session, context, args, todos) -> AgentToolResult:
+        rows = await feedback_repo.recent(session, context.user)
+        return AgentToolResult.success(
+            {"feedback": [{"message": row.message, "loggedAt": row.created_at.isoformat()} for row in rows]}
+        )
+
     _HANDLERS: ClassVar[dict[str, Callable]] = {}
 
 
@@ -938,4 +944,5 @@ JournalToolExecutor._HANDLERS = {
     "save_private_food": JournalToolExecutor._save_private,
     "update_settings": JournalToolExecutor._update_settings,
     "submit_feedback": JournalToolExecutor._submit_feedback,
+    "get_recent_feedback": JournalToolExecutor._recent_feedback,
 }
