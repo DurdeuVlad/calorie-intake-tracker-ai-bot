@@ -22,7 +22,10 @@ async def recent(session: AsyncSession, user: FoodUser, limit: int = 10) -> list
     stmt = (
         select(UserFeedback)
         .where(UserFeedback.user_id == user.id)
-        .order_by(UserFeedback.created_at.desc())
+        # id as a tiebreaker: two submissions in the same request/tick can share
+        # a created_at, and created_at alone gives Postgres no stable ordering
+        # for ties (same pattern as journal_change_set_repo.find_first_undoable).
+        .order_by(UserFeedback.created_at.desc(), UserFeedback.id.desc())
         .limit(limit)
     )
     return list((await session.execute(stmt)).scalars().all())
