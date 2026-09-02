@@ -26,6 +26,20 @@ def test_feedback_instructions_cover_unprompted_capture_frustration_and_privacy_
     assert "call submit_feedback with their own words before replying" in prompt
     assert "correcting a meal you logged wrong is an EDIT/DELETE, not feedback" in prompt
     assert "offer once to note it as feedback even though they did not ask" in prompt
+
+
+def test_a_why_question_about_an_estimate_is_answered_not_logged_as_feedback():
+    """Live production regression (user_feedback rows 1-2): the user asked "why
+    is this 710 kcal" about a KFC estimate and "why so many calories" about a
+    total -- both genuine questions about a number the agent already produced,
+    not complaints -- and the agent silently filed them as feedback instead of
+    answering. The user flagged this themselves, unprompted, in row 3."""
+    prompt = instructions(romanian=False)
+
+    assert '"why is this 710 kcal", "why so many calories"' in prompt
+    assert "is a request to see your own reasoning, not a complaint" in prompt
+    assert "answer it directly from the entry's basis or derivation" in prompt
+    assert "only call submit_feedback if they push back after that explanation or are clearly complaining rather than asking" in prompt
     assert "do not offer again in the same conversation" in prompt
     assert "ask one short clarifying question" in prompt
     assert "submit whatever they already gave you rather than asking again" in prompt
