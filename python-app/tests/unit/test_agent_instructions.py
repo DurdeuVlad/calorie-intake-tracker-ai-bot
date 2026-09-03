@@ -5,7 +5,8 @@ from app.agent.tool_schemas import tool_definitions
 def test_gin_tonic_is_estimated_and_edit_calories_replace_the_total():
     prompt = instructions(romanian=False)
 
-    assert "user-owned private-food result as trusted nutrition" in prompt
+    assert "a user-owned private-food result, and a photo's Label line" in prompt
+    assert "as trusted nutrition" in prompt
     assert "always try to ground the value with search_web" in prompt
     assert "search_web checks a fresh cache first" in prompt
     assert "Only use estimate_food after search_web/fetch_web_page are unavailable or yield no usable nutrition" in prompt
@@ -105,3 +106,17 @@ def test_target_mode_instructions_cover_min_mode_framing_and_notification_toggle
     assert properties["targetMode"]["enum"] == ["max", "min"]
     assert "budgetAlertsEnabled" in properties
     assert "trackingNudgeEnabled" in properties
+
+
+def test_photo_label_line_is_trusted_like_an_explicit_value():
+    """Live production gap: a photo whose vision output said "nutrition facts
+    are visible" still only produced a rough visual guess, and the user had to
+    retype the actual printed number by hand. The agent needs to know a real
+    Label line is as trustworthy as a number the user typed directly -- not
+    something to re-estimate from the photo's own Interpretation/Estimate, and
+    not something to ask the user to retype."""
+    prompt = instructions(romanian=False)
+
+    assert "a photo's Label line (when it states a real printed value, not \"none\") as trusted nutrition" in prompt
+    assert "without re-estimating from the photo's Interpretation/Estimate" in prompt
+    assert "without asking the user to retype a number already printed and captured in Label" in prompt

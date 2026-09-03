@@ -272,7 +272,7 @@ class JournalAgent:
         sections: dict[str, str] = {}
         for line in assessment.splitlines():
             label, separator, value = line.partition(":")
-            if separator and label.strip().lower() in {"interpretation", "estimate", "confidence", "question"}:
+            if separator and label.strip().lower() in {"interpretation", "estimate", "label", "confidence", "question"}:
                 sections[label.strip().lower()] = self._clean(value, 240)
         if not sections:
             return [f"Photo interpretation: {self._clean(assessment, 360)}"]
@@ -284,6 +284,9 @@ class JournalAgent:
         )
         if details:
             lines.append(details.capitalize() + ".")
+        printed_label = sections.get("label")
+        if printed_label and printed_label.lower() != "none":
+            lines.append(f"Printed label: {printed_label}")
         question = sections.get("question")
         if question and question.lower() != "none":
             lines.append(f"Question: {question}")
