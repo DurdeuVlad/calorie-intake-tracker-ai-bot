@@ -35,7 +35,7 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
@@ -62,7 +62,7 @@ jobs:
   build-and-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build container
         run: docker build --tag food-journal-python:${{ github.sha }} .
       - name: Start database only, wait for healthy
@@ -111,7 +111,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Scan repository dependencies and configuration
         uses: aquasecurity/trivy-action@v0.36.0
         with:
