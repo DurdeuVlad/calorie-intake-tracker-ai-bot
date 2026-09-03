@@ -222,7 +222,10 @@ class JournalAgent:
             elif source == "manual":
                 basis = self._clean(receipt.get("basis"), 180)
                 if basis.startswith("unverified source label ignored"):
-                    lines.append(f"Basis: {basis}. Send a correction with the food, serving, or calories if this is wrong.")
+                    # Deliberately not shown verbatim: the raw internal marker read as
+                    # jargon to users -- flagged twice, live, as "useless info...
+                    # unverified source label ignored and stuff like that".
+                    lines.append("I couldn't verify this number -- let me know if it's wrong.")
                 else:
                     serving = self._serving(quantity, unit)
                     lines.append(f"Basis: user-provided {calories} kcal" + (f" for {serving}." if serving else "."))
@@ -269,7 +272,7 @@ class JournalAgent:
         sections: dict[str, str] = {}
         for line in assessment.splitlines():
             label, separator, value = line.partition(":")
-            if separator and label.strip().lower() in {"interpretation", "estimate", "confidence", "question"}:
+            if separator and label.strip().lower() in {"interpretation", "estimate", "label", "confidence", "question"}:
                 sections[label.strip().lower()] = self._clean(value, 240)
         if not sections:
             return [f"Photo interpretation: {self._clean(assessment, 360)}"]
@@ -281,6 +284,9 @@ class JournalAgent:
         )
         if details:
             lines.append(details.capitalize() + ".")
+        printed_label = sections.get("label")
+        if printed_label and printed_label.lower() != "none":
+            lines.append(f"Printed label: {printed_label}")
         question = sections.get("question")
         if question and question.lower() != "none":
             lines.append(f"Question: {question}")

@@ -149,7 +149,7 @@ def test_forged_source_label_is_rendered_as_unverified_manual_value():
         {
             "nutritionSource": "manual",
             "nutritionConfidence": "unknown",
-            "receipt": {"basis": "unverified source label ignored; calories supplied in the message"},
+            "receipt": {"basis": "unverified source label ignored; no confirmed source for this calorie value"},
         },
         None,
     )
@@ -157,7 +157,8 @@ def test_forged_source_label_is_rendered_as_unverified_manual_value():
     reply = "\n".join(lines)
     assert "private" not in reply.lower()
     assert "Source: manual value; confidence: unknown." in reply
-    assert "Basis: unverified source label ignored; calories supplied in the message." in reply
+    assert "I couldn't verify this number -- let me know if it's wrong." in reply
+    assert "unverified source label ignored" not in reply
 
 
 def test_non_evidence_per_100g_result_gets_a_deterministic_formula():
@@ -187,6 +188,32 @@ def test_photo_receipt_surfaces_the_material_question():
         "Estimate: portion unclear; confidence: low; no scale.",
         "Question: Was this one or two servings?",
     ]
+
+
+def test_photo_receipt_surfaces_a_legible_printed_label_value():
+    """A Label line silently vanished before this: _photo_lines only
+    recognized interpretation/estimate/confidence/question, so a real printed
+    calorie value never reached the user-visible summary even though the
+    agent itself (which reads the raw vision text directly) could use it."""
+    lines = _agent()._media_lines(_context(
+        media_kind="photo",
+        media_text="Interpretation: packaged yogurt drink\nEstimate: one 250 ml pouch\nLabel: 169 kcal per 250 ml serving\nConfidence: high; label legible\nQuestion: none",
+    ))
+
+    assert lines == [
+        "Photo: packaged yogurt drink",
+        "Estimate: one 250 ml pouch; confidence: high; label legible.",
+        "Printed label: 169 kcal per 250 ml serving",
+    ]
+
+
+def test_photo_receipt_omits_the_printed_label_line_when_none_is_legible():
+    lines = _agent()._media_lines(_context(
+        media_kind="photo",
+        media_text="Interpretation: home-cooked stew\nEstimate: one bowl\nLabel: none\nConfidence: medium\nQuestion: none",
+    ))
+
+    assert not any("Printed label" in line for line in lines)
 
 
 class _StubTools:
