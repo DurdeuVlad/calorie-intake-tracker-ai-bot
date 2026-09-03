@@ -97,8 +97,12 @@ async def _maybe_send_tracking_nudge(session: AsyncSession, settings: UserSettin
     ).scalar_one_or_none()
     if last_created_at is not None and now - last_created_at.astimezone(zone) < _TRACKING_NUDGE_THRESHOLD:
         return
-    tracking_date = food_entry_repo.local_tracking_date(now, zone, settings.day_boundary_hour)
-    claimed = await report_delivery_repo.claim(session, settings.user_id, _TRACKING_NUDGE_REPORT_TYPE, tracking_date)
+    # Deliberately the plain calendar date, not local_tracking_date(): this
+    # dedup is "have I already nudged today", not "which tracking day is this"
+    # -- using the boundary-aware date would let the nudge fire twice a few
+    # hours apart right as a non-midnight boundary crosses (different dedup
+    # key on each side of it) even though nothing else has changed.
+    claimed = await report_delivery_repo.claim(session, settings.user_id, _TRACKING_NUDGE_REPORT_TYPE, now.date())
     if claimed == 0:
         return
     text = "Haven't heard from you in a while -- don't forget to log what you've eaten today."
