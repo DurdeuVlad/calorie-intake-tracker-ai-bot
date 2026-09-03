@@ -471,6 +471,41 @@ async def test_search_entries_respects_a_custom_day_boundary_for_today():
 
 
 @pytest.mark.asyncio
+async def test_search_entries_finds_a_dated_entry_when_the_query_diacritics_differ():
+    """Live production regression: two entries were logged as "dulceață de
+    ardei iute" (with diacritics), the user asked to delete one, and
+    search_entries with date="today" + a query missing diacritics
+    ("dulceata de ardei iute") returned zero rows -- the agent then told the
+    user, falsely, that it could not find any matching entry. Plain .lower()
+    treats 'ă'/'ț' as distinct from 'a'/'t', so an exact substring match on
+    diacritics never fires unless the user retypes the food name exactly as
+    it was first logged."""
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 123, "Tester", "Europe/Bucharest")
+        context = AgentContext(user=user, chat_id="1", romanian=True, message="sterge una", started_at=started_at)
+        for _ in range(2):
+            create_result = await executor.execute(
+                session, context,
+                _tool_call("c1", "apply_journal_actions", actions=[{"type": "CREATE", "description": "dulceață de ardei iute", "calories": 156}]),
+                [],
+            )
+            assert create_result.ok is True
+        await session.commit()
+
+        result = await executor.execute(
+            session, context,
+            _tool_call("s1", "search_entries", date="today", query="dulceata de ardei iute"),
+            [],
+        )
+
+    assert result.ok is True
+    assert len(result.data["entries"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_create_action_logs_a_meal_and_reports_it_canonically():
     model = ScriptedModel(
         [

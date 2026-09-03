@@ -1,11 +1,24 @@
+import unicodedata
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entries import FoodEntry
 from app.db.models.users import FoodUser
+
+
+def normalized(text: str | None) -> str:
+    """Diacritic- and case-insensitive fold (matches the pattern already used
+    in openfoodfacts.py/openfoodfacts_cache.py/eval_runner.py) so a search or
+    delete request typed without diacritics -- "dulceata" -- still matches a
+    stored entry written with them -- "dulceață". Plain .lower() alone leaves
+    'ă'/'â'/'î'/'ș'/'ț' as distinct characters and silently misses the match."""
+    if not text:
+        return ""
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
 
 
 def local_tracking_date(now: datetime, zone: ZoneInfo, boundary_hour: int = 0) -> date:
@@ -52,7 +65,9 @@ async def find_by_id_and_user(session: AsyncSession, entry_id: int, user: FoodUs
 async def search_by_term(session: AsyncSession, user: FoodUser, term: str) -> list[FoodEntry]:
     stmt = (
         select(FoodEntry)
-        .where(FoodEntry.user_id == user.id, FoodEntry.deleted_at.is_(None), func.lower(FoodEntry.original_message).contains(term.lower()))
+        .where(FoodEntry.user_id == user.id, FoodEntry.deleted_at.is_(None))
         .order_by(FoodEntry.eaten_at.asc())
     )
-    return list((await session.execute(stmt)).scalars().all())
+    rows = list((await session.execute(stmt)).scalars().all())
+    needle = normalized(term)
+    return [r for r in rows if needle in normalized(r.original_message)]

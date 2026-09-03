@@ -318,8 +318,8 @@ class JournalToolExecutor:
             rows = await self._for_today(session, context) if not q else await food_entry_repo.search_by_term(session, context.user, q)
 
         if q and (date_arg or from_arg or to_arg):
-            needle = q.lower()
-            rows = [r for r in rows if needle in r.original_message.lower()]
+            needle = food_entry_repo.normalized(q)
+            rows = [r for r in rows if needle in food_entry_repo.normalized(r.original_message)]
 
         return AgentToolResult.success({"entries": [_summary(r) for r in rows[:10]]})
 
