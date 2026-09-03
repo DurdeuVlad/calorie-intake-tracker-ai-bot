@@ -129,7 +129,11 @@ def tool_definitions() -> list[dict[str, Any]]:
             "setting calorieTarget or skipCalorieTarget true completes onboarding. dayBoundaryHour (0-23) is the "
             "local hour a tracking day starts at, so a meal eaten before that hour still counts toward the previous "
             "day; 0 is midnight, the default every user starts with. dayBoundaryReminderEnabled turns on a once-daily "
-            "reminder shortly before that boundary.",
+            "reminder shortly before that boundary. targetMode is max (calorieTarget is a ceiling, default) or min "
+            "(a floor, for someone who needs to eat more, not less) -- set it before or with calorieTarget when the "
+            "user describes a minimum instead of a limit. budgetAlertsEnabled turns on an alert when the day's total "
+            "crosses 90% and 100% of the target in max mode, or reaches the target in min mode; each fires at most "
+            "once per tracking day. trackingNudgeEnabled turns on a reminder if nothing has been logged in a while.",
             _object(
                 {
                     "timezone": _string(),
@@ -138,6 +142,9 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "reportsEnabled": {"type": "boolean"},
                     "dayBoundaryHour": _integer(),
                     "dayBoundaryReminderEnabled": {"type": "boolean"},
+                    "targetMode": {"type": "string", "enum": ["max", "min"]},
+                    "budgetAlertsEnabled": {"type": "boolean"},
+                    "trackingNudgeEnabled": {"type": "boolean"},
                 }
             ),
         ),

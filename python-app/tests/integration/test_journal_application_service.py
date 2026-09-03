@@ -115,6 +115,25 @@ async def test_settings_command_shows_the_day_boundary_and_reminder_state():
 
 
 @pytest.mark.asyncio
+async def test_settings_command_shows_target_mode_and_notification_toggles():
+    from app.repositories.food_user_repo import get_settings
+
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        settings = await get_settings(session, user.id)
+        settings.target_mode = "min"
+        settings.budget_alerts_enabled = True
+        settings.tracking_nudge_enabled = True
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/settings")
+
+    assert "minimum" in reply.lower() or "minim" in reply.lower()
+    assert "budget alerts on" in reply or "alerte buget pornite" in reply
+    assert "tracking nudge on" in reply or "memento urmărire pornit" in reply
+
+
+@pytest.mark.asyncio
 async def test_feedback_command_stores_the_message_and_confirms():
     from sqlalchemy import select
 

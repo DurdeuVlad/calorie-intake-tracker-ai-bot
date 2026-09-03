@@ -17,13 +17,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import session_scope
 from app.db.models.messaging import MessagingOutboundMessage, MessagingRoute
 from app.db.models.users import UserSettings
-from app.repositories import food_entry_repo, report_delivery_repo
+from app.repositories import food_entry_repo, food_user_repo, report_delivery_repo
 
 logger = logging.getLogger(__name__)
 
 _CATCH_UP_CUTOFF = time(2, 0)
 _BOUNDARY_REMINDER_LEAD = timedelta(minutes=60)
 _BOUNDARY_REMINDER_REPORT_TYPE = "day_boundary"  # report_deliveries.report_type is VARCHAR(16)
+_TRACKING_NUDGE_THRESHOLD = timedelta(hours=6)
+_TRACKING_NUDGE_REPORT_TYPE = "nudge"
+_QUIET_HOURS_START = time(22, 0)
+_QUIET_HOURS_END = time(8, 0)
+
+
+def _in_quiet_hours(local_time: time) -> bool:
+    return local_time >= _QUIET_HOURS_START or local_time < _QUIET_HOURS_END
+
+
+async def _queue_outbound(session: AsyncSession, user_id: int, text: str) -> None:
+    routes = (await session.execute(select(MessagingRoute).where(MessagingRoute.user_id == user_id))).scalars().all()
+    for route in routes:
+        session.add(MessagingOutboundMessage(provider=route.provider, conversation_id=route.conversation_id, text=text, next_attempt_at=datetime.now(UTC)))
 
 
 async def _send(session: AsyncSession, settings: UserSettings, report_type: str, local_date: date) -> None:
@@ -42,10 +56,7 @@ async def _send(session: AsyncSession, settings: UserSettings, report_type: str,
     calories = sum(e.calories or 0 for e in day)
     prefix = "Good morning. " if report_type == "morning" else "Daily summary: "
     text = f"{prefix}{len(day)} meals, {calories} kcal logged."
-
-    routes = (await session.execute(select(MessagingRoute).where(MessagingRoute.user_id == settings.user_id))).scalars().all()
-    for route in routes:
-        session.add(MessagingOutboundMessage(provider=route.provider, conversation_id=route.conversation_id, text=text, next_attempt_at=datetime.now(UTC)))
+    await _queue_outbound(session, settings.user_id, text)
 
 
 async def _maybe_send_boundary_reminder(session: AsyncSession, settings: UserSettings, now: datetime, zone: ZoneInfo) -> None:
@@ -63,9 +74,69 @@ async def _maybe_send_boundary_reminder(session: AsyncSession, settings: UserSet
     if claimed == 0:
         return
     text = f"Your tracking day ends soon (at {settings.day_boundary_hour:02d}:00) -- log anything you forgot."
-    routes = (await session.execute(select(MessagingRoute).where(MessagingRoute.user_id == settings.user_id))).scalars().all()
-    for route in routes:
-        session.add(MessagingOutboundMessage(provider=route.provider, conversation_id=route.conversation_id, text=text, next_attempt_at=datetime.now(UTC)))
+    await _queue_outbound(session, settings.user_id, text)
+
+
+async def _maybe_send_tracking_nudge(session: AsyncSession, settings: UserSettings, now: datetime, zone: ZoneInfo) -> None:
+    """Fires at most once per tracking day if nothing has been logged in
+    _TRACKING_NUDGE_THRESHOLD, outside a fixed quiet-hours window. Uses
+    created_at (when the row was actually written), not eaten_at (which the
+    user can backdate for a forgotten meal and would otherwise reset the
+    "haven't heard from you" clock without them having said anything)."""
+    if not settings.tracking_nudge_enabled or _in_quiet_hours(now.time()):
+        return
+    from app.db.models.entries import FoodEntry
+
+    last_created_at = (
+        await session.execute(
+            select(FoodEntry.created_at)
+            .where(FoodEntry.user_id == settings.user_id, FoodEntry.deleted_at.is_(None))
+            .order_by(FoodEntry.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if last_created_at is not None and now - last_created_at.astimezone(zone) < _TRACKING_NUDGE_THRESHOLD:
+        return
+    tracking_date = food_entry_repo.local_tracking_date(now, zone, settings.day_boundary_hour)
+    claimed = await report_delivery_repo.claim(session, settings.user_id, _TRACKING_NUDGE_REPORT_TYPE, tracking_date)
+    if claimed == 0:
+        return
+    text = "Haven't heard from you in a while -- don't forget to log what you've eaten today."
+    await _queue_outbound(session, settings.user_id, text)
+
+
+async def maybe_send_budget_alert(session: AsyncSession, user_id: int, settings: UserSettings, calories: int, tracking_date: date) -> None:
+    """Mutation-triggered (called from the food-logging path right after a
+    successful change), not tick-scheduled like the functions above -- calorie
+    totals change the moment a meal is logged, not on a once-a-minute clock.
+    Still reuses report_deliveries for the same once-per-tracking-day dedup."""
+    if not settings.budget_alerts_enabled or settings.calorie_target is None:
+        return
+    target = settings.calorie_target
+    if settings.target_mode == "min":
+        if calories < target:
+            return
+        report_type, text = "budget_min", f"You've reached your minimum today: {calories}/{target} kcal."
+    elif calories >= target:
+        report_type, text = "budget_100", f"You've reached your target today: {calories}/{target} kcal."
+    elif calories >= target * 0.9:
+        report_type, text = "budget_90", f"You're close to your target today: {calories}/{target} kcal."
+    else:
+        return
+    claimed = await report_delivery_repo.claim(session, user_id, report_type, tracking_date)
+    if claimed == 0:
+        return
+    await _queue_outbound(session, user_id, text)
+
+
+async def maybe_send_budget_alert_for_tool_executor(session: AsyncSession, user, chat_id: str) -> None:
+    """Adapter matching JournalToolExecutor's RefreshDailyStatus callable shape,
+    mirroring daily_status_service.refresh_for_tool_executor."""
+    settings = await food_user_repo.get_settings(session, user.id)
+    zone = ZoneInfo(settings.timezone)
+    today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
+    calories, _count = await food_entry_repo.today_totals(session, user, settings.timezone, today, settings.day_boundary_hour)
+    await maybe_send_budget_alert(session, user.id, settings, calories, today)
 
 
 async def deliver_due_reports(now_fn: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
@@ -89,6 +160,7 @@ async def deliver_due_reports(now_fn: Callable[[], datetime] = lambda: datetime.
                 await _send(session, settings, "morning", previous)
                 await _send(session, settings, "evening", previous)
             await _maybe_send_boundary_reminder(session, settings, now, zone)
+            await _maybe_send_tracking_nudge(session, settings, now, zone)
         await session.commit()
 
 

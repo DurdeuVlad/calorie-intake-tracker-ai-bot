@@ -237,12 +237,14 @@ class JournalToolExecutor:
         searxng=None,
         browserless=None,
         refresh_daily_status: RefreshDailyStatus = _noop_refresh,
+        send_budget_alert: RefreshDailyStatus = _noop_refresh,
         http: httpx.AsyncClient | None = None,
     ) -> None:
         self.off = off or NullOpenFoodFactsClient()
         self.searxng = searxng
         self.browserless = browserless
         self.refresh_daily_status = refresh_daily_status
+        self.send_budget_alert = send_budget_alert
         self._http = http
         self._web_search_cache: dict[str, tuple[datetime, list[dict[str, str]]]] = {}
 
@@ -279,7 +281,14 @@ class JournalToolExecutor:
         total = sum(r.calories or 0 for r in rows)
         settings = await self._settings_for(session, context)
         target = settings.calorie_target
-        return AgentToolResult.success({"calories": total, "entries": len(rows), "target": "unset" if target is None else target})
+        return AgentToolResult.success(
+            {
+                "calories": total,
+                "entries": len(rows),
+                "target": "unset" if target is None else target,
+                "targetMode": settings.target_mode,
+            }
+        )
 
     async def _search(self, session, context, args, todos) -> AgentToolResult:
         settings = await self._settings_for(session, context)
@@ -329,6 +338,9 @@ class JournalToolExecutor:
                 "reportsEnabled": s.reports_enabled,
                 "dayBoundaryHour": s.day_boundary_hour,
                 "dayBoundaryReminderEnabled": s.day_boundary_reminder_enabled,
+                "targetMode": s.target_mode,
+                "budgetAlertsEnabled": s.budget_alerts_enabled,
+                "trackingNudgeEnabled": s.tracking_nudge_enabled,
             }
         )
 
@@ -827,6 +839,7 @@ class JournalToolExecutor:
             session.add(change_set)
             await session.flush()
             await self.refresh_daily_status(session, context.user, context.chat_id)
+            await self.send_budget_alert(session, context.user, context.chat_id)
 
         return AgentToolResult.success(
             {"results": results, "successful": changed, "failed": len(results) - changed, "undoAvailable": changed > 0}
@@ -921,6 +934,21 @@ class JournalToolExecutor:
             if value not in ("true", "false"):
                 return AgentToolResult.failure("VALIDATION_ERROR", "dayBoundaryReminderEnabled must be true or false.")
             s.day_boundary_reminder_enabled = value == "true"
+        if "targetMode" in args and args["targetMode"] is not None:
+            mode = str(args["targetMode"]).lower()
+            if mode not in ("max", "min"):
+                return AgentToolResult.failure("VALIDATION_ERROR", "targetMode must be max or min.")
+            s.target_mode = mode
+        if "budgetAlertsEnabled" in args and args["budgetAlertsEnabled"] is not None:
+            value = str(args["budgetAlertsEnabled"]).lower()
+            if value not in ("true", "false"):
+                return AgentToolResult.failure("VALIDATION_ERROR", "budgetAlertsEnabled must be true or false.")
+            s.budget_alerts_enabled = value == "true"
+        if "trackingNudgeEnabled" in args and args["trackingNudgeEnabled"] is not None:
+            value = str(args["trackingNudgeEnabled"]).lower()
+            if value not in ("true", "false"):
+                return AgentToolResult.failure("VALIDATION_ERROR", "trackingNudgeEnabled must be true or false.")
+            s.tracking_nudge_enabled = value == "true"
         return await self._settings_tool(session, context, args, todos)
 
     # --- feedback -----------------------------------------------------
