@@ -125,7 +125,40 @@ def tool_definitions() -> list[dict[str, Any]]:
         _tool("save_private_food", "Save a household food.", _object({"name": _string(), "caloriesPer100g": _integer()}, ["name", "caloriesPer100g"])),
         _tool(
             "update_settings",
-            "Update settings.",
-            _object({"timezone": _string(), "calorieTarget": _integer(), "reportsEnabled": {"type": "boolean"}}),
+            "Update settings. During onboarding, setting timezone advances onboarding to the calorie-target step; "
+            "setting calorieTarget or skipCalorieTarget true completes onboarding. dayBoundaryHour (0-23) is the "
+            "local hour a tracking day starts at, so a meal eaten before that hour still counts toward the previous "
+            "day; 0 is midnight, the default every user starts with. dayBoundaryReminderEnabled turns on a once-daily "
+            "reminder shortly before that boundary. targetMode is max (calorieTarget is a ceiling, default) or min "
+            "(a floor, for someone who needs to eat more, not less) -- set it before or with calorieTarget when the "
+            "user describes a minimum instead of a limit. budgetAlertsEnabled turns on an alert when the day's total "
+            "crosses 90% and 100% of the target in max mode, or reaches the target in min mode; each fires at most "
+            "once per tracking day. trackingNudgeEnabled turns on a reminder if nothing has been logged in a while.",
+            _object(
+                {
+                    "timezone": _string(),
+                    "calorieTarget": _integer(),
+                    "skipCalorieTarget": {"type": "boolean"},
+                    "reportsEnabled": {"type": "boolean"},
+                    "dayBoundaryHour": _integer(),
+                    "dayBoundaryReminderEnabled": {"type": "boolean"},
+                    "targetMode": {"type": "string", "enum": ["max", "min"]},
+                    "budgetAlertsEnabled": {"type": "boolean"},
+                    "trackingNudgeEnabled": {"type": "boolean"},
+                }
+            ),
+        ),
+        _tool(
+            "submit_feedback",
+            "Record feedback, a bug report, or a feature request about the bot itself -- not a food log. Call this "
+            "whenever the user volunteers an opinion or problem about the bot (unprompted or in reply to being asked), "
+            "even mid-conversation about something else. Store their words faithfully; do not paraphrase away detail.",
+            _object({"message": _string()}, ["message"]),
+        ),
+        _tool(
+            "get_recent_feedback",
+            "Read the caller's own recently submitted feedback. Call this when asked what feedback was logged or "
+            "recorded; never call submit_feedback again just to answer that question.",
+            _object({}),
         ),
     ]

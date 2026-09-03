@@ -5,6 +5,7 @@ real conversation would, just with the LLM itself replaced."""
 
 import json
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
@@ -13,11 +14,12 @@ from app.agent.journal_agent import JournalAgent
 from app.agent.openai_model_client import AgentProviderUnavailableError
 from app.db.base import session_scope
 from app.db.models.entries import FoodEntry
-from app.db.models.messaging import PinnedDailyStatus
+from app.db.models.feedback import UserFeedback
+from app.db.models.messaging import MessagingOutboundMessage, MessagingRoute, PinnedDailyStatus
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext, AgentReply, ToolCall
 from app.messaging import execution_context
-from app.repositories import food_entry_repo
+from app.repositories import food_entry_repo, food_user_repo
 from app.repositories.food_user_repo import get_or_create_by_telegram_user_id
 from app.services import daily_status_service
 from app.services.journal_tool_executor import JournalToolExecutor
@@ -75,6 +77,432 @@ async def test_create_action_accepts_hour_only_local_time_from_a_natural_languag
     async with session_scope() as session:
         entry = (await session.execute(select(FoodEntry).where(FoodEntry.user_id == user.id))).scalar_one()
     assert entry.eaten_at == datetime(2026, 4, 1, 6, 0, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_submit_feedback_tool_stores_the_message_and_lets_the_model_confirm_in_its_own_words():
+    """submit_feedback has no canonical-reply branch (like save_private_food and
+    update_settings), so the loop continues to a second model turn for the
+    confirmation text -- this exercises that full round trip, not just the tool."""
+    model = ScriptedModel(
+        [
+            AgentReply(None, [_tool_call("f1", "submit_feedback", message="please add a weekly summary chart")]),
+            AgentReply("Thanks, I've noted that.", []),
+        ]
+    )
+    agent = JournalAgent(model, JournalToolExecutor(), max_tool_calls=10)
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 111, "Tester", "Europe/Bucharest")
+        await session.commit()
+        reply = await agent.run(
+            session,
+            AgentContext(user=user, chat_id="1", romanian=False, message="you should add a weekly chart", started_at=started_at),
+        )
+        await session.commit()
+
+    assert reply == "Thanks, I've noted that."
+    async with session_scope() as session:
+        rows = (await session.execute(select(UserFeedback).where(UserFeedback.user_id == user.id))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].message == "please add a weekly summary chart"
+    assert rows[0].source == "ai_detected"
+
+
+@pytest.mark.asyncio
+async def test_submit_feedback_tool_rejects_empty_text():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 112, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("f2", "submit_feedback", message="   "), [])
+
+    assert result.ok is False
+
+
+@pytest.mark.asyncio
+async def test_get_recent_feedback_returns_the_callers_own_submissions_newest_first():
+    """Live production regression: asked "what feedback did you log?", the
+    agent had no way to answer and called submit_feedback again with the same
+    text, creating a duplicate row. This tool exists so it can answer honestly
+    instead."""
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 117, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="feedback", started_at=started_at)
+        await executor.execute(session, context, _tool_call("f3", "submit_feedback", message="first complaint"), [])
+        await executor.execute(session, context, _tool_call("f4", "submit_feedback", message="second complaint"), [])
+        await session.commit()
+
+        result = await executor.execute(session, context, _tool_call("f5", "get_recent_feedback"), [])
+        await session.commit()
+
+    assert result.ok is True
+    messages = [row["message"] for row in result.data["feedback"]]
+    assert messages == ["second complaint", "first complaint"]
+
+
+@pytest.mark.asyncio
+async def test_get_recent_feedback_is_scoped_to_the_caller_not_other_users():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        owner = await get_or_create_by_telegram_user_id(session, 118, "Tester", "Europe/Bucharest")
+        other = await get_or_create_by_telegram_user_id(session, 119, "Other", "Europe/Bucharest")
+        await session.commit()
+        owner_context = AgentContext(user=owner, chat_id="1", romanian=False, message="feedback", started_at=started_at)
+        other_context = AgentContext(user=other, chat_id="2", romanian=False, message="feedback", started_at=started_at)
+        await executor.execute(session, owner_context, _tool_call("f6", "submit_feedback", message="owner's feedback"), [])
+        await executor.execute(session, other_context, _tool_call("f7", "submit_feedback", message="other user's feedback"), [])
+        await session.commit()
+
+        result = await executor.execute(session, owner_context, _tool_call("f8", "get_recent_feedback"), [])
+
+    assert result.ok is True
+    messages = [row["message"] for row in result.data["feedback"]]
+    assert messages == ["owner's feedback"]
+
+
+@pytest.mark.asyncio
+async def test_update_settings_advances_onboarding_from_timezone_to_calorie_target():
+    """continue_onboarding() has no call site in production (see
+    journal_application_service.py's module docstring) -- update_settings, called
+    by the agent during ordinary conversation, is the only path that actually
+    reaches real onboarding users, so it must drive the same stage transitions."""
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 113, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="Bucharest", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s1", "update_settings", timezone="Europe/Bucharest"), [])
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.timezone == "Europe/Bucharest"
+    assert settings.onboarding_stage == "CALORIE_TARGET"
+    assert settings.onboarding_completed is False
+
+
+@pytest.mark.asyncio
+async def test_update_settings_completes_onboarding_with_a_calorie_target():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 114, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.require_calorie_target()
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="1900", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s2", "update_settings", calorieTarget=1900), [])
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.calorie_target == 1900
+    assert settings.onboarding_stage == "COMPLETE"
+    assert settings.onboarding_completed is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_completes_onboarding_with_an_explicit_skip():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 115, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.require_calorie_target()
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="skip", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s3", "update_settings", skipCalorieTarget=True), [])
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.calorie_target is None
+    assert settings.onboarding_stage == "COMPLETE"
+    assert settings.onboarding_completed is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_does_not_touch_onboarding_state_once_already_complete():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 116, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.require_calorie_target()
+        settings.calorie_target = 1800
+        settings.skip_calorie_target()
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="move to London time", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s4", "update_settings", timezone="Europe/London"), [])
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.timezone == "Europe/London"
+    assert settings.onboarding_stage == "COMPLETE"
+    assert settings.onboarding_completed is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_sets_day_boundary_hour_and_reminder_flag():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 120, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="make my day start at 4am", started_at=started_at)
+        result = await executor.execute(
+            session, context, _tool_call("s5", "update_settings", dayBoundaryHour=4, dayBoundaryReminderEnabled=True), []
+        )
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.day_boundary_hour == 4
+    assert settings.day_boundary_reminder_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_rejects_an_out_of_range_day_boundary_hour():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 121, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="make my day start at 25", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s6", "update_settings", dayBoundaryHour=24), [])
+
+    assert result.ok is False
+
+
+@pytest.mark.asyncio
+async def test_update_settings_sets_target_mode_and_notification_toggles():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 123, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="I need to eat more, alert me", started_at=started_at)
+        result = await executor.execute(
+            session, context,
+            _tool_call("s7", "update_settings", targetMode="min", budgetAlertsEnabled=True, trackingNudgeEnabled=True),
+            [],
+        )
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.target_mode == "min"
+    assert settings.budget_alerts_enabled is True
+    assert settings.tracking_nudge_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_rejects_an_invalid_target_mode():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 124, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="set target mode to average", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s8", "update_settings", targetMode="average"), [])
+
+    assert result.ok is False
+
+
+@pytest.mark.asyncio
+async def test_get_today_summary_reports_the_target_mode():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 125, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.target_mode = "min"
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="cate calorii azi", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s9", "get_today_summary"), [])
+
+    assert result.ok is True
+    assert result.data["targetMode"] == "min"
+
+
+@pytest.mark.asyncio
+async def test_budget_alert_fires_once_when_crossing_the_target_in_max_mode():
+    """End-to-end through the food-logging path: apply_journal_actions calls
+    the injected send_budget_alert callback the same way it already calls
+    refresh_daily_status, right after a successful mutation."""
+    from app.db.models.reports import ReportDelivery
+    from app.scheduling import report_scheduler
+
+    executor = JournalToolExecutor(send_budget_alert=report_scheduler.maybe_send_budget_alert_for_tool_executor)
+    # maybe_send_budget_alert_for_tool_executor uses real datetime.now(zone) to
+    # resolve "today" -- mirroring daily_status_service.refresh_for_tool_executor's
+    # existing pattern, not something this PR introduces -- so started_at must be
+    # real "now" too, or the CREATE's eaten_at and the alert's today_totals query
+    # land on different calendar days and the alert never sees the new entry.
+    started_at = datetime.now(UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 126, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.calorie_target = 2000
+        settings.budget_alerts_enabled = True
+        session.add(MessagingRoute(user_id=user.id, provider="telegram", conversation_id="1"))
+        await session.commit()
+
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="mancare mare", started_at=started_at)
+        result = await executor.execute(
+            session, context,
+            _tool_call("c1", "apply_journal_actions", actions=[{"type": "CREATE", "description": "mancare mare", "calories": 2100}]),
+            [],
+        )
+        assert result.ok is True
+        await session.commit()
+
+    async with session_scope() as session:
+        deliveries = (await session.execute(select(ReportDelivery).where(ReportDelivery.user_id == user.id))).scalars().all()
+        outbound = (await session.execute(select(MessagingOutboundMessage).where(MessagingOutboundMessage.conversation_id == "1")))
+        outbound_rows = outbound.scalars().all()
+
+    assert [d for d in deliveries if d.report_type == "budget_100"] != []
+    assert any("2100/2000" in m.text for m in outbound_rows)
+
+
+@pytest.mark.asyncio
+async def test_budget_alert_does_not_fire_without_opt_in():
+    executor = JournalToolExecutor()  # default send_budget_alert is a no-op
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 127, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.calorie_target = 2000
+        # budget_alerts_enabled defaults to False -- leave it as-is.
+        await session.commit()
+
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="mancare mare", started_at=started_at)
+        result = await executor.execute(
+            session, context,
+            _tool_call("c2", "apply_journal_actions", actions=[{"type": "CREATE", "description": "mancare mare", "calories": 2100}]),
+            [],
+        )
+        assert result.ok is True
+        await session.commit()
+
+    from app.db.models.reports import ReportDelivery
+
+    async with session_scope() as session:
+        deliveries = (await session.execute(select(ReportDelivery).where(ReportDelivery.user_id == user.id))).scalars().all()
+    assert deliveries == []
+
+
+@pytest.mark.asyncio
+async def test_search_entries_respects_a_custom_day_boundary_for_today():
+    """A meal logged at 2am with a 4am boundary must still show up under
+    "today" for the tracking day that hasn't rolled over yet -- and must NOT
+    show up under the new calendar date's "today" once the boundary is crossed
+    the other way."""
+    executor = JournalToolExecutor()
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 122, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.day_boundary_hour = 4
+        await session.commit()
+
+        # 2026-09-02 02:00 Europe/Bucharest -- before the 4am boundary, so it
+        # belongs to the 2026-09-01 tracking day, not 2026-09-02.
+        two_am = datetime(2026, 9, 2, 2, 0, tzinfo=ZoneInfo("Europe/Bucharest"))
+        create_context = AgentContext(user=user, chat_id="1", romanian=False, message="cafea", started_at=two_am.astimezone(UTC))
+        create_result = await executor.execute(
+            session, create_context,
+            _tool_call("c1", "apply_journal_actions", actions=[{"type": "CREATE", "description": "cafea", "calories": 50}]),
+            [],
+        )
+        assert create_result.ok is True
+        await session.commit()
+
+        # Still "before the boundary" at 03:30 the same morning -- the coffee
+        # should show up under "today" (the 2026-09-01 tracking day). Passing
+        # date="today" explicitly (rather than the no-args path _for_today()
+        # uses) is what makes this resolve from context.started_at instead of
+        # real wall-clock time, so the simulated hour actually takes effect.
+        still_before_boundary = datetime(2026, 9, 2, 3, 30, tzinfo=ZoneInfo("Europe/Bucharest")).astimezone(UTC)
+        today_context = AgentContext(user=user, chat_id="1", romanian=False, message="ce am mancat azi", started_at=still_before_boundary)
+        today_result = await executor.execute(session, today_context, _tool_call("s1", "search_entries", date="today"), [])
+        assert today_result.ok is True
+        assert len(today_result.data["entries"]) == 1
+
+        # After the boundary rolls over (05:00 the same calendar day), the
+        # coffee belongs to the *previous* tracking day and must not appear.
+        after_boundary = datetime(2026, 9, 2, 5, 0, tzinfo=ZoneInfo("Europe/Bucharest")).astimezone(UTC)
+        after_context = AgentContext(user=user, chat_id="1", romanian=False, message="ce am mancat azi", started_at=after_boundary)
+        after_result = await executor.execute(session, after_context, _tool_call("s2", "search_entries", date="today"), [])
+
+    assert after_result.ok is True
+    assert after_result.data["entries"] == []
+
+
+@pytest.mark.asyncio
+async def test_search_entries_finds_a_dated_entry_when_the_query_diacritics_differ():
+    """Live production regression: two entries were logged as "dulceață de
+    ardei iute" (with diacritics), the user asked to delete one, and
+    search_entries with date="today" + a query missing diacritics
+    ("dulceata de ardei iute") returned zero rows -- the agent then told the
+    user, falsely, that it could not find any matching entry. Plain .lower()
+    treats 'ă'/'ț' as distinct from 'a'/'t', so an exact substring match on
+    diacritics never fires unless the user retypes the food name exactly as
+    it was first logged."""
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 123, "Tester", "Europe/Bucharest")
+        context = AgentContext(user=user, chat_id="1", romanian=True, message="sterge una", started_at=started_at)
+        for _ in range(2):
+            create_result = await executor.execute(
+                session, context,
+                _tool_call("c1", "apply_journal_actions", actions=[{"type": "CREATE", "description": "dulceață de ardei iute", "calories": 156}]),
+                [],
+            )
+            assert create_result.ok is True
+        await session.commit()
+
+        result = await executor.execute(
+            session, context,
+            _tool_call("s1", "search_entries", date="today", query="dulceata de ardei iute"),
+            [],
+        )
+
+    assert result.ok is True
+    assert len(result.data["entries"]) == 2
 
 
 @pytest.mark.asyncio

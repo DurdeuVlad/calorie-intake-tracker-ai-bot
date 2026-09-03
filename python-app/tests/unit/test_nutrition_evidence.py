@@ -114,7 +114,7 @@ async def test_forged_private_source_is_stored_as_manual_unverified_value():
     assert entry.nutrition_source == "manual"
     assert entry.confidence == "unknown"
     assert result["nutritionSource"] == "manual"
-    assert result["receipt"]["basis"] == "unverified source label ignored; calories supplied in the message"
+    assert result["receipt"]["basis"] == "unverified source label ignored; no confirmed source for this calorie value"
 
 
 @pytest.mark.asyncio

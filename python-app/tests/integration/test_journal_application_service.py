@@ -44,13 +44,28 @@ async def test_start_shows_onboarding_prompt_for_a_new_user():
 
 
 @pytest.mark.asyncio
+async def test_start_explains_what_the_bot_does_before_asking_for_a_timezone():
+    """A new user's only guidance before this was a bare timezone request --
+    confirmed live against a real onboarded user who was never told the bot
+    logs meals from text/voice/photo and got stuck with no calorie target."""
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/start")
+    lowered = reply.lower()
+    assert "voice" in lowered or "vocală" in lowered
+    assert "photo" in lowered or "poză" in lowered
+
+
+@pytest.mark.asyncio
 async def test_help_lists_all_commands():
     journal = JournalApplicationService(default_timezone="Europe/Bucharest")
     async with session_scope() as session:
         user = await _make_user(session)
         await session.commit()
         reply = await journal.handle(session, user, "1", "/help")
-    for cmd in ("/start", "/help", "/today", "/settings", "/cancel", "/privacy", "/undo"):
+    for cmd in ("/start", "/help", "/today", "/settings", "/cancel", "/privacy", "/undo", "/feedback"):
         assert cmd in reply
     assert "/adduser" not in reply
 
@@ -77,6 +92,87 @@ async def test_today_reports_zero_for_a_fresh_user():
         await session.commit()
         reply = await journal.handle(session, user, "1", "/today")
     assert "0 kcal" in reply
+
+
+@pytest.mark.asyncio
+async def test_settings_command_shows_the_day_boundary_and_reminder_state():
+    from app.repositories.food_user_repo import get_settings
+
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        settings = await get_settings(session, user.id)
+        settings.day_boundary_hour = 4
+        settings.day_boundary_reminder_enabled = True
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/settings")
+
+    assert "4:00" in reply
+    # Not a loose "on" in reply.lower() check: both languages' trailing
+    # "conversațional"/"conversationally" already contain the substring "on",
+    # which would make that assertion pass regardless of the actual state.
+    assert "reminder on" in reply or "memento început zi pornit" in reply
+
+
+@pytest.mark.asyncio
+async def test_settings_command_shows_target_mode_and_notification_toggles():
+    from app.repositories.food_user_repo import get_settings
+
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        settings = await get_settings(session, user.id)
+        settings.target_mode = "min"
+        settings.budget_alerts_enabled = True
+        settings.tracking_nudge_enabled = True
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/settings")
+
+    assert "minimum" in reply.lower() or "minim" in reply.lower()
+    assert "budget alerts on" in reply or "alerte buget pornite" in reply
+    assert "tracking nudge on" in reply or "memento urmărire pornit" in reply
+
+
+@pytest.mark.asyncio
+async def test_feedback_command_stores_the_message_and_confirms():
+    from sqlalchemy import select
+
+    from app.db.models.feedback import UserFeedback
+
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/feedback a weekly summary chart would help")
+        await session.commit()
+
+    assert "thank" in reply.lower() or "mulțumesc" in reply.lower()
+
+    async with session_scope() as session:
+        rows = (await session.execute(select(UserFeedback).where(UserFeedback.user_id == user.id))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].message == "a weekly summary chart would help"
+    assert rows[0].source == "command"
+
+
+@pytest.mark.asyncio
+async def test_feedback_command_without_text_prompts_for_it_and_stores_nothing():
+    from sqlalchemy import select
+
+    from app.db.models.feedback import UserFeedback
+
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    async with session_scope() as session:
+        user = await _make_user(session)
+        await session.commit()
+        reply = await journal.handle(session, user, "1", "/feedback")
+        await session.commit()
+
+    assert "/feedback" in reply
+
+    async with session_scope() as session:
+        rows = (await session.execute(select(UserFeedback).where(UserFeedback.user_id == user.id))).scalars().all()
+    assert rows == []
 
 
 @pytest.mark.asyncio
