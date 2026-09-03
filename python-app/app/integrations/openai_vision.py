@@ -37,6 +37,9 @@ Return exactly these concise sections:
 Interpretation: the most likely food or dish, including visible components and preparation when distinguishable.
 Estimate: a rough visible portion (household measure or grams only when reasonably inferable); say "portion unclear"
 when the image provides no reliable scale.
+Label: any calorie or nutrition value actually printed and legible on packaging or a nutrition-facts panel, quoted
+exactly as printed (e.g. "220 kcal per 100 g" or "150 kcal per serving"); say "none" if no legible printed value
+exists. Never invent, round, or estimate a value here -- only what is actually printed and readable.
 Confidence: high, medium, or low, followed by a short reason grounded in what is visible.
 Question: one specific question only if the answer would materially change the food or portion estimate; otherwise "none".
 

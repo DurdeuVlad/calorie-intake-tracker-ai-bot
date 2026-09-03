@@ -134,6 +134,19 @@ class JournalAgent:
             rows = [r for r in rows if isinstance(r, dict)]
             if not rows:
                 return "Nu am putut aplica nicio schimbare." if context.romanian else "No journal changes could be applied."
+            if all(row.get("ok") is not True for row in rows):
+                # Every action in the batch failed validation (e.g. bad
+                # calories) and nothing was applied, so there is nothing a
+                # retry could duplicate. The failure detail is already
+                # serialized back to the model as the tool result -- let the
+                # loop retry with corrected arguments instead of surfacing the
+                # raw error to the user immediately. A *mixed* batch (some
+                # actions already applied) still renders here per the system
+                # prompt's "list every success and every failure" contract --
+                # resending the whole batch on retry would re-create the
+                # already-successful actions since apply_journal_actions has
+                # no idempotency check.
+                return None
 
             created_ids = [
                 row.get("entry", {}).get("id")
@@ -209,7 +222,10 @@ class JournalAgent:
             elif source == "manual":
                 basis = self._clean(receipt.get("basis"), 180)
                 if basis.startswith("unverified source label ignored"):
-                    lines.append(f"Basis: {basis}. Send a correction with the food, serving, or calories if this is wrong.")
+                    # Deliberately not shown verbatim: the raw internal marker read as
+                    # jargon to users -- flagged twice, live, as "useless info...
+                    # unverified source label ignored and stuff like that".
+                    lines.append("I couldn't verify this number -- let me know if it's wrong.")
                 else:
                     serving = self._serving(quantity, unit)
                     lines.append(f"Basis: user-provided {calories} kcal" + (f" for {serving}." if serving else "."))
@@ -256,7 +272,7 @@ class JournalAgent:
         sections: dict[str, str] = {}
         for line in assessment.splitlines():
             label, separator, value = line.partition(":")
-            if separator and label.strip().lower() in {"interpretation", "estimate", "confidence", "question"}:
+            if separator and label.strip().lower() in {"interpretation", "estimate", "label", "confidence", "question"}:
                 sections[label.strip().lower()] = self._clean(value, 240)
         if not sections:
             return [f"Photo interpretation: {self._clean(assessment, 360)}"]
@@ -268,6 +284,9 @@ class JournalAgent:
         )
         if details:
             lines.append(details.capitalize() + ".")
+        printed_label = sections.get("label")
+        if printed_label and printed_label.lower() != "none":
+            lines.append(f"Printed label: {printed_label}")
         question = sections.get("question")
         if question and question.lower() != "none":
             lines.append(f"Question: {question}")

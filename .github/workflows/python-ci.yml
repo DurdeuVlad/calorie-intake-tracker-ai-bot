@@ -36,7 +36,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install dependencies
@@ -65,20 +65,11 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build container
         run: docker build --tag food-journal-python:${{ github.sha }} .
-      - name: Start compose stack
+      - name: Start database only, wait for healthy
         env:
           DATABASE_PASSWORD: ci-password
-          TELEGRAM_BOT_TOKEN: ci-token-not-a-secret
-          TELEGRAM_WEBHOOK_SECRET: ci-webhook-secret
-          ALLOWED_TELEGRAM_USER_IDS: '1'
-          OPENAI_API_KEY: ci-openai-key
-        run: docker compose up --build --detach
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install alembic (setup_test_db.sh runs it on the runner, not in the container)
-        run: pip install --no-cache-dir .
-      - name: Apply the real schema to the compose Postgres (same DB the app talks to)
+        run: docker compose up --detach --wait postgres
+      - name: Seed pre-Alembic baseline schema (regression check -- the app container must migrate itself to head on boot, since nothing outside it will)
         env:
           PGHOST: localhost
           PGPORT: 5432
@@ -87,7 +78,15 @@ jobs:
           PGDATABASE: foodjournal
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
-          bash scripts/setup_test_db.sh
+          bash scripts/apply_baseline.sh
+      - name: Start app (must self-migrate before serving)
+        env:
+          DATABASE_PASSWORD: ci-password
+          TELEGRAM_BOT_TOKEN: ci-token-not-a-secret
+          TELEGRAM_WEBHOOK_SECRET: ci-webhook-secret
+          ALLOWED_TELEGRAM_USER_IDS: '1'
+          OPENAI_API_KEY: ci-openai-key
+        run: docker compose up --build --detach app
       - name: Verify health endpoints
         env:
           DATABASE_PASSWORD: ci-password

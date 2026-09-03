@@ -16,6 +16,7 @@ The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 
 | `journal_change_mutations` | V17 | Ordered before/after state diffs (INSERT, UPDATE, DELETE) belonging to a `journal_change_set`. |
 | `nutrition_sources` | V5 | Cached provenance records for Open Food Facts, private foods, and web lookups (`source_type`, `external_id`, payload JSON). |
 | `private_foods` | V5 | Custom user-created food items and custom calorie/macro definitions (`user_id` FK). |
+| `user_feedback` | Alembic `b3f7a1c9d4e2` | Bug reports, complaints, and feature requests, captured verbatim via `/feedback` or the `submit_feedback` agent tool (`user_id` FK, `source`: `command` \| `ai_detected`, `message`, `created_at`). |
 
 ---
 

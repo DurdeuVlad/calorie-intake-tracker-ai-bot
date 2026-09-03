@@ -75,6 +75,31 @@ async def test_packaging_photo_distinguishes_label_serving_from_food_eaten():
 
 
 @pytest.mark.asyncio
+async def test_prompt_asks_for_a_legible_printed_label_value_separate_from_the_estimate():
+    """Live production gap: a photo whose vision interpretation said "nutrition
+    facts are visible" still only produced a rough visual guess (~120 kcal),
+    forcing the user to retype the actual printed number (169 kcal) by hand.
+    The prompt never asked the model to report a legible printed value at all."""
+    label_assessment = (
+        "Interpretation: a packaged yogurt drink; the nutrition panel is visible on the back.\n"
+        "Estimate: one 250 ml pouch.\n"
+        "Label: 169 kcal per 250 ml serving.\n"
+        "Confidence: high; the printed nutrition panel is legible.\n"
+        "Question: none"
+    )
+
+    result, body = await _extract_with(
+        lambda request, text: httpx.Response(200, json=_response(text)), label_assessment
+    )
+
+    assert result == label_assessment
+    prompt = body["input"][0]["content"][0]["text"]
+    assert "Label: any calorie or nutrition value actually printed and legible" in prompt
+    assert 'say "none" if no legible printed value' in prompt
+    assert "Never invent, round, or estimate a value here" in prompt
+
+
+@pytest.mark.asyncio
 async def test_ambiguous_photo_requires_one_specific_question_not_a_guessed_meal():
     ambiguous_assessment = (
         "Interpretation: a bowl containing a pale soup or sauce; ingredients are not distinguishable.\n"
