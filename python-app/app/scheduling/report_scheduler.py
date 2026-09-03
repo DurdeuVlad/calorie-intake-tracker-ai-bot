@@ -48,7 +48,7 @@ async def _send(session: AsyncSession, settings: UserSettings, report_type: str,
         session.add(MessagingOutboundMessage(provider=route.provider, conversation_id=route.conversation_id, text=text, next_attempt_at=datetime.now(UTC)))
 
 
-async def _maybe_send_boundary_reminder(session: AsyncSession, settings: UserSettings, now: datetime) -> None:
+async def _maybe_send_boundary_reminder(session: AsyncSession, settings: UserSettings, now: datetime, zone: ZoneInfo) -> None:
     """Fires once per tracking day, within _BOUNDARY_REMINDER_LEAD of the user's
     configured day boundary. Re-evaluated every tick like the reports above --
     report_deliveries' unique constraint is what makes repeated firing safe."""
@@ -58,7 +58,6 @@ async def _maybe_send_boundary_reminder(session: AsyncSession, settings: UserSet
     next_boundary = boundary_today if now < boundary_today else boundary_today + timedelta(days=1)
     if next_boundary - now > _BOUNDARY_REMINDER_LEAD:
         return
-    zone = ZoneInfo(settings.timezone)
     tracking_date = food_entry_repo.local_tracking_date(now, zone, settings.day_boundary_hour)
     claimed = await report_delivery_repo.claim(session, settings.user_id, _BOUNDARY_REMINDER_REPORT_TYPE, tracking_date)
     if claimed == 0:
@@ -89,7 +88,7 @@ async def deliver_due_reports(now_fn: Callable[[], datetime] = lambda: datetime.
                 previous = now.date() - timedelta(days=1)
                 await _send(session, settings, "morning", previous)
                 await _send(session, settings, "evening", previous)
-            await _maybe_send_boundary_reminder(session, settings, now)
+            await _maybe_send_boundary_reminder(session, settings, now, zone)
         await session.commit()
 
 
