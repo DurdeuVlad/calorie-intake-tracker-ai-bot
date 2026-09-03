@@ -24,10 +24,10 @@ class PinnedDelivery:
     lease_token: uuid.UUID
 
 
-def _status_text(rows_count: int, calories: int, target: int | None) -> str:
+def _status_text(rows_count: int, calories: int, target: int | None, target_mode: str = "max") -> str:
     text = f"Today: {rows_count} entries, {calories} kcal logged."
     if target is not None:
-        text += f" Target: {target} kcal."
+        text += f" Minimum: {target} kcal." if target_mode == "min" else f" Target: {target} kcal."
     return text
 
 
@@ -43,11 +43,11 @@ async def refresh(session: AsyncSession, user: FoodUser, chat_id: int) -> None:
     # and the row is the durable hand-off to the Telegram dispatcher.
     settings = await food_user_repo.get_settings(session, user.id)
     zone = ZoneInfo(settings.timezone)
-    today = datetime.now(zone).date()
-    start, end = food_entry_repo.day_bounds(today, zone)
+    today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
+    start, end = food_entry_repo.day_bounds(today, zone, settings.day_boundary_hour)
     rows = await food_entry_repo.find_between(session, user, start, end)
     calories = sum(r.calories or 0 for r in rows)
-    text = _status_text(len(rows), calories, settings.calorie_target)
+    text = _status_text(len(rows), calories, settings.calorie_target, settings.target_mode)
 
     existing = await pinned_daily_status_repo.find_by_user_and_chat_id(session, user, chat_id)
     now = datetime.now(UTC)

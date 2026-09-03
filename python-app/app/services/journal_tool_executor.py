@@ -42,6 +42,7 @@ from app.integrations.openfoodfacts_types import (
     OpenFoodFactsClient,
 )
 from app.repositories import (
+    feedback_repo,
     food_entry_repo,
     food_item_repo,
     food_user_repo,
@@ -236,12 +237,14 @@ class JournalToolExecutor:
         searxng=None,
         browserless=None,
         refresh_daily_status: RefreshDailyStatus = _noop_refresh,
+        send_budget_alert: RefreshDailyStatus = _noop_refresh,
         http: httpx.AsyncClient | None = None,
     ) -> None:
         self.off = off or NullOpenFoodFactsClient()
         self.searxng = searxng
         self.browserless = browserless
         self.refresh_daily_status = refresh_daily_status
+        self.send_budget_alert = send_budget_alert
         self._http = http
         self._web_search_cache: dict[str, tuple[datetime, list[dict[str, str]]]] = {}
 
@@ -269,8 +272,8 @@ class JournalToolExecutor:
         from zoneinfo import ZoneInfo
 
         zone = ZoneInfo(settings.timezone)
-        today = datetime.now(zone).date()
-        start, end = food_entry_repo.day_bounds(today, zone)
+        today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
+        start, end = food_entry_repo.day_bounds(today, zone, settings.day_boundary_hour)
         return await food_entry_repo.find_between(session, context.user, start, end)
 
     async def _today(self, session, context, args, todos) -> AgentToolResult:
@@ -278,7 +281,14 @@ class JournalToolExecutor:
         total = sum(r.calories or 0 for r in rows)
         settings = await self._settings_for(session, context)
         target = settings.calorie_target
-        return AgentToolResult.success({"calories": total, "entries": len(rows), "target": "unset" if target is None else target})
+        return AgentToolResult.success(
+            {
+                "calories": total,
+                "entries": len(rows),
+                "target": "unset" if target is None else target,
+                "targetMode": settings.target_mode,
+            }
+        )
 
     async def _search(self, session, context, args, todos) -> AgentToolResult:
         settings = await self._settings_for(session, context)
@@ -289,27 +299,27 @@ class JournalToolExecutor:
         from zoneinfo import ZoneInfo
 
         zone = ZoneInfo(settings.timezone)
-        today = context.started_at.astimezone(zone).date()
+        today = food_entry_repo.local_tracking_date(context.started_at, zone, settings.day_boundary_hour)
 
         rows: list[FoodEntry]
         if date_arg:
             day = _search_date(context, date_arg, today)
-            start, end = food_entry_repo.day_bounds(day, zone)
+            start, end = food_entry_repo.day_bounds(day, zone, settings.day_boundary_hour)
             rows = await food_entry_repo.find_between(session, context.user, start, end)
         elif from_arg or to_arg:
             start_date = _search_date(context, from_arg or to_arg, today)
             end_date = _search_date(context, to_arg or from_arg, today)
             if end_date < start_date:
                 return AgentToolResult.failure("VALIDATION_ERROR", "The end date cannot be before the start date.")
-            start, _ = food_entry_repo.day_bounds(start_date, zone)
-            _, end = food_entry_repo.day_bounds(end_date, zone)
+            start, _ = food_entry_repo.day_bounds(start_date, zone, settings.day_boundary_hour)
+            _, end = food_entry_repo.day_bounds(end_date, zone, settings.day_boundary_hour)
             rows = await food_entry_repo.find_between(session, context.user, start, end)
         else:
             rows = await self._for_today(session, context) if not q else await food_entry_repo.search_by_term(session, context.user, q)
 
         if q and (date_arg or from_arg or to_arg):
-            needle = q.lower()
-            rows = [r for r in rows if needle in r.original_message.lower()]
+            needle = food_entry_repo.normalized(q)
+            rows = [r for r in rows if needle in food_entry_repo.normalized(r.original_message)]
 
         return AgentToolResult.success({"entries": [_summary(r) for r in rows[:10]]})
 
@@ -321,7 +331,18 @@ class JournalToolExecutor:
 
     async def _settings_tool(self, session, context, args, todos) -> AgentToolResult:
         s = await self._settings_for(session, context)
-        return AgentToolResult.success({"timezone": s.timezone, "calorieTarget": "unset" if s.calorie_target is None else s.calorie_target, "reportsEnabled": s.reports_enabled})
+        return AgentToolResult.success(
+            {
+                "timezone": s.timezone,
+                "calorieTarget": "unset" if s.calorie_target is None else s.calorie_target,
+                "reportsEnabled": s.reports_enabled,
+                "dayBoundaryHour": s.day_boundary_hour,
+                "dayBoundaryReminderEnabled": s.day_boundary_reminder_enabled,
+                "targetMode": s.target_mode,
+                "budgetAlertsEnabled": s.budget_alerts_enabled,
+                "trackingNudgeEnabled": s.tracking_nudge_enabled,
+            }
+        )
 
     # --- nutrition -----------------------------------------------------
 
@@ -670,7 +691,7 @@ class JournalToolExecutor:
         if change_set is not None:
             change_set.add_mutation("CREATE", None, after)
         if unverified_source:
-            receipt["basis"] = "unverified source label ignored; calories supplied in the message"
+            receipt["basis"] = "unverified source label ignored; no confirmed source for this calorie value"
         elif source == "manual":
             receipt["basis"] = "user-provided calories"
         return self._action_success("CREATE", entry, timezone_name, receipt)
@@ -818,6 +839,7 @@ class JournalToolExecutor:
             session.add(change_set)
             await session.flush()
             await self.refresh_daily_status(session, context.user, context.chat_id)
+            await self.send_budget_alert(session, context.user, context.chat_id)
 
         return AgentToolResult.success(
             {"results": results, "successful": changed, "failed": len(results) - changed, "undoAvailable": changed > 0}
@@ -882,17 +904,67 @@ class JournalToolExecutor:
             except (ZoneInfoNotFoundError, ValueError, KeyError):
                 return AgentToolResult.failure("VALIDATION_ERROR", "Use a valid IANA timezone.")
             s.timezone = tz
+            # Mirrors continue_onboarding()'s TIMEZONE step: the agent tool is the
+            # only path that actually reaches onboarding users in production (see
+            # journal_application_service.py's module docstring), so it must drive
+            # the same stage transitions or onboarding_completed never becomes true.
+            if not s.onboarding_completed and s.onboarding_stage == "TIMEZONE":
+                s.require_calorie_target()
         if "calorieTarget" in args and args["calorieTarget"] is not None:
             target = int(args["calorieTarget"])
             if target < 1200 or target > 5000:
                 return AgentToolResult.failure("VALIDATION_ERROR", "The calorie target must be 1200-5000.")
             s.calorie_target = target
+            if not s.onboarding_completed and s.onboarding_stage == "CALORIE_TARGET":
+                s.skip_calorie_target()  # despite the name, this marks the stage complete either way
+        elif args.get("skipCalorieTarget") is True and not s.onboarding_completed and s.onboarding_stage == "CALORIE_TARGET":
+            s.skip_calorie_target()
         if "reportsEnabled" in args and args["reportsEnabled"] is not None:
             value = str(args["reportsEnabled"]).lower()
             if value not in ("true", "false"):
                 return AgentToolResult.failure("VALIDATION_ERROR", "reportsEnabled must be true or false.")
             s.reports_enabled = value == "true"
+        if "dayBoundaryHour" in args and args["dayBoundaryHour"] is not None:
+            hour = int(args["dayBoundaryHour"])
+            if hour < 0 or hour > 23:
+                return AgentToolResult.failure("VALIDATION_ERROR", "dayBoundaryHour must be 0-23.")
+            s.day_boundary_hour = hour
+        if "dayBoundaryReminderEnabled" in args and args["dayBoundaryReminderEnabled"] is not None:
+            value = str(args["dayBoundaryReminderEnabled"]).lower()
+            if value not in ("true", "false"):
+                return AgentToolResult.failure("VALIDATION_ERROR", "dayBoundaryReminderEnabled must be true or false.")
+            s.day_boundary_reminder_enabled = value == "true"
+        if "targetMode" in args and args["targetMode"] is not None:
+            mode = str(args["targetMode"]).lower()
+            if mode not in ("max", "min"):
+                return AgentToolResult.failure("VALIDATION_ERROR", "targetMode must be max or min.")
+            s.target_mode = mode
+        if "budgetAlertsEnabled" in args and args["budgetAlertsEnabled"] is not None:
+            value = str(args["budgetAlertsEnabled"]).lower()
+            if value not in ("true", "false"):
+                return AgentToolResult.failure("VALIDATION_ERROR", "budgetAlertsEnabled must be true or false.")
+            s.budget_alerts_enabled = value == "true"
+        if "trackingNudgeEnabled" in args and args["trackingNudgeEnabled"] is not None:
+            value = str(args["trackingNudgeEnabled"]).lower()
+            if value not in ("true", "false"):
+                return AgentToolResult.failure("VALIDATION_ERROR", "trackingNudgeEnabled must be true or false.")
+            s.tracking_nudge_enabled = value == "true"
         return await self._settings_tool(session, context, args, todos)
+
+    # --- feedback -----------------------------------------------------
+
+    async def _submit_feedback(self, session, context, args, todos) -> AgentToolResult:
+        message = _str(args, "message")
+        if not message or not message.strip():
+            return AgentToolResult.failure("VALIDATION_ERROR", "Feedback text is required.")
+        await feedback_repo.create(session, context.user, "ai_detected", message.strip(), datetime.now(UTC))
+        return AgentToolResult.success({"recorded": True})
+
+    async def _recent_feedback(self, session, context, args, todos) -> AgentToolResult:
+        rows = await feedback_repo.recent(session, context.user)
+        return AgentToolResult.success(
+            {"feedback": [{"message": row.message, "loggedAt": row.created_at.isoformat()} for row in rows]}
+        )
 
     _HANDLERS: ClassVar[dict[str, Callable]] = {}
 
@@ -917,4 +989,6 @@ JournalToolExecutor._HANDLERS = {
     "complete_todo": JournalToolExecutor._complete_todo,
     "save_private_food": JournalToolExecutor._save_private,
     "update_settings": JournalToolExecutor._update_settings,
+    "submit_feedback": JournalToolExecutor._submit_feedback,
+    "get_recent_feedback": JournalToolExecutor._recent_feedback,
 }

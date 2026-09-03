@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.language import is_romanian
 from app.db.models.users import FoodUser, UserSettings
 from app.domain.agent_types import AgentContext
-from app.repositories import food_entry_repo, food_user_repo, telegram_access_repo
+from app.repositories import feedback_repo, food_entry_repo, food_user_repo, telegram_access_repo
 
 MIN_CALORIE_TARGET = 1200
 MAX_CALORIE_TARGET = 5000
@@ -39,9 +39,11 @@ def onboarding_prompt(settings: UserSettings, romanian: bool) -> str:
             else "What is your daily calorie target (1200-5000), or say skip?"
         )
     return (
-        "Bun venit. Trimite fusul IANA, de exemplu Europe/Bucharest."
+        "Bun venit! Sunt jurnalul tău privat de calorii -- scrie-mi ce ai mâncat (text, notă vocală sau poză) și "
+        "îl notez cu calorii. Mai întâi, care este fusul tău orar? Trimite formatul IANA, de exemplu Europe/Bucharest."
         if romanian
-        else "Welcome. Send your IANA timezone, for example Europe/Bucharest."
+        else "Welcome! I'm your private food journal -- just tell me what you ate (text, a voice note, or a photo) "
+        "and I'll log it with calories. First, what's your timezone? Send the IANA format, for example Europe/Bucharest."
     )
 
 
@@ -102,12 +104,18 @@ async def _today_text(session, user: FoodUser, settings: UserSettings, romanian:
     from zoneinfo import ZoneInfo
 
     zone = ZoneInfo(settings.timezone)
-    today = datetime.now(zone).date()
-    calories, _count = await food_entry_repo.today_totals(session, user, settings.timezone, today)
+    today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
+    calories, _count = await food_entry_repo.today_totals(session, user, settings.timezone, today, settings.day_boundary_hour)
     target = settings.calorie_target
+    if target is None:
+        return f"Total azi: {calories} kcal." if romanian else f"Today: {calories} kcal."
+    if settings.target_mode == "min":
+        if romanian:
+            return f"Total azi: {calories} kcal, minim {target} kcal."
+        return f"Today: {calories} kcal, minimum {target} kcal."
     if romanian:
-        return f"Total azi: {calories} kcal" + ("." if target is None else f" din {target} kcal.")
-    return f"Today: {calories} kcal" + ("." if target is None else f" of {target} kcal.")
+        return f"Total azi: {calories} kcal din {target} kcal."
+    return f"Today: {calories} kcal of {target} kcal."
 
 
 def _command_token(raw: str) -> str:
@@ -132,29 +140,56 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
         return (
             "Pot nota mai multe mese dintr-un singur mesaj, inclusiv pe zile trecute; pot estima nutriția, muta, corecta "
             "sau șterge direct și poți folosi Undo timp de 10 minute.\n\nComenzi: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy, /undo" + admin_commands
+            "/settings, /cancel, /privacy, /undo, /feedback" + admin_commands
             if romanian
             else "I can log several meals from one message, including past dates; estimate nutrition; and move, edit, "
             "or delete entries immediately with a 10-minute Undo window.\n\nCommands: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy, /undo" + admin_commands
+            "/settings, /cancel, /privacy, /undo, /feedback" + admin_commands
         )
     if cmd in ("/today", "/report"):
         return await _today_text(session, user, settings, romanian)
     if cmd == "/settings":
         target_text = ("nesetată" if romanian else "not set") if settings.calorie_target is None else f"{settings.calorie_target} kcal"
         reports_text = ("pornite" if settings.reports_enabled else "oprite") if romanian else ("on" if settings.reports_enabled else "off")
+        boundary_text = "miezul nopții" if settings.day_boundary_hour == 0 else f"ora {settings.day_boundary_hour}:00"
+        reminder_text = ("pornit" if settings.day_boundary_reminder_enabled else "oprit") if romanian else ("on" if settings.day_boundary_reminder_enabled else "off")
+        mode_text_ro = "minim" if settings.target_mode == "min" else "maxim"
+        mode_text_en = "minimum" if settings.target_mode == "min" else "maximum"
+        budget_text = ("pornite" if settings.budget_alerts_enabled else "oprite") if romanian else ("on" if settings.budget_alerts_enabled else "off")
+        nudge_text = ("pornit" if settings.tracking_nudge_enabled else "oprit") if romanian else ("on" if settings.tracking_nudge_enabled else "off")
         if romanian:
-            return f"Setări: fus {settings.timezone}, țintă {target_text}, rapoarte {reports_text}. Poți modifica aceste setări conversațional."
-        return f"Settings: timezone {settings.timezone}, target {target_text}, reports {reports_text}. You can change these conversationally."
+            return (
+                f"Setări: fus {settings.timezone}, țintă {target_text} ({mode_text_ro}), rapoarte {reports_text}, "
+                f"ziua începe la {boundary_text}, memento început zi {reminder_text}, alerte buget {budget_text}, "
+                f"memento urmărire {nudge_text}. Poți modifica aceste setări conversațional."
+            )
+        boundary_text_en = "midnight" if settings.day_boundary_hour == 0 else f"{settings.day_boundary_hour}:00"
+        return (
+            f"Settings: timezone {settings.timezone}, target {target_text} ({mode_text_en}), reports {reports_text}, "
+            f"day starts at {boundary_text_en}, day-boundary reminder {reminder_text}, budget alerts {budget_text}, "
+            f"tracking nudge {nudge_text}. You can change these conversationally."
+        )
     if cmd == "/cancel":
         return "Am anulat draftul conversațional curent." if romanian else "I cancelled the current conversational draft."
+    if cmd == "/feedback":
+        from datetime import UTC, datetime
+
+        text = raw.strip()[len(cmd):].strip()
+        if not text:
+            return (
+                "Scrie feedback-ul după comandă, de exemplu: /feedback ar fi util un grafic săptămânal."
+                if romanian
+                else "Add your feedback after the command, e.g. /feedback a weekly chart would help."
+            )
+        await feedback_repo.create(session, user, "command", text, datetime.now(UTC))
+        return "Mulțumesc, am notat feedback-ul." if romanian else "Thanks, I've recorded your feedback."
     if cmd == "/privacy":
         return (
-            "Păstrez intrările jurnalului, cel mult 10 mesaje recente și change-set-uri Undo temporare. "
-            "Fișierele originale nu sunt păstrate."
+            "Păstrez intrările jurnalului, cel mult 10 mesaje recente, change-set-uri Undo temporare și feedback-ul "
+            "trimis prin /feedback sau prin conversație. Fișierele originale nu sunt păstrate."
             if romanian
-            else "I retain journal entries, at most 10 recent messages, and temporary Undo change sets. "
-            "Original media files are not retained."
+            else "I retain journal entries, at most 10 recent messages, temporary Undo change sets, and any "
+            "feedback sent via /feedback or in conversation. Original media files are not retained."
         )
     return "Comandă necunoscută. Folosește /help." if romanian else "Unknown command. Use /help."
 

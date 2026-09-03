@@ -3,6 +3,7 @@
 
 from app.db.models.conversation import ConversationMemory
 from app.db.models.entries import FoodEntry, FoodItem
+from app.db.models.feedback import UserFeedback
 from app.db.models.journal_changes import JournalChangeMutation, JournalChangeSet
 from app.db.models.messaging import (
     FrontendLinkCode,
@@ -45,5 +46,6 @@ __all__ = [
     "PrivateFood",
     "ReportDelivery",
     "TelegramAccessGrant",
+    "UserFeedback",
     "UserSettings",
 ]

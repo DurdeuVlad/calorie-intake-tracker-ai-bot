@@ -32,6 +32,16 @@ class UserSettings(Base):
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     onboarding_stage: Mapped[str] = mapped_column(String(32), default="TIMEZONE", server_default="TIMEZONE")
     preferred_language: Mapped[str] = mapped_column(String(2), default="ro", server_default="ro")
+    # Hour (0-23, local time) the tracking day starts at. 0 (midnight) matches
+    # the original calendar-day behavior every existing user already has.
+    day_boundary_hour: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    day_boundary_reminder_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # "max": calorie_target is a ceiling (default, current behavior). "min": a
+    # floor for users who need to eat more, not less -- inverts alert direction
+    # and display framing wherever the target is surfaced.
+    target_mode: Mapped[str] = mapped_column(String(8), default="max", server_default="max")
+    budget_alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    tracking_nudge_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     user: Mapped[FoodUser] = relationship(back_populates="settings")
 
