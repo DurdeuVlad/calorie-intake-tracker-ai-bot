@@ -126,13 +126,18 @@ def tool_definitions() -> list[dict[str, Any]]:
         _tool(
             "update_settings",
             "Update settings. During onboarding, setting timezone advances onboarding to the calorie-target step; "
-            "setting calorieTarget or skipCalorieTarget true completes onboarding.",
+            "setting calorieTarget or skipCalorieTarget true completes onboarding. dayBoundaryHour (0-23) is the "
+            "local hour a tracking day starts at, so a meal eaten before that hour still counts toward the previous "
+            "day; 0 is midnight, the default every user starts with. dayBoundaryReminderEnabled turns on a once-daily "
+            "reminder shortly before that boundary.",
             _object(
                 {
                     "timezone": _string(),
                     "calorieTarget": _integer(),
                     "skipCalorieTarget": {"type": "boolean"},
                     "reportsEnabled": {"type": "boolean"},
+                    "dayBoundaryHour": _integer(),
+                    "dayBoundaryReminderEnabled": {"type": "boolean"},
                 }
             ),
         ),

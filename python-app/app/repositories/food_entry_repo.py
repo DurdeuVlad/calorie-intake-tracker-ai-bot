@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -8,8 +8,18 @@ from app.db.models.entries import FoodEntry
 from app.db.models.users import FoodUser
 
 
-def day_bounds(day: date, zone: ZoneInfo) -> tuple[datetime, datetime]:
-    start = datetime.combine(day, datetime.min.time(), tzinfo=zone)
+def local_tracking_date(now: datetime, zone: ZoneInfo, boundary_hour: int = 0) -> date:
+    """The calendar date `now` belongs to for tracking purposes, given a day
+    boundary that need not be midnight -- with boundary_hour=4, a 2am snack
+    still belongs to the previous tracking day, not the new calendar date."""
+    local = now.astimezone(zone)
+    if local.hour < boundary_hour:
+        return (local - timedelta(days=1)).date()
+    return local.date()
+
+
+def day_bounds(day: date, zone: ZoneInfo, boundary_hour: int = 0) -> tuple[datetime, datetime]:
+    start = datetime.combine(day, time(boundary_hour), tzinfo=zone)
     return start, start + timedelta(days=1)
 
 
@@ -23,10 +33,10 @@ async def find_between(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def today_totals(session: AsyncSession, user: FoodUser, timezone_name: str, today: date) -> tuple[int, int]:
-    """Returns (calories, entry_count) for the given local date."""
+async def today_totals(session: AsyncSession, user: FoodUser, timezone_name: str, today: date, boundary_hour: int = 0) -> tuple[int, int]:
+    """Returns (calories, entry_count) for the given local tracking date."""
     zone = ZoneInfo(timezone_name)
-    start, end = day_bounds(today, zone)
+    start, end = day_bounds(today, zone, boundary_hour)
     rows = await find_between(session, user, start, end)
     calories = sum(r.calories or 0 for r in rows)
     return calories, len(rows)

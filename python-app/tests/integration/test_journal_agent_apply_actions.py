@@ -5,6 +5,7 @@ real conversation would, just with the LLM itself replaced."""
 
 import json
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
@@ -260,6 +261,88 @@ async def test_update_settings_does_not_touch_onboarding_state_once_already_comp
     assert settings.timezone == "Europe/London"
     assert settings.onboarding_stage == "COMPLETE"
     assert settings.onboarding_completed is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_sets_day_boundary_hour_and_reminder_flag():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 120, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="make my day start at 4am", started_at=started_at)
+        result = await executor.execute(
+            session, context, _tool_call("s5", "update_settings", dayBoundaryHour=4, dayBoundaryReminderEnabled=True), []
+        )
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.day_boundary_hour == 4
+    assert settings.day_boundary_reminder_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_rejects_an_out_of_range_day_boundary_hour():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 121, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="make my day start at 25", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s6", "update_settings", dayBoundaryHour=24), [])
+
+    assert result.ok is False
+
+
+@pytest.mark.asyncio
+async def test_search_entries_respects_a_custom_day_boundary_for_today():
+    """A meal logged at 2am with a 4am boundary must still show up under
+    "today" for the tracking day that hasn't rolled over yet -- and must NOT
+    show up under the new calendar date's "today" once the boundary is crossed
+    the other way."""
+    executor = JournalToolExecutor()
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 122, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.day_boundary_hour = 4
+        await session.commit()
+
+        # 2026-09-02 02:00 Europe/Bucharest -- before the 4am boundary, so it
+        # belongs to the 2026-09-01 tracking day, not 2026-09-02.
+        two_am = datetime(2026, 9, 2, 2, 0, tzinfo=ZoneInfo("Europe/Bucharest"))
+        create_context = AgentContext(user=user, chat_id="1", romanian=False, message="cafea", started_at=two_am.astimezone(UTC))
+        create_result = await executor.execute(
+            session, create_context,
+            _tool_call("c1", "apply_journal_actions", actions=[{"type": "CREATE", "description": "cafea", "calories": 50}]),
+            [],
+        )
+        assert create_result.ok is True
+        await session.commit()
+
+        # Still "before the boundary" at 03:30 the same morning -- the coffee
+        # should show up under "today" (the 2026-09-01 tracking day). Passing
+        # date="today" explicitly (rather than the no-args path _for_today()
+        # uses) is what makes this resolve from context.started_at instead of
+        # real wall-clock time, so the simulated hour actually takes effect.
+        still_before_boundary = datetime(2026, 9, 2, 3, 30, tzinfo=ZoneInfo("Europe/Bucharest")).astimezone(UTC)
+        today_context = AgentContext(user=user, chat_id="1", romanian=False, message="ce am mancat azi", started_at=still_before_boundary)
+        today_result = await executor.execute(session, today_context, _tool_call("s1", "search_entries", date="today"), [])
+        assert today_result.ok is True
+        assert len(today_result.data["entries"]) == 1
+
+        # After the boundary rolls over (05:00 the same calendar day), the
+        # coffee belongs to the *previous* tracking day and must not appear.
+        after_boundary = datetime(2026, 9, 2, 5, 0, tzinfo=ZoneInfo("Europe/Bucharest")).astimezone(UTC)
+        after_context = AgentContext(user=user, chat_id="1", romanian=False, message="ce am mancat azi", started_at=after_boundary)
+        after_result = await executor.execute(session, after_context, _tool_call("s2", "search_entries", date="today"), [])
+
+    assert after_result.ok is True
+    assert after_result.data["entries"] == []
 
 
 @pytest.mark.asyncio
