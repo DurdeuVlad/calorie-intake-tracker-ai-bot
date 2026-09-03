@@ -24,7 +24,7 @@ async def refresh(session: AsyncSession, user: FoodUser, provider: str, conversa
     total = sum(r.calories or 0 for r in rows)
     text = f"Today: {len(rows)} entries, {total} kcal logged."
     if settings.calorie_target is not None:
-        text += f" Target: {settings.calorie_target} kcal."
+        text += f" Minimum: {settings.calorie_target} kcal." if settings.target_mode == "min" else f" Target: {settings.calorie_target} kcal."
 
     existing = await messaging_daily_status_repo.find_by_user_and_route(session, user, provider, conversation_id)
     if existing is not None:

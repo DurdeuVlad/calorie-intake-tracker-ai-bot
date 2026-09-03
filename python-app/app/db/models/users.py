@@ -36,6 +36,12 @@ class UserSettings(Base):
     # the original calendar-day behavior every existing user already has.
     day_boundary_hour: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     day_boundary_reminder_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # "max": calorie_target is a ceiling (default, current behavior). "min": a
+    # floor for users who need to eat more, not less -- inverts alert direction
+    # and display framing wherever the target is surfaced.
+    target_mode: Mapped[str] = mapped_column(String(8), default="max", server_default="max")
+    budget_alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    tracking_nudge_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     user: Mapped[FoodUser] = relationship(back_populates="settings")
 

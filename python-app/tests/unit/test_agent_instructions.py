@@ -88,3 +88,20 @@ def test_day_boundary_instructions_explain_the_setting_and_its_reminder():
     assert "dayBoundaryHour" in properties
     assert "dayBoundaryReminderEnabled" in properties
     assert "tracking day starts at" in update_settings["function"]["description"]
+
+
+def test_target_mode_instructions_cover_min_mode_framing_and_notification_toggles():
+    prompt = instructions(romanian=False)
+
+    assert "get_today_summary's targetMode tells you how to frame it" in prompt
+    assert "in min mode it is a floor, so frame the same gap as how much more they still need to reach it, never as \"remaining\"" in prompt
+
+    update_settings = next(tool for tool in tool_definitions() if tool["function"]["name"] == "update_settings")
+    description = update_settings["function"]["description"]
+    properties = update_settings["function"]["parameters"]["properties"]
+    assert "targetMode is max (calorieTarget is a ceiling, default) or min" in description
+    assert "budgetAlertsEnabled turns on an alert" in description
+    assert "trackingNudgeEnabled turns on a reminder" in description
+    assert properties["targetMode"]["enum"] == ["max", "min"]
+    assert "budgetAlertsEnabled" in properties
+    assert "trackingNudgeEnabled" in properties

@@ -15,7 +15,7 @@ from app.agent.openai_model_client import AgentProviderUnavailableError
 from app.db.base import session_scope
 from app.db.models.entries import FoodEntry
 from app.db.models.feedback import UserFeedback
-from app.db.models.messaging import PinnedDailyStatus
+from app.db.models.messaging import MessagingOutboundMessage, MessagingRoute, PinnedDailyStatus
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext, AgentReply, ToolCall
 from app.messaging import execution_context
@@ -296,6 +296,131 @@ async def test_update_settings_rejects_an_out_of_range_day_boundary_hour():
         result = await executor.execute(session, context, _tool_call("s6", "update_settings", dayBoundaryHour=24), [])
 
     assert result.ok is False
+
+
+@pytest.mark.asyncio
+async def test_update_settings_sets_target_mode_and_notification_toggles():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 123, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="I need to eat more, alert me", started_at=started_at)
+        result = await executor.execute(
+            session, context,
+            _tool_call("s7", "update_settings", targetMode="min", budgetAlertsEnabled=True, trackingNudgeEnabled=True),
+            [],
+        )
+        await session.commit()
+
+    assert result.ok is True
+    async with session_scope() as session:
+        settings = await food_user_repo.get_settings(session, user.id)
+    assert settings.target_mode == "min"
+    assert settings.budget_alerts_enabled is True
+    assert settings.tracking_nudge_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_update_settings_rejects_an_invalid_target_mode():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 124, "Tester", "Europe/Bucharest")
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="set target mode to average", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s8", "update_settings", targetMode="average"), [])
+
+    assert result.ok is False
+
+
+@pytest.mark.asyncio
+async def test_get_today_summary_reports_the_target_mode():
+    executor = JournalToolExecutor()
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 125, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.target_mode = "min"
+        await session.commit()
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="cate calorii azi", started_at=started_at)
+        result = await executor.execute(session, context, _tool_call("s9", "get_today_summary"), [])
+
+    assert result.ok is True
+    assert result.data["targetMode"] == "min"
+
+
+@pytest.mark.asyncio
+async def test_budget_alert_fires_once_when_crossing_the_target_in_max_mode():
+    """End-to-end through the food-logging path: apply_journal_actions calls
+    the injected send_budget_alert callback the same way it already calls
+    refresh_daily_status, right after a successful mutation."""
+    from app.db.models.reports import ReportDelivery
+    from app.scheduling import report_scheduler
+
+    executor = JournalToolExecutor(send_budget_alert=report_scheduler.maybe_send_budget_alert_for_tool_executor)
+    # maybe_send_budget_alert_for_tool_executor uses real datetime.now(zone) to
+    # resolve "today" -- mirroring daily_status_service.refresh_for_tool_executor's
+    # existing pattern, not something this PR introduces -- so started_at must be
+    # real "now" too, or the CREATE's eaten_at and the alert's today_totals query
+    # land on different calendar days and the alert never sees the new entry.
+    started_at = datetime.now(UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 126, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.calorie_target = 2000
+        settings.budget_alerts_enabled = True
+        session.add(MessagingRoute(user_id=user.id, provider="telegram", conversation_id="1"))
+        await session.commit()
+
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="mancare mare", started_at=started_at)
+        result = await executor.execute(
+            session, context,
+            _tool_call("c1", "apply_journal_actions", actions=[{"type": "CREATE", "description": "mancare mare", "calories": 2100}]),
+            [],
+        )
+        assert result.ok is True
+        await session.commit()
+
+    async with session_scope() as session:
+        deliveries = (await session.execute(select(ReportDelivery).where(ReportDelivery.user_id == user.id))).scalars().all()
+        outbound = (await session.execute(select(MessagingOutboundMessage).where(MessagingOutboundMessage.conversation_id == "1")))
+        outbound_rows = outbound.scalars().all()
+
+    assert [d for d in deliveries if d.report_type == "budget_100"] != []
+    assert any("2100/2000" in m.text for m in outbound_rows)
+
+
+@pytest.mark.asyncio
+async def test_budget_alert_does_not_fire_without_opt_in():
+    executor = JournalToolExecutor()  # default send_budget_alert is a no-op
+    started_at = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 127, "Tester", "Europe/Bucharest")
+        settings = await food_user_repo.get_settings(session, user.id)
+        settings.calorie_target = 2000
+        # budget_alerts_enabled defaults to False -- leave it as-is.
+        await session.commit()
+
+        context = AgentContext(user=user, chat_id="1", romanian=False, message="mancare mare", started_at=started_at)
+        result = await executor.execute(
+            session, context,
+            _tool_call("c2", "apply_journal_actions", actions=[{"type": "CREATE", "description": "mancare mare", "calories": 2100}]),
+            [],
+        )
+        assert result.ok is True
+        await session.commit()
+
+    from app.db.models.reports import ReportDelivery
+
+    async with session_scope() as session:
+        deliveries = (await session.execute(select(ReportDelivery).where(ReportDelivery.user_id == user.id))).scalars().all()
+    assert deliveries == []
 
 
 @pytest.mark.asyncio

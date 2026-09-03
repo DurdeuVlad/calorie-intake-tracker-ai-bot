@@ -107,9 +107,15 @@ async def _today_text(session, user: FoodUser, settings: UserSettings, romanian:
     today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
     calories, _count = await food_entry_repo.today_totals(session, user, settings.timezone, today, settings.day_boundary_hour)
     target = settings.calorie_target
+    if target is None:
+        return f"Total azi: {calories} kcal." if romanian else f"Today: {calories} kcal."
+    if settings.target_mode == "min":
+        if romanian:
+            return f"Total azi: {calories} kcal, minim {target} kcal."
+        return f"Today: {calories} kcal, minimum {target} kcal."
     if romanian:
-        return f"Total azi: {calories} kcal" + ("." if target is None else f" din {target} kcal.")
-    return f"Today: {calories} kcal" + ("." if target is None else f" of {target} kcal.")
+        return f"Total azi: {calories} kcal din {target} kcal."
+    return f"Today: {calories} kcal of {target} kcal."
 
 
 def _command_token(raw: str) -> str:
@@ -147,15 +153,21 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
         reports_text = ("pornite" if settings.reports_enabled else "oprite") if romanian else ("on" if settings.reports_enabled else "off")
         boundary_text = "miezul nopții" if settings.day_boundary_hour == 0 else f"ora {settings.day_boundary_hour}:00"
         reminder_text = ("pornit" if settings.day_boundary_reminder_enabled else "oprit") if romanian else ("on" if settings.day_boundary_reminder_enabled else "off")
+        mode_text_ro = "minim" if settings.target_mode == "min" else "maxim"
+        mode_text_en = "minimum" if settings.target_mode == "min" else "maximum"
+        budget_text = ("pornite" if settings.budget_alerts_enabled else "oprite") if romanian else ("on" if settings.budget_alerts_enabled else "off")
+        nudge_text = ("pornit" if settings.tracking_nudge_enabled else "oprit") if romanian else ("on" if settings.tracking_nudge_enabled else "off")
         if romanian:
             return (
-                f"Setări: fus {settings.timezone}, țintă {target_text}, rapoarte {reports_text}, ziua începe la "
-                f"{boundary_text}, memento început zi {reminder_text}. Poți modifica aceste setări conversațional."
+                f"Setări: fus {settings.timezone}, țintă {target_text} ({mode_text_ro}), rapoarte {reports_text}, "
+                f"ziua începe la {boundary_text}, memento început zi {reminder_text}, alerte buget {budget_text}, "
+                f"memento urmărire {nudge_text}. Poți modifica aceste setări conversațional."
             )
         boundary_text_en = "midnight" if settings.day_boundary_hour == 0 else f"{settings.day_boundary_hour}:00"
         return (
-            f"Settings: timezone {settings.timezone}, target {target_text}, reports {reports_text}, day starts at "
-            f"{boundary_text_en}, day-boundary reminder {reminder_text}. You can change these conversationally."
+            f"Settings: timezone {settings.timezone}, target {target_text} ({mode_text_en}), reports {reports_text}, "
+            f"day starts at {boundary_text_en}, day-boundary reminder {reminder_text}, budget alerts {budget_text}, "
+            f"tracking nudge {nudge_text}. You can change these conversationally."
         )
     if cmd == "/cancel":
         return "Am anulat draftul conversațional curent." if romanian else "I cancelled the current conversational draft."
