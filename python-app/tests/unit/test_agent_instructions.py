@@ -108,6 +108,34 @@ def test_target_mode_instructions_cover_min_mode_framing_and_notification_toggle
     assert "trackingNudgeEnabled" in properties
 
 
+def test_a_failed_correction_search_retries_broadly_before_giving_up():
+    """Live production regression: the user asked to delete a duplicate
+    "dulceață de ardei iute" entry; search_entries found nothing (a diacritics
+    mismatch -- see the food_entry_repo fix), and the agent told the user
+    outright that no matching entry existed even though two identical rows
+    were sitting in the database for that exact day. The prompt must tell the
+    model to retry broadly and match itself before declaring absence."""
+    prompt = instructions(romanian=False)
+
+    assert 'If search_entries returns nothing, retry once with the same date but no query' in prompt
+    assert "is not the same as the entry being absent" in prompt
+    assert "only tell the user nothing matches after that retry still finds nothing" in prompt
+
+
+def test_feedback_logging_is_not_a_substitute_for_a_still_unresolved_correction():
+    """Live production regression (user_feedback rows 6-11): after the failed
+    search above, the user pushed back three times and the agent replied only
+    "Am notat feedback-ul tău" each time -- never retrying the delete, never
+    asking a clarifying question -- until the user got furious. Feedback
+    logging must be additive to still attempting the request, never a
+    stand-in for it."""
+    prompt = instructions(romanian=False)
+
+    assert "Logging feedback never substitutes for a still-unresolved request" in prompt
+    assert "retry it -- a broader search_entries call, or one clarifying question -- in the same reply as noting the feedback, not instead of it" in prompt
+    assert '"I\'ve noted your feedback" alone is not an acceptable reply to someone waiting on a correction' in prompt
+
+
 def test_photo_label_line_is_trusted_like_an_explicit_value():
     """Live production gap: a photo whose vision output said "nutrition facts
     are visible" still only produced a rough visual guess, and the user had to
