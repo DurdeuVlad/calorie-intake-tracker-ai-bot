@@ -16,7 +16,6 @@ from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.language import is_romanian
 from app.db.models.users import FoodUser, UserSettings
 from app.domain.agent_types import AgentContext
 from app.repositories import food_entry_repo, food_user_repo, telegram_access_repo
@@ -195,7 +194,7 @@ class JournalApplicationService:
                 # "anuleaza") already calls through the agent.
                 if self._agent is None:
                     return unavailable(romanian)
-                context = AgentContext(user=user, chat_id=chat_id, romanian=romanian, message=message)
+                context = AgentContext(user=user, chat_id=chat_id, message=message)
                 return await self._agent.run_undo(session, context)
             is_private_admin = (
                 user.telegram_user_id is not None
@@ -204,18 +203,19 @@ class JournalApplicationService:
             )
             return await command(session, user, settings, message, romanian, is_private_admin)
 
-        romanian = is_romanian(message)
-        settings.set_preferred_language("ro" if romanian else "en")
+        # v2.0: the model decides the reply language. is_romanian() is no longer
+        # called in the agent path. preferred_language is kept as a hint for
+        # slash-command dispatch only, derived from the user's last slash-command
+        # language or explicit setting.
 
         if self._agent is not None:
             context = AgentContext(
                 user=user,
                 chat_id=chat_id,
-                romanian=romanian,
                 message=message,
                 media_kind=media_kind,
                 media_text=media_text,
                 media_caption=media_caption,
             )
             return await self._agent.run(session, context)
-        return unavailable(romanian)
+        return unavailable(settings.preferred_language == "ro")

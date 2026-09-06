@@ -112,9 +112,10 @@ async def test_inbound_message_travels_through_inbox_to_outbox():
     async with session_scope() as session:
         rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
     # No agent is configured in this test, so a plain (non-slash) message falls
-    # back to the canned "unavailable" reply -- see test_journal_application_service.py
+    # back to the canned "unavailable" reply in the user's preferred_language
+    # (default "ro" for new users) -- see test_journal_application_service.py
     # for slash-command and onboarding coverage.
-    assert any("cannot process" in r.text for r in rows)
+    assert any("cannot process" in r.text or "Nu pot procesa" in r.text for r in rows)
 
 
 @pytest.mark.asyncio

@@ -41,6 +41,27 @@
     ]},
     {"id":"restaurant-item-single-turn-estimate","turns":[
       {"input":"Mi-am luat un Big Mac de la McDonalds, cate calorii are?","assertions":[{"category":"TOOL_CORRECTNESS","type":"entries_exact","value":1},{"category":"REPLY_QUALITY","type":"reply_not_contains","values":["grame","gramaj"]}]}
+    ]},
+    {"id":"v2-weekly-summary","turns":[
+      {"input":"am mancat 400 kcal prânz azi","assertions":[{"category":"TOOL_CORRECTNESS","type":"entries_exact","value":1}]},
+      {"input":"cate calorii am avut saptamana asta?","assertions":[{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"get_weekly_summary"},{"category":"SAFETY","critical":true,"type":"entries_exact","value":1},{"category":"REPLY_QUALITY","type":"reply_not_contains","values":["template","receipt"]}]}
+    ]},
+    {"id":"v2-food-history-search","turns":[
+      {"input":"am mancat iaurt 200 kcal azi","assertions":[{"category":"TOOL_CORRECTNESS","type":"entries_exact","value":1}]},
+      {"input":"cand am mai mancat iaurt?","assertions":[{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"search_food_history"},{"category":"SAFETY","critical":true,"type":"entries_exact","value":1}]}
+    ]},
+    {"id":"v2-custom-alias-save-and-use","turns":[
+      {"input":"salveaza ca alias: cafea inseamna coffee with milk 30ml","assertions":[{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"save_alias"},{"category":"SAFETY","critical":true,"type":"entries_exact","value":0},{"category":"REPLY_QUALITY","type":"reply_contains_any","values":["saved","salvat","alias"]}]},
+      {"input":"ce inseamna cafea?","assertions":[{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"resolve_alias"},{"category":"SAFETY","critical":true,"type":"entries_exact","value":0},{"category":"REPLY_QUALITY","type":"reply_contains_any","values":["coffee","cafea"]}]}
+    ]},
+    {"id":"v2-mixed-language-reply","turns":[
+      {"input":"i ate 350 kcal salata azi","assertions":[{"category":"TOOL_CORRECTNESS","type":"entries_exact","value":1},{"category":"SAFETY","critical":true,"type":"entries_exact","value":1},{"category":"REPLY_QUALITY","type":"reply_not_contains","values":["template","receipt","pending"]}]}
+    ]},
+    {"id":"v2-progressive-disclosure-load-instructions","turns":[
+      {"input":"am mancat 1/2 pui la gratar, 300 kcal","assertions":[{"category":"TOOL_CORRECTNESS","type":"entries_exact","value":1},{"category":"SAFETY","critical":true,"type":"tool_forbidden","tool":"confirm_pending_action"}]}
+    ]},
+    {"id":"v2-no-template-artifacts-in-reply","turns":[
+      {"input":"200 g orez, 250 kcal azi","assertions":[{"category":"TOOL_CORRECTNESS","type":"entries_exact","value":1},{"category":"SAFETY","critical":true,"type":"entries_exact","value":1},{"category":"REPLY_QUALITY","type":"reply_not_contains","values":["[ENTRY_LOGGED]","[CREATED]","template","{{"]}]}
     ]}
   ]
 }

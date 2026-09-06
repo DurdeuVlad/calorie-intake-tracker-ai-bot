@@ -18,7 +18,8 @@ flowchart TD
     subgraph Core Application Domain
         AS[JournalApplicationService]
         JA[JournalAgent / LLM Loop]
-        JTE[JournalToolExecutor]
+        TR[Tool Registry & Modules]
+        CAP[Capability Docs / Progressive Disclosure]
     end
 
     subgraph External Tools & Providers
@@ -40,10 +41,11 @@ flowchart TD
     AS -->|Parse & Interpret| JA
     JA <-->|Reason & Transcribe| OAI
 
-    JA -->|Tool Calls| JTE
-    JTE <-->|Official Products| OFF
-    JTE <-->|Search Menu / Web| SX
-    JTE <-->|Scrape Web Page| BL
+    JA -->|Tool Calls| TR
+    JA -->|load_instructions| CAP
+    TR <-->|Official Products| OFF
+    TR <-->|Search Menu / Web| SX
+    TR <-->|Scrape Web Page| BL
 
     AS -->|Validated Mutations| DB
     AS -->|Queue Reply & Status| OB
@@ -63,14 +65,18 @@ flowchart TD
 
 ### 2. The AI Boundary (Reasoning vs. Execution)
 - OpenAI models (`gpt-5.6-luna` for intent/tool-calling, `gpt-4o-mini-transcribe` for voice) are **strictly interpretation engines**.
-- AI providers **cannot directly mutate the database**. The model calls typed tools exposed by `JournalToolExecutor`.
+- AI providers **cannot directly mutate the database**. The model calls typed tools exposed by the tool registry (`app/tools/`).
 - The Python application service validates inputs (ownership, bounds, dates, macro math) before committing any changes.
+- **Progressive disclosure (v2.0)**: The core system prompt is small (~15 lines). Capability-specific rules live in markdown docs (`app/agent/capabilities/`) loaded on demand via the `load_instructions(topic)` tool. The model writes full replies from structured tool results — no deterministic reply templates. See [ADR 0007](adr/0007-progressive-disclosure-agent.md).
 
 ### 3. Nutrition Resolution & Tool Ecosystem
 - **Official Database Lookup**: `nutrition_resolver` queries Open Food Facts API for exact barcode or branded food items.
 - **Web Search Tool (`search_web`)**: Queries a self-hosted SearxNG instance for restaurant menu items and nutrition information when not found in Open Food Facts.
 - **Web Page Scraping (`fetch_web_page`)**: Uses Browserless to extract plain text from nutrition pages or restaurant menus.
 - **SSRF Protection**: `BrowserlessClient` validates target URLs and blocks access to localhost, internal subnets, loopback IP ranges, and cloud metadata endpoints.
+- **Weekly Summary (`get_weekly_summary`)**: Aggregates seven days of entries around a reference date, returning per-day totals and weekly-level information. Future reference dates are rejected.
+- **Food History Search (`search_food_history`)**: Searches historical entries by food text, returning match count, first/last occurrence, average calories, and recent entries. User-scoped.
+- **Custom Food Aliases (`save_alias`/`resolve_alias`)**: User-scoped shorthand mappings (e.g. "cafea" → "coffee with milk, 30ml") with optional nutrition shortcuts. Case-insensitive resolution. Aliases are isolated per user; no cross-user visibility.
 
 ### 4. Database Integrity & 10-Minute Reversible Undo
 - Every mutation (add food, edit calories, delete entry) creates a `JournalChangeSet` containing before/after snapshots (`JournalMutation`).

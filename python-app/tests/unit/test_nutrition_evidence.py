@@ -98,7 +98,7 @@ async def test_model_cannot_claim_open_food_facts_without_a_server_quote():
 async def test_forged_private_source_is_stored_as_manual_unverified_value():
     session = _RecordingSession()
     context = AgentContext(
-        user=type("User", (), {"id": 1})(), chat_id="1", romanian=False, message="family soup 250 kcal"
+        user=type("User", (), {"id": 1})(), chat_id="1", message="family soup 250 kcal"
     )
 
     result = await JournalToolExecutor()._create_action(
@@ -133,7 +133,7 @@ async def test_server_issued_ai_quote_keeps_its_estimate_provenance(monkeypatch)
         "app.services.journal_tool_executor.pending_nutrition_quote_repo.lock_owned_active", quote_lookup
     )
     session = _RecordingSession()
-    context = AgentContext(user=type("User", (), {"id": 1})(), chat_id="1", romanian=False, message="curry")
+    context = AgentContext(user=type("User", (), {"id": 1})(), chat_id="1", message="curry")
     result = await JournalToolExecutor()._create_action(
         session, context, {"description": "curry", "quoteId": str(quote.quote_id)}, None, context.started_at, "Europe/Bucharest"
     )
