@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from app.integrations.http_response import request_bounded_json
+
 
 @dataclass(frozen=True)
 class WebSearchResult:
@@ -18,7 +20,11 @@ class SearxngClient:
     def __init__(self, base_url: str, http: httpx.AsyncClient | None = None) -> None:
         self._enabled = bool(base_url and base_url.strip())
         self._http = http or (
-            httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0))
+            httpx.AsyncClient(
+                base_url=base_url,
+                timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0),
+                trust_env=False,
+            )
             if self._enabled
             else None
         )
@@ -27,9 +33,13 @@ class SearxngClient:
         if not self._enabled or not query or not query.strip():
             return []
         try:
-            response = await self._http.get("/search", params={"q": query, "format": "json"})
-            response.raise_for_status()
-            results = response.json().get("results")
+            payload = await request_bounded_json(
+                self._http,
+                "GET",
+                "/search",
+                params={"q": query, "format": "json"},
+            )
+            results = payload.get("results") if isinstance(payload, dict) else None
             if not isinstance(results, list):
                 return []
             mapped: list[WebSearchResult] = []

@@ -13,6 +13,7 @@ from app.domain.media_exceptions import (
     MediaProcessingCategory,
     MediaProcessingException,
 )
+from app.integrations.http_response import request_bounded_json
 
 MAX_MEDIA_BYTES = 20_000_000
 
@@ -82,7 +83,7 @@ def _output_text(payload: dict) -> str:
 class OpenAiFoodMediaExtractor:
     def __init__(self, settings: Settings, http: httpx.AsyncClient | None = None) -> None:
         self._settings = settings
-        self._http = http or httpx.AsyncClient(base_url="https://api.openai.com/v1", timeout=httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0))
+        self._http = http or httpx.AsyncClient(base_url=settings.openai_base_url, timeout=httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0))
 
     async def extract(self, data: bytes, mime_type: str | None, media_type: FoodMediaType) -> str:
         if not self._settings.openai_api_key:
@@ -103,9 +104,14 @@ class OpenAiFoodMediaExtractor:
             "max_output_tokens": 600,
         }
         try:
-            response = await self._http.post("/responses", headers={"Authorization": f"Bearer {self._settings.openai_api_key}"}, json=body)
-            response.raise_for_status()
-            return _output_text(response.json())
+            payload = await request_bounded_json(
+                self._http,
+                "POST",
+                "/responses",
+                headers={"Authorization": f"Bearer {self._settings.openai_api_key}"},
+                json=body,
+            )
+            return _output_text(payload) if isinstance(payload, dict) else _output_text({})
         except MediaProcessingException:
             raise
         except httpx.HTTPStatusError as failure:

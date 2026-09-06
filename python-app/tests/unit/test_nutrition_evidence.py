@@ -9,6 +9,27 @@ from app.db.models.entries import FoodEntry, FoodItem
 from app.db.models.nutrition import NutritionEvidence, PendingNutritionQuote
 from app.domain.agent_types import AgentContext
 from app.services.journal_tool_executor import JournalToolExecutor, ValidationError
+from app.tools.nutrition import _provider_text
+from app.tools.shared import ValidationError as SharedValidationError
+from app.tools.shared import _meal_item, _valid_calories_per_100g
+
+
+def test_external_nutrition_text_is_bounded_before_persistence():
+    assert _provider_text(" cereal ", 255) == "cereal"
+    assert _provider_text("x" * 256, 255) is None
+    assert _provider_text("cereal\n<script>", 255) is None
+
+
+def test_external_nutrition_calorie_bounds_match_journal_limits():
+    assert _valid_calories_per_100g(1)
+    assert _valid_calories_per_100g(10000)
+    assert not _valid_calories_per_100g(0)
+    assert not _valid_calories_per_100g(10001)
+
+
+def test_resolve_nutrition_rejects_zero_calories_per_100g():
+    with pytest.raises(SharedValidationError):
+        _meal_item({"name": "water", "grams": 100, "caloriesPer100g": 0})
 
 
 class _RecordingSession:
@@ -98,7 +119,7 @@ async def test_model_cannot_claim_open_food_facts_without_a_server_quote():
 async def test_forged_private_source_is_stored_as_manual_unverified_value():
     session = _RecordingSession()
     context = AgentContext(
-        user=type("User", (), {"id": 1})(), chat_id="1", romanian=False, message="family soup 250 kcal"
+        user=type("User", (), {"id": 1})(), chat_id="1", message="family soup 250 kcal"
     )
 
     result = await JournalToolExecutor()._create_action(
@@ -133,13 +154,105 @@ async def test_server_issued_ai_quote_keeps_its_estimate_provenance(monkeypatch)
         "app.services.journal_tool_executor.pending_nutrition_quote_repo.lock_owned_active", quote_lookup
     )
     session = _RecordingSession()
-    context = AgentContext(user=type("User", (), {"id": 1})(), chat_id="1", romanian=False, message="curry")
+    context = AgentContext(user=type("User", (), {"id": 1})(), chat_id="1", message="curry")
     result = await JournalToolExecutor()._create_action(
         session, context, {"description": "curry", "quoteId": str(quote.quote_id)}, None, context.started_at, "Europe/Bucharest"
     )
 
     entry = next(value for value in session.added if isinstance(value, FoodEntry))
+    item = next(value for value in session.added if isinstance(value, FoodItem))
+    evidence = next(value for value in session.added if isinstance(value, NutritionEvidence))
     assert entry.nutrition_source == "ai_estimate"
+    assert item.quantity == Decimal(250)
+    assert item.quantity_grams == Decimal(250)
+    assert evidence.food_entry_id == entry.id
+    assert evidence.food_item_id == item.id
+    assert evidence.selected_quote_id == quote.quote_id
+    assert evidence.provider == "ai_estimate"
+    assert evidence.source_name == "AI estimate"
+    assert evidence.selected_candidate == '{"basis":"visible bowl portion","name":"curry"}'
+    assert evidence.total_calories == 500
+    assert evidence.confidence == "estimate"
     assert result["receipt"] == {
         "quantity": 250.0, "unit": "g", "caloriesPer100g": 200, "basis": "visible bowl portion"
     }
+
+
+@pytest.mark.asyncio
+async def test_quote_only_create_uses_the_server_owned_food_name(monkeypatch):
+    now = datetime.now(UTC)
+    quote = PendingNutritionQuote(
+        quote_id=uuid.uuid4(),
+        batch_id=uuid.uuid4(),
+        user_id=1,
+        quote_type="PACKAGED_MATCH",
+        product_name="server cereal",
+        grams=Decimal(100),
+        calories_per_100g=250,
+        created_at=now,
+        expires_at=now + timedelta(minutes=30),
+    )
+
+    async def quote_lookup(session, quote_id, user, lookup_now):
+        return quote
+
+    monkeypatch.setattr(
+        "app.tools.journal_actions.pending_nutrition_quote_repo.lock_owned_active", quote_lookup
+    )
+    session = _RecordingSession()
+    context = AgentContext(user=type("User", (), {"id": 1})(), chat_id="1", message="cereal")
+
+    result = await JournalToolExecutor()._create_action(
+        session,
+        context,
+        {"quoteId": str(quote.quote_id)},
+        None,
+        context.started_at,
+        "Europe/Bucharest",
+    )
+
+    entry = next(value for value in session.added if isinstance(value, FoodEntry))
+    assert entry.original_message == "server cereal"
+    assert result["description"] == "server cereal"
+
+
+@pytest.mark.asyncio
+async def test_selected_quote_above_journal_calorie_limit_is_rejected(monkeypatch):
+    now = datetime.now(UTC)
+    quote = PendingNutritionQuote(
+        quote_id=uuid.uuid4(), batch_id=uuid.uuid4(), user_id=1, quote_type="PACKAGED_MATCH",
+        product_name="bulk cereal", grams=Decimal(100000), calories_per_100g=2000,
+        created_at=now, expires_at=now + timedelta(minutes=30),
+    )
+
+    async def quote_lookup(session, quote_id, user, lookup_now):
+        return quote
+
+    monkeypatch.setattr(
+        "app.tools.journal_actions.pending_nutrition_quote_repo.lock_owned_active", quote_lookup
+    )
+    session = _RecordingSession()
+    context = AgentContext(user=type("User", (), {"id": 1})(), chat_id="1", message="bulk cereal")
+
+    with pytest.raises(ValidationError, match="10000 kcal"):
+        await JournalToolExecutor()._create_action(
+            session, context, {"description": "bulk cereal", "quoteId": str(quote.quote_id)}, None,
+            context.started_at, "Europe/Bucharest",
+        )
+
+    assert not any(isinstance(value, FoodEntry) for value in session.added)
+
+
+@pytest.mark.asyncio
+async def test_create_action_accepts_schema_permitted_zero_calories():
+    session = _RecordingSession()
+    context = AgentContext(user=type("User", (), {"id": 1})(), chat_id="1", message="water")
+
+    result = await JournalToolExecutor()._create_action(
+        session, context, {"description": "water", "calories": 0}, None,
+        context.started_at, "Europe/Bucharest",
+    )
+
+    entry = next(value for value in session.added if isinstance(value, FoodEntry))
+    assert entry.calories == 0
+    assert result["calories"] == 0

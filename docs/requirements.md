@@ -36,7 +36,7 @@
    - Ambiguous or incomplete model outputs require clarification instead of guessing user intent.
 
 9. **Multi-Frontend Linking**:
-   - Accounts across Telegram and Mattermost can be linked using `/link`. Codes expire after 10 minutes and can be redeemed once.
+   - Accounts across Telegram and Mattermost can be linked using `/link` from a Telegram private chat. Codes expire after 10 minutes, can be redeemed once, and concurrent redemption cannot reassign an identity or route to another user.
 
 10. **Timezone-Aware Reporting & Pinned Status**:
     - Users configure their IANA timezone during onboarding (`/start` or `/settings`).

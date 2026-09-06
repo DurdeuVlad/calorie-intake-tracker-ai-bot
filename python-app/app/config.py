@@ -61,6 +61,7 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
     openai_model: str = Field(default="gpt-5.6-luna", alias="OPENAI_MODEL")
     agent_max_tool_calls: int = Field(default=10, alias="AGENT_MAX_TOOL_CALLS")
     openai_transcription_model: str = Field(default="gpt-4o-mini-transcribe", alias="OPENAI_TRANSCRIPTION_MODEL")
@@ -72,6 +73,8 @@ class Settings(BaseSettings):
     searxng_base_url: str = Field(default="", alias="SEARXNG_BASE_URL")
     browserless_base_url: str = Field(default="", alias="BROWSERLESS_BASE_URL")
     browserless_token: str = Field(default="", alias="BROWSERLESS_TOKEN")
+    browserless_egress_restricted: bool = Field(default=False, alias="BROWSERLESS_EGRESS_RESTRICTED")
+    browserless_egress_proxy_url: str = Field(default="", alias="BROWSERLESS_EGRESS_PROXY_URL")
 
     # Messaging frontends
     telegram_frontend_enabled: bool = Field(default=True, alias="TELEGRAM_FRONTEND_ENABLED")

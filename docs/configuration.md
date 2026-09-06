@@ -60,6 +60,8 @@ All canonical application settings are declared via environment variables and lo
 | `SEARXNG_BASE_URL` | No | *(empty)* | Base URL of self-hosted SearxNG instance for `search_web` lookups (requires `formats: [json]` enabled in SearxNG `settings.yml`). |
 | `BROWSERLESS_BASE_URL` | No | *(empty)* | Base URL of self-hosted Browserless headless Chrome instance for `fetch_web_page`. |
 | `BROWSERLESS_TOKEN` | No | *(empty)* | Authentication token parameter for Browserless. |
+| `BROWSERLESS_EGRESS_RESTRICTED` | No | `false` | Must be `true` only when the configured Browserless egress proxy enforces denial of private, loopback, link-local, and metadata networks; Browserless remains disabled otherwise. |
+| `BROWSERLESS_EGRESS_PROXY_URL` | No | *(empty)* | Required together with `BROWSERLESS_EGRESS_RESTRICTED=true`; the operator-controlled filtering proxy used for all Browserless navigation. Do not put credentials in the URL. |
 
 ---
 

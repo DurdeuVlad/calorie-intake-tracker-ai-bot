@@ -17,7 +17,7 @@ class RecordingJournal:
     def __init__(self):
         self.calls: list[int] = []
 
-    async def handle(self, session, user, conversation_id, text):
+    async def handle(self, session, user, conversation_id, text, **kwargs):
         self.calls.append(user.telegram_user_id)
         return "journal accepted"
 

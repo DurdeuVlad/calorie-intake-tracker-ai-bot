@@ -24,3 +24,25 @@ async def lock_ready(session: AsyncSession) -> MessagingInboxMessage | None:
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def lock_retry_candidate(session: AsyncSession, row_id: int) -> MessagingInboxMessage | None:
+    """Lock one row after an aborted transaction so its retry is durable.
+
+    The predicate prevents a recovery transaction from modifying a row that a
+    different worker already reclaimed after the original transaction rolled
+    back.
+    """
+    now = datetime.now(UTC)
+    stmt = (
+        select(MessagingInboxMessage)
+        .where(
+            MessagingInboxMessage.id == row_id,
+            or_(
+                and_(MessagingInboxMessage.status == "PENDING", MessagingInboxMessage.next_attempt_at <= now),
+                and_(MessagingInboxMessage.status == "IN_PROGRESS", MessagingInboxMessage.lease_expires_at <= now),
+            ),
+        )
+        .with_for_update()
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
