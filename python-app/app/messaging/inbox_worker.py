@@ -2,9 +2,11 @@ import asyncio
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import perf_counter
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings, get_settings
 from app.db.base import session_scope
@@ -20,7 +22,7 @@ from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import AttachmentKind, InboundMessage
 from app.repositories import messaging_identity_repo, telegram_access_repo
 from app.repositories.food_user_repo import get_or_create_by_telegram_user_id
-from app.repositories.messaging_inbox_repo import lock_ready
+from app.repositories.messaging_inbox_repo import lock_ready, lock_retry_candidate
 from app.services import (
     message_link_service,
     messaging_daily_status_service,
@@ -69,8 +71,8 @@ async def resolve_identity_user(session, message: InboundMessage, default_timezo
     if message.provider not in ("telegram", "terminal"):
         return None  # other providers must link via /link first
     user = await get_or_create_by_telegram_user_id(session, int(message.user_id), message.display_name, default_timezone)
-    await messaging_identity_repo.create(session, user, message.provider, message.user_id)
-    return user
+    identity = await messaging_identity_repo.create(session, user, message.provider, message.user_id)
+    return await _load_user_by_id(session, identity.user_id)
 
 
 async def _extract_media_text(deps: InboxWorkerDeps, message: InboundMessage) -> str:
@@ -129,12 +131,19 @@ async def _stop_typing(stop: asyncio.Event | None, task: asyncio.Task | None) ->
         await task
 
 
-async def handle_message(session, message: InboundMessage, settings: Settings, deps: InboxWorkerDeps) -> None:
+async def handle_message(
+    session,
+    message: InboundMessage,
+    settings: Settings,
+    deps: InboxWorkerDeps,
+    received_at: datetime | None = None,
+) -> None:
     if not await allowed(session, message, settings):
         logger.warning("Dropping message from disallowed sender: provider=%s user_id=%s", message.provider, message.user_id)
         return
 
     started = perf_counter()
+    request_time = received_at or datetime.now(UTC)
     typing_stop, typing_task = await _start_typing(deps, message)
     try:
         text = (message.text or "").strip()
@@ -152,6 +161,14 @@ async def handle_message(session, message: InboundMessage, settings: Settings, d
                 return
 
         if message.provider == "telegram" and text.lower() == "/link":
+            if message.conversation_id != message.user_id:
+                await outbox.reply(
+                    session,
+                    message.provider,
+                    message.conversation_id,
+                    "Account linking is available only in a private chat.",
+                )
+                return
             user = await resolve_identity_user(session, message, deps.journal.default_timezone)
             code = await message_link_service.issue(session, user)
             await outbox.reply(
@@ -217,7 +234,13 @@ async def handle_message(session, message: InboundMessage, settings: Settings, d
 
         async def _run_journal() -> str:
             if media_kind is None:
-                return await deps.journal.handle(session, user, message.conversation_id, final_text)
+                return await deps.journal.handle(
+                    session,
+                    user,
+                    message.conversation_id,
+                    final_text,
+                    started_at=request_time,
+                )
             return await deps.journal.handle(
                 session,
                 user,
@@ -226,17 +249,50 @@ async def handle_message(session, message: InboundMessage, settings: Settings, d
                 media_kind=media_kind,
                 media_text=media_text,
                 media_caption=media_caption,
+                started_at=request_time,
             )
 
         stage_started = perf_counter()
         response = await execution_context.run(_run_journal)
         logger.info("Inbox stage complete: provider=%s event_id=%s stage=journal elapsed_ms=%d", message.provider, message.event_id, (perf_counter() - stage_started) * 1000)
-        await record_turn(session, user, text, response)
-        await messaging_daily_status_service.refresh(session, user, message.provider, message.conversation_id)
+        try:
+            async with session.begin_nested():
+                await record_turn(session, user, text, response)
+        except Exception:
+            logger.exception("Conversation memory recording failed: provider=%s event_id=%s", message.provider, message.event_id)
+        try:
+            async with session.begin_nested():
+                await messaging_daily_status_service.refresh(
+                    session,
+                    user,
+                    message.provider,
+                    message.conversation_id,
+                    now=request_time,
+                )
+        except Exception:
+            logger.exception("Daily status refresh failed: provider=%s event_id=%s", message.provider, message.event_id)
         await outbox.reply(session, message.provider, message.conversation_id, response)
     finally:
         await _stop_typing(typing_stop, typing_task)
         logger.info("Inbox processing complete: provider=%s event_id=%s elapsed_ms=%d", message.provider, message.event_id, (perf_counter() - started) * 1000)
+
+
+async def _persist_retry_after_aborted_transaction(row_id: int, *, terminal: bool = False) -> None:
+    async with session_scope() as retry_session:
+        candidate = await lock_retry_candidate(retry_session, row_id)
+        if candidate is None:
+            await retry_session.rollback()
+            return
+        candidate.claim()
+        retry_token = candidate.lease_token
+        if retry_token is None:
+            await retry_session.rollback()
+            return
+        if terminal:
+            candidate.fail(retry_token)
+        else:
+            candidate.retry(retry_token)
+        await retry_session.commit()
 
 
 async def process_one(deps: InboxWorkerDeps | None = None) -> bool:
@@ -249,15 +305,35 @@ async def process_one(deps: InboxWorkerDeps | None = None) -> bool:
             await session.rollback()
             return False
         row.claim()
-        await session.flush()
+        lease_token = row.lease_token
+        row_id = row.id
+        terminal_failure = False
         try:
-            message = ingress.deserialize(row.payload)
-            await handle_message(session, message, settings, deps)
-            row.complete(row.lease_token)
+            await session.flush()
+            async with session.begin_nested():
+                message = ingress.deserialize(row.payload)
+                await handle_message(session, message, settings, deps, row.received_at)
+        except ingress.InboundPayloadError:
+            logger.error("Invalid persisted messaging inbox payload row id=%s", row.id)
+            terminal_failure = True
+            row.fail(lease_token)
+        except SQLAlchemyError:
+            logger.exception("Database failure while processing messaging inbox row id=%s", row_id)
+            await session.rollback()
+            await _persist_retry_after_aborted_transaction(row_id)
+            return True
         except Exception:
             logger.exception("Failed to process messaging inbox row id=%s", row.id)
-            row.retry(row.lease_token)
-        await session.commit()
+            row.retry(lease_token)
+        else:
+            row.complete(lease_token)
+        try:
+            await session.commit()
+        except Exception:
+            logger.exception("Inbox state commit failed for row id=%s", row_id)
+            await session.rollback()
+            await _persist_retry_after_aborted_transaction(row_id, terminal=terminal_failure)
+            return True
         # Signal only after the transaction is durable. The dispatcher always
         # also polls, so this is a latency improvement rather than correctness
         # dependency.

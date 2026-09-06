@@ -8,6 +8,7 @@ from app.domain.media_exceptions import (
     MediaProcessingCategory,
     MediaProcessingException,
 )
+from app.integrations.http_response import request_bounded_json
 
 MAX_VOICE_BYTES = 20_000_000
 
@@ -28,7 +29,7 @@ def _provider_failure(response: httpx.Response, cause: Exception) -> MediaProces
 class OpenAiVoiceTranscriber:
     def __init__(self, settings: Settings, http: httpx.AsyncClient | None = None) -> None:
         self._settings = settings
-        self._http = http or httpx.AsyncClient(base_url="https://api.openai.com/v1", timeout=httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0))
+        self._http = http or httpx.AsyncClient(base_url=settings.openai_base_url, timeout=httpx.Timeout(connect=5.0, read=60.0, write=30.0, pool=5.0))
 
     async def transcribe(self, data: bytes, mime_type: str | None) -> str:
         if not self._settings.openai_api_key:
@@ -39,11 +40,15 @@ class OpenAiVoiceTranscriber:
         files = {"file": ("voice.ogg", data, mime_type or "audio/ogg")}
         form = {"model": self._settings.openai_transcription_model}
         try:
-            response = await self._http.post(
-                "/audio/transcriptions", headers={"Authorization": f"Bearer {self._settings.openai_api_key}"}, data=form, files=files
+            payload = await request_bounded_json(
+                self._http,
+                "POST",
+                "/audio/transcriptions",
+                headers={"Authorization": f"Bearer {self._settings.openai_api_key}"},
+                data=form,
+                files=files,
             )
-            response.raise_for_status()
-            text = (response.json().get("text") or "").strip()
+            text = (payload.get("text") or "").strip() if isinstance(payload, dict) else ""
             if not text:
                 raise MediaProcessingException(MediaProcessingCategory.PROVIDER_RESPONSE, "OpenAI returned no transcript")
             return text

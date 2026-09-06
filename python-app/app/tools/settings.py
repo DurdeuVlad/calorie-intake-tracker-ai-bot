@@ -2,10 +2,18 @@
 
 from datetime import UTC, datetime
 
+from app.db.constraints import (
+    MAX_CALORIE_TARGET,
+    MAX_CALORIES,
+    MAX_TEXT_CHARS,
+    MAX_TIMEZONE_CHARS,
+    MIN_CALORIE_TARGET,
+    MIN_CALORIES,
+)
 from app.db.models.nutrition import PrivateFood
 from app.domain.agent_types import AgentContext, AgentToolResult
 from app.repositories import private_food_repo
-from app.tools.shared import _str
+from app.tools.shared import ValidationError, _optional_int, _text
 
 
 async def get_settings(executor, session, context: AgentContext, args, todos) -> AgentToolResult:
@@ -17,30 +25,47 @@ async def update_settings(executor, session, context: AgentContext, args, todos)
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
     s = await executor._settings_for(session, context)
+    if not args or all(args.get(key) is None for key in ("timezone", "calorieTarget", "reportsEnabled")):
+        return AgentToolResult.failure("VALIDATION_ERROR", "Provide at least one setting to update.")
+    timezone = None
     if "timezone" in args:
-        tz = _str(args, "timezone")
+        timezone = _text(args, "timezone", MAX_TIMEZONE_CHARS)
+        if not timezone or not timezone.strip():
+            return AgentToolResult.failure("VALIDATION_ERROR", "Use a valid IANA timezone.")
         try:
-            ZoneInfo(tz)
+            ZoneInfo(timezone)
         except (ZoneInfoNotFoundError, ValueError, KeyError):
             return AgentToolResult.failure("VALIDATION_ERROR", "Use a valid IANA timezone.")
-        s.timezone = tz
+
+    target = None
     if "calorieTarget" in args and args["calorieTarget"] is not None:
-        target = int(args["calorieTarget"])
-        if target < 1200 or target > 5000:
+        try:
+            target = _optional_int(args, "calorieTarget", min_value=MIN_CALORIE_TARGET, max_value=MAX_CALORIE_TARGET)
+        except ValidationError:
+            return AgentToolResult.failure("VALIDATION_ERROR", "The calorie target must be an integer from 1200 to 5000.")
+        if target is None:
             return AgentToolResult.failure("VALIDATION_ERROR", "The calorie target must be 1200-5000.")
-        s.calorie_target = target
+
+    reports_enabled = None
     if "reportsEnabled" in args and args["reportsEnabled"] is not None:
-        value = str(args["reportsEnabled"]).lower()
-        if value not in ("true", "false"):
+        reports_enabled = args["reportsEnabled"]
+        if not isinstance(reports_enabled, bool):
             return AgentToolResult.failure("VALIDATION_ERROR", "reportsEnabled must be true or false.")
-        s.reports_enabled = value == "true"
-    return await get_settings(executor, session, context, args, todos)
+
+    if timezone is not None:
+        s.timezone = timezone
+    if target is not None:
+        s.calorie_target = target
+    if reports_enabled is not None:
+        s.reports_enabled = reports_enabled
+    current = await get_settings(executor, session, context, args, todos)
+    return AgentToolResult.success({**current.data, "updated": True})
 
 
 async def save_private_food(executor, session, context: AgentContext, args, todos) -> AgentToolResult:
-    name = _str(args, "name")
-    kcal = int(args["caloriesPer100g"]) if args.get("caloriesPer100g") is not None else None
-    if not name or kcal is None or kcal < 0 or kcal > 10000:
+    name = _text(args, "name", MAX_TEXT_CHARS)
+    kcal = _optional_int(args, "caloriesPer100g", min_value=MIN_CALORIES, max_value=MAX_CALORIES)
+    if not name or not name.strip() or kcal is None:
         return AgentToolResult.failure("VALIDATION_ERROR", "A food name and valid calories per 100 g are required.")
     existing = await private_food_repo.find_by_user_and_name_ignore_case(session, context.user, name)
     if existing is None:

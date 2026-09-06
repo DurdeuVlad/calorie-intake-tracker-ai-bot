@@ -1,12 +1,18 @@
 # Nutrition resolution rules
 
-## Search-before-mutate priority
+## Decision flow for a food without explicit calories
 
-For any food or drink without explicit calories, always try to ground the value with `search_web`. `search_web` checks a fresh cache first, so call it normally: a cached grounded result avoids another outbound search.
+1. If the user gave explicit calories, use them directly. Skip all search/estimate tools.
+2. If a barcode/package or private-food result is available, use it.
+3. Call `search_web` to ground the value. If `search_web` returns TEMPORARY_FAILURE (unavailable) or NOT_FOUND, proceed to step 4 — do NOT ask the user for calories.
+4. Call `estimate_food` with a transparent typical-portion estimate. This is always preferred over asking the user for nutrition data they may not have.
+5. After estimate_food returns a quote, call `apply_journal_actions` with a CREATE action to log the entry.
 
-Fetch the strongest relevant result when its snippet lacks a usable number using `fetch_web_page`.
+Never ask the user for calories or grams for a single common food item. The user named a food they ate — your job is to estimate and log it, not to quiz them.
 
-Only use `estimate_food` after `search_web`/`fetch_web_page` are unavailable or yield no usable nutrition. Do not silently skip them.
+## When the user asks "cate calorii are X?" (a question, not a logging request)
+
+Answer the nutrition question using search_web or estimate_food. Offer to log it if they want, but do not call apply_journal_actions unless the user explicitly says to log it.
 
 ## Trusted sources
 

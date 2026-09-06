@@ -8,6 +8,13 @@ their own aliases."""
 import re
 from typing import Any
 
+from app.db.constraints import (
+    MAX_CALORIES,
+    MAX_CALORIES_PER_100G,
+    MAX_TEXT_CHARS,
+    MIN_CALORIES,
+    MIN_CALORIES_PER_100G,
+)
 from app.domain.agent_types import AgentContext, AgentToolResult
 from app.repositories import food_alias_repo
 from app.tools.shared import ValidationError
@@ -16,9 +23,6 @@ from app.tools.shared import ValidationError
 # bytes) in alias and canonical name strings. This prevents stored-data
 # prompt injection via control characters and keeps receipts clean.
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
-
-_MAX_ALIAS_LENGTH = 255
-_MAX_CANONICAL_LENGTH = 255
 
 
 def _is_int(value: Any) -> bool:
@@ -54,15 +58,17 @@ async def save_alias(executor, session, context: AgentContext, args, todos) -> A
     raw_canonical = args.get("canonicalName")
     if not isinstance(raw_alias, str) or not isinstance(raw_canonical, str):
         raise ValidationError("alias and canonicalName must be text.")
-    alias = _clean_text(raw_alias, "alias", _MAX_ALIAS_LENGTH)
-    canonical = _clean_text(raw_canonical, "canonicalName", _MAX_CANONICAL_LENGTH)
+    alias = _clean_text(raw_alias, "alias", MAX_TEXT_CHARS)
+    canonical = _clean_text(raw_canonical, "canonicalName", MAX_TEXT_CHARS)
 
     calories_per_100g = args.get("caloriesPer100g")
     fixed_calories = args.get("fixedCalories")
-    if calories_per_100g is not None and (not _is_int(calories_per_100g) or calories_per_100g <= 0 or calories_per_100g > 10000):
-        raise ValidationError("caloriesPer100g must be between 1 and 10000.")
-    if fixed_calories is not None and (not _is_int(fixed_calories) or fixed_calories < 0 or fixed_calories > 10000):
-        raise ValidationError("fixedCalories must be between 0 and 10000.")
+    if calories_per_100g is not None and (not _is_int(calories_per_100g) or calories_per_100g < MIN_CALORIES_PER_100G or calories_per_100g > MAX_CALORIES_PER_100G):
+        raise ValidationError(
+            f"caloriesPer100g must be between {MIN_CALORIES_PER_100G} and {MAX_CALORIES_PER_100G}."
+        )
+    if fixed_calories is not None and (not _is_int(fixed_calories) or fixed_calories < MIN_CALORIES or fixed_calories > MAX_CALORIES):
+        raise ValidationError(f"fixedCalories must be between {MIN_CALORIES} and {MAX_CALORIES}.")
     if calories_per_100g is not None and fixed_calories is not None:
         raise ValidationError("Provide either caloriesPer100g or fixedCalories, not both.")
 
@@ -85,7 +91,7 @@ async def resolve_alias(executor, session, context: AgentContext, args, todos) -
     raw_alias = args.get("alias")
     if not isinstance(raw_alias, str):
         raise ValidationError("alias must be text.")
-    alias = _clean_text(raw_alias, "alias", _MAX_ALIAS_LENGTH)
+    alias = _clean_text(raw_alias, "alias", MAX_TEXT_CHARS)
     record = await food_alias_repo.find_by_user_and_alias_ignore_case(session, context.user, alias)
     if record is None:
         return AgentToolResult.success({"resolved": False, "alias": alias})

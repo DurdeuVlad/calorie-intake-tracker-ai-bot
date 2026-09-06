@@ -6,8 +6,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.constraints import UNDO_WINDOW
 
-UNDO_WINDOW_SECONDS = 10 * 60
+UNDO_WINDOW_SECONDS = int(UNDO_WINDOW.total_seconds())
 
 
 class JournalChangeSet(Base):

@@ -12,6 +12,7 @@ modules. The SSRF guard (_is_safe_external_url, _resolve_safe_final_url) moved
 to nutrition.py."""
 
 import json
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -21,6 +22,8 @@ from typing import Any
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.tool_schemas import tool_definitions
+from app.db.constraints import MAX_CALORIES, MAX_TOOL_ARGUMENT_CHARS, MIN_CALORIES
 from app.db.models.entries import FoodEntry, FoodItem
 from app.db.models.nutrition import (
     NutritionEvidence,
@@ -52,15 +55,68 @@ from app.tools.nutrition import (
 from app.tools.registry import HANDLERS
 from app.tools.shared import (  # noqa: F401
     ValidationError,
+    _derived_calories,
     _resolve_meal_instant,
     _search_date,
 )
 
 RefreshDailyStatus = Callable[[AsyncSession, Any, str], Awaitable[None]]
+_TOOL_SCHEMAS = {definition["function"]["name"]: definition["function"]["parameters"] for definition in tool_definitions()}
+
+
+def _unknown_argument_path(schema: dict[str, Any], value: object, path: str = "") -> str | None:
+    if not isinstance(value, dict) or schema.get("type") != "object":
+        if isinstance(value, list) and schema.get("type") == "array":
+            item_schema = schema.get("items")
+            if isinstance(item_schema, dict):
+                for index, item in enumerate(value):
+                    unknown = _unknown_argument_path(item_schema, item, f"{path}[{index}]")
+                    if unknown:
+                        return unknown
+        return None
+
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    for key in value:
+        if key not in properties:
+            return f"{path}.{key}" if path else key
+    for key, item in value.items():
+        property_schema = properties.get(key)
+        if isinstance(property_schema, dict):
+            unknown = _unknown_argument_path(property_schema, item, f"{path}.{key}" if path else key)
+            if unknown:
+                return unknown
+    return None
 
 
 async def _noop_refresh(session: AsyncSession, user, chat_id: str) -> None:
     return None
+
+
+# Purely conversational messages that must never trigger journal mutations.
+# This is a deterministic safety guard — the prompt instructs the model, but
+# the executor enforces it so a prompt-hallucinated mutation on "thanks"
+# cannot persist food the user never asked to log.
+_CONVERSATIONAL_RE = re.compile(
+    r"^(?:mul\s*țumesc|mul\W*umesc|mersi|multumesc|thanks|thank you|thx|ok\b|ok\W*|"
+    r"bine|great|super|perfect|de acord|agree|da\b|yes\b|yeah|yep|salut\b|hi\b|hello\b|"
+    r"hey\b|servus\b|buna\b|bună\b|ceau\b|pa\b|la revedere|bye\b|gata|"
+    r"no problem|np|cool|nice|foarte bine|foarte bun|excelent|"
+    r"👍|👌|🙂|😄|😅|😊|💪|❤️|🔥)\W*$",
+    re.IGNORECASE,
+)
+
+
+def _is_conversational_message(message: str) -> bool:
+    """True when the user's message is a greeting, thanks, or bare acknowledgment
+    with no food-logging intent. Emoji-only messages are conversational."""
+    if not message:
+        return True
+    stripped = message.strip()
+    if not stripped:
+        return True
+    return len(stripped) <= 30 and bool(_CONVERSATIONAL_RE.match(stripped))
 
 
 class JournalToolExecutor:
@@ -80,18 +136,40 @@ class JournalToolExecutor:
         self._web_search_cache: dict[str, tuple[datetime, list[dict[str, str]]]] = {}
 
     async def execute(self, session: AsyncSession, context: AgentContext, call: ToolCall, todos: list[str]) -> AgentToolResult:
+        raw_arguments = call.arguments
+        if raw_arguments is None or raw_arguments == "":
+            raw_arguments = "{}"
+        if not isinstance(raw_arguments, str) or len(raw_arguments) > MAX_TOOL_ARGUMENT_CHARS:
+            return AgentToolResult.failure("VALIDATION_ERROR", "The supplied details are invalid.")
         try:
-            args: dict[str, Any] = json.loads(call.arguments or "{}")
-        except json.JSONDecodeError:
+            args = json.loads(raw_arguments)
+        except (TypeError, ValueError, RecursionError):
+            return AgentToolResult.failure("VALIDATION_ERROR", "The supplied details are invalid.")
+        if not isinstance(args, dict):
             return AgentToolResult.failure("VALIDATION_ERROR", "The supplied details are invalid.")
 
+        if not isinstance(call.name, str):
+            return AgentToolResult.failure("VALIDATION_ERROR", "That tool is not available.")
+        # Deterministic guard: a purely conversational message (greeting, thanks,
+        # bare acknowledgment) must never trigger a journal mutation, even if
+        # the model hallucinates logging intent from conversation memory.
+        if call.name == "apply_journal_actions" and _is_conversational_message(context.message):
+            return AgentToolResult.failure(
+                "NOT_A_LOGGING_REQUEST",
+                "The current message is conversational and does not request food logging.",
+            )
+        handler = HANDLERS.get(call.name)
+        if handler is None:
+            return AgentToolResult.failure("VALIDATION_ERROR", "That tool is not available.")
+        schema = _TOOL_SCHEMAS.get(call.name)
+        if schema is not None:
+            unknown = _unknown_argument_path(schema, args)
+            if unknown:
+                return AgentToolResult.failure("VALIDATION_ERROR", "The supplied details are invalid.")
         try:
-            handler = HANDLERS.get(call.name)
-            if handler is None:
-                return AgentToolResult.failure("VALIDATION_ERROR", "That tool is not available.")
             return await handler(self, session, context, args, todos)
-        except ValidationError:
-            return AgentToolResult.failure("VALIDATION_ERROR", "The supplied details are invalid.")
+        except ValidationError as failure:
+            return AgentToolResult.failure("VALIDATION_ERROR", str(failure) or "The supplied details are invalid.")
 
     # --- SSRF guards (delegated to nutrition module) ---------------------
 
@@ -115,9 +193,7 @@ class JournalToolExecutor:
         from zoneinfo import ZoneInfo
 
         zone = ZoneInfo(settings.timezone)
-        from datetime import datetime
-
-        today = datetime.now(zone).date()
+        today = context.started_at.astimezone(zone).date()
         start, end = food_entry_repo.day_bounds(today, zone)
         return await food_entry_repo.find_between(session, context.user, start, end)
 
@@ -153,7 +229,7 @@ class JournalToolExecutor:
         return quote
 
     def _quote_item(self, quote: PendingNutritionQuote) -> MealItem:
-        total = round(float(quote.grams) * quote.calories_per_100g / 100.0)
+        total = _derived_calories(float(quote.grams), quote.calories_per_100g)
         return MealItem(
             name=quote.product_name,
             grams=float(quote.grams),
@@ -199,8 +275,8 @@ class JournalToolExecutor:
 
     def _record_packaged_evidence(
         self, session: AsyncSession, entry: FoodEntry, item: FoodItem, quote: PendingNutritionQuote, captured_at: datetime
-    ) -> None:
-        total = round(float(quote.grams) * quote.calories_per_100g / 100.0)
+    ) -> NutritionEvidence:
+        total = _derived_calories(float(quote.grams), quote.calories_per_100g)
         candidate = json.dumps(
             {"name": quote.product_name, "brand": quote.brand, "barcode": quote.barcode},
             separators=(",", ":"),
@@ -208,16 +284,38 @@ class JournalToolExecutor:
         )
         grams = Decimal(str(quote.grams))
         derivation = f"round({grams} g × {quote.calories_per_100g} kcal / 100 g) = {total} kcal"
-        session.add(
-            NutritionEvidence(
-                evidence_id=uuid.uuid4(), food_entry_id=entry.id, food_item_id=item.id,
-                selected_quote_id=quote.quote_id, provider="open_food_facts", source_name="Open Food Facts",
-                source_url=quote.source_url, source_query=quote.source_query, selected_candidate=candidate,
-                quantity_grams=grams, calories_per_100g=quote.calories_per_100g, total_calories=total,
-                derivation=derivation, confidence="high", source_fetched_at=quote.source_fetched_at,
-                source_cache_hit=quote.source_cache_hit, captured_at=captured_at,
-            )
+        evidence = NutritionEvidence(
+            evidence_id=uuid.uuid4(), food_entry_id=entry.id, food_item_id=item.id,
+            selected_quote_id=quote.quote_id, provider="open_food_facts", source_name="Open Food Facts",
+            source_url=quote.source_url, source_query=quote.source_query, selected_candidate=candidate,
+            quantity_grams=grams, calories_per_100g=quote.calories_per_100g, total_calories=total,
+            derivation=derivation, confidence="high", source_fetched_at=quote.source_fetched_at,
+            source_cache_hit=quote.source_cache_hit, captured_at=captured_at,
         )
+        session.add(evidence)
+        return evidence
+
+    def _record_ai_estimate_evidence(
+        self, session: AsyncSession, entry: FoodEntry, item: FoodItem, quote: PendingNutritionQuote, captured_at: datetime
+    ) -> NutritionEvidence:
+        total = _derived_calories(float(quote.grams), quote.calories_per_100g)
+        candidate = json.dumps(
+            {"name": quote.product_name, "basis": quote.estimate_basis or "AI estimate"},
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        grams = Decimal(str(quote.grams))
+        derivation = f"{grams} g × {quote.calories_per_100g} kcal/100 g = {total} kcal"
+        evidence = NutritionEvidence(
+            evidence_id=uuid.uuid4(), food_entry_id=entry.id, food_item_id=item.id,
+            selected_quote_id=quote.quote_id, provider="ai_estimate", source_name="AI estimate",
+            source_url=None, source_query=None, selected_candidate=candidate,
+            quantity_grams=grams, calories_per_100g=quote.calories_per_100g, total_calories=total,
+            derivation=derivation, confidence="estimate", source_fetched_at=None,
+            source_cache_hit=False, captured_at=captured_at,
+        )
+        session.add(evidence)
+        return evidence
 
     def _synchronize_items_after_edit(self, current: list[FoodItem], description: str, total_calories: int) -> None:
         if not current:
@@ -234,7 +332,7 @@ class JournalToolExecutor:
                 revised = 0
             else:
                 revised = int((total_calories * max(0, item.calories or 0)) / old_total)
-            revised = max(0, min(10000, revised))
+            revised = max(MIN_CALORIES, min(MAX_CALORIES, revised))
             assigned += revised
             item.revise_calories(revised)
 

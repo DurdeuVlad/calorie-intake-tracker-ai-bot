@@ -1,6 +1,8 @@
 from app.agent.capabilities import registry as capabilities_registry
+from app.agent.openai_model_client import _user_content
 from app.agent.system_prompt import instructions
 from app.agent.tool_schemas import all_tool_names, tool_categories, tool_definitions
+from app.domain.agent_types import AgentContext
 
 
 def test_core_prompt_is_small_and_contains_capability_index():
@@ -45,6 +47,33 @@ def test_search_web_description_preserves_trusted_source_rule():
     search_web = next(tool for tool in tool_definitions() if tool["function"]["name"] == "search_web")
     assert "trusted local, private-food, or exact packaged result" in search_web["function"]["description"]
     assert "Checks a fresh cache before an outbound query" in search_web["function"]["description"]
+
+
+def test_media_context_is_not_duplicated_in_model_user_content():
+    voice = AgentContext(
+        user=None,
+        chat_id="1",
+        message="transcript\nUser caption: oatmeal",
+        media_kind="voice",
+        media_text="transcript",
+        media_caption="oatmeal",
+    )
+    photo = AgentContext(
+        user=None,
+        chat_id="1",
+        message="photo interpretation\nUser caption: lunch",
+        media_kind="photo",
+        media_text="photo interpretation",
+    )
+
+    voice_content = _user_content(voice)
+    photo_content = _user_content(photo)
+
+    assert voice_content.count("[Server transcript:") == 1
+    assert voice_content.count("oatmeal") == 1
+    assert "[Server transcript: transcript]" in voice_content
+    assert photo_content.count("[Photo interpretation:") == 1
+    assert "[Photo interpretation: photo interpretation]" in photo_content
 
 
 def test_tool_categories_cover_all_tools():

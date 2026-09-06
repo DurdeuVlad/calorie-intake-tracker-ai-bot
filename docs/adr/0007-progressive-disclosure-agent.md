@@ -28,7 +28,7 @@ Capability docs are server-trusted content (stored as files, not model-generated
 
 ### 2. Model-driven replies from structured tool results
 
-Tool results are enriched with receipt-ready structured data: `calories`, `description`, `date`, `nutritionSource`, `nutritionConfidence`, `derivation`, `undoDeadline`, `sourceUrl`, `sourceName`. The deterministic reply templates (`_canonical_reply`, `_meal_receipt`, `_media_lines`, `_VERBS`) are removed from `journal_agent.py`. The model writes the full reply from the structured tool result.
+Tool results are enriched with receipt-ready structured data: `calories`, `description`, `date`, `nutritionSource`, `nutritionConfidence`, `derivation`, `undoDeadline`, `sourceUrl`, `sourceName`. The normal deterministic reply templates (`_canonical_reply`, `_meal_receipt`, `_media_lines`, `_VERBS`) are removed from `journal_agent.py`. The model writes the full reply from the structured tool result. Server-rendered fallback acknowledgements are retained for provider failure after any durable tool result, including journal mutations and pending nutrition choices, so the user is never told to retry an action that already committed.
 
 The system prompt instructs the model: "After a successful `apply_journal_actions`, write a short receipt: what was logged, calories, source/confidence, derivation if available, and the undo deadline."
 

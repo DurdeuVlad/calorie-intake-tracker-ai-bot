@@ -14,6 +14,33 @@ services:
       timeout: 3s
       retries: 10
     ports: ["127.0.0.1:5432:5432"]
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes: [redis-data:/data]
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:4000/health/liveness').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports: ["127.0.0.1:4000:4000"]
   app:
     build: .
     init: true
@@ -42,6 +69,7 @@ services:
       ALLOWED_MATTERMOST_USER_IDS: ${ALLOWED_MATTERMOST_USER_IDS:-}
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Europe/Bucharest}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://litellm:4000/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
       AGENT_MAX_TOOL_CALLS: ${AGENT_MAX_TOOL_CALLS:-10}
       OPENAI_TRANSCRIPTION_MODEL: ${OPENAI_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}
@@ -49,6 +77,8 @@ services:
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-}
       BROWSERLESS_BASE_URL: ${BROWSERLESS_BASE_URL:-}
       BROWSERLESS_TOKEN: ${BROWSERLESS_TOKEN:-}
+      BROWSERLESS_EGRESS_RESTRICTED: ${BROWSERLESS_EGRESS_RESTRICTED:-false}
+      BROWSERLESS_EGRESS_PROXY_URL: ${BROWSERLESS_EGRESS_PROXY_URL:-}
       MANAGEMENT_PORT: ${MANAGEMENT_PORT:-8081}
       FOOD_JOURNAL_SCHEDULING_ENABLED: ${FOOD_JOURNAL_SCHEDULING_ENABLED:-true}
       FOOD_JOURNAL_OUTBOX_DELAY_MS: ${FOOD_JOURNAL_OUTBOX_DELAY_MS:-5000}
@@ -60,6 +90,8 @@ services:
         max-file: "3"
     depends_on:
       postgres:
+        condition: service_healthy
+      litellm:
         condition: service_healthy
   mattermost-db:
     image: postgres:16-alpine
@@ -91,5 +123,6 @@ services:
         condition: service_healthy
 volumes:
   postgres-data:
+  redis-data:
   mattermost-db-data:
   mattermost-data:

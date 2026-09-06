@@ -74,6 +74,41 @@ async def test_weekly_summary_aggregates_per_day_and_returns_total_average_targe
 
 
 @pytest.mark.asyncio
+async def test_today_summary_uses_inbound_receipt_time_for_delayed_messages():
+    executor = JournalToolExecutor()
+    zone = ZoneInfo("Europe/Bucharest")
+    received_at = datetime(2024, 1, 31, 23, 59, tzinfo=UTC)
+    received_local_date = received_at.astimezone(zone).date()
+    async with session_scope() as session:
+        user = await get_or_create_by_telegram_user_id(session, 600110, "Delayed", "Europe/Bucharest")
+        session.add(
+            _entry(
+                user.id,
+                datetime.combine(received_local_date, datetime.min.time(), tzinfo=zone) + timedelta(minutes=30),
+                275,
+                "delayed meal",
+            )
+        )
+        await session.commit()
+
+        result = await executor.execute(
+            session,
+            AgentContext(
+                user=user,
+                chat_id="1",
+                message="how many calories today",
+                started_at=received_at,
+            ),
+            _tool_call("get_today_summary"),
+            [],
+        )
+
+    assert result.ok
+    assert result.data["calories"] == 275
+    assert result.data["entries"] == 1
+
+
+@pytest.mark.asyncio
 async def test_weekly_summary_rejects_future_reference_date():
     executor = JournalToolExecutor()
     zone = ZoneInfo("Europe/Bucharest")

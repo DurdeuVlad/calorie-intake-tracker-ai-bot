@@ -1,9 +1,24 @@
 from datetime import datetime, time
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, Time
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    String,
+    Time,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.constraints import (
+    MAX_CALORIE_TARGET,
+    MAX_PROVIDER_CHARS,
+    MAX_TEXT_CHARS,
+    MAX_TIMEZONE_CHARS,
+    MIN_CALORIE_TARGET,
+)
 
 
 class FoodUser(Base):
@@ -11,7 +26,7 @@ class FoodUser(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
-    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(MAX_TEXT_CHARS), nullable=True)
     created_at: Mapped[datetime] = mapped_column()
 
     settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False)
@@ -19,18 +34,24 @@ class FoodUser(Base):
 
 class UserSettings(Base):
     __tablename__ = "user_settings"
+    __table_args__ = (
+        CheckConstraint(
+            f"calorie_target IS NULL OR (calorie_target >= {MIN_CALORIE_TARGET} AND calorie_target <= {MAX_CALORIE_TARGET})",
+            name="ck_user_settings_calorie_target_range",
+        ),
+    )
 
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("food_users.id", ondelete="CASCADE"), primary_key=True
     )
-    timezone: Mapped[str] = mapped_column(String(64))
+    timezone: Mapped[str] = mapped_column(String(MAX_TIMEZONE_CHARS))
     calorie_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reports_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     morning_report_time: Mapped[time] = mapped_column(Time, default=time(8, 0))
     evening_report_time: Mapped[time] = mapped_column(Time, default=time(22, 0))
     pinned_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    onboarding_stage: Mapped[str] = mapped_column(String(32), default="TIMEZONE", server_default="TIMEZONE")
+    onboarding_stage: Mapped[str] = mapped_column(String(MAX_PROVIDER_CHARS), default="TIMEZONE", server_default="TIMEZONE")
     preferred_language: Mapped[str] = mapped_column(String(2), default="ro", server_default="ro")
 
     user: Mapped[FoodUser] = relationship(back_populates="settings")

@@ -10,6 +10,14 @@ Collect container stdout/stderr and the metrics endpoint privately. Alert on sta
 
 Compose retains at most three 10 MB JSON log files per application container. This is only a local guardrail, not a replacement for centralized log retention.
 
+### Browserless egress boundary
+
+Keep `BROWSERLESS_EGRESS_RESTRICTED=false` unless Browserless is configured to send navigation through an operator-controlled filtering proxy. When enabling it, set `BROWSERLESS_EGRESS_PROXY_URL` to that proxy and configure the proxy to deny loopback, private, link-local, reserved, and cloud-metadata networks, including IPv4 and IPv6 forms. The application passes the proxy and an exact-domain allow-list on every Browserless request and remains disabled if either setting is absent. Verify the proxy policy from the deployment environment before release; the environment variable alone is not a security control.
+
+### Data-boundary migration preflight
+
+Before applying the data-boundary Alembic revision to an existing database, run `python -m app.db.migration_preflight` from `python-app`. The command reports any rows that would violate the new CHECK constraints and exits nonzero without changing data. Remediate and verify the reported rows before running `python -m alembic upgrade head`; do not silently cap journal calories or quantities.
+
 ## Backup and restore
 
 Back up PostgreSQL daily with tested point-in-time or dump recovery. Keep backups encrypted and access-controlled. The database is the system of record; original media is intentionally unrecoverable.

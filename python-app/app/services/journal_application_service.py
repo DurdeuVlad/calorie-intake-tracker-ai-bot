@@ -12,16 +12,15 @@ continue_onboarding for non-slash messages, matching confirmed production
 behavior rather than an idealized one.
 """
 
+from datetime import UTC, datetime
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.constraints import MAX_CALORIE_TARGET, MIN_CALORIE_TARGET
 from app.db.models.users import FoodUser, UserSettings
 from app.domain.agent_types import AgentContext
 from app.repositories import food_entry_repo, food_user_repo, telegram_access_repo
-
-MIN_CALORIE_TARGET = 1200
-MAX_CALORIE_TARGET = 5000
 
 
 class Agent(Protocol):
@@ -96,12 +95,17 @@ def continue_onboarding(settings: UserSettings, message: str, romanian: bool) ->
     )
 
 
-async def _today_text(session, user: FoodUser, settings: UserSettings, romanian: bool) -> str:
-    from datetime import datetime
+async def _today_text(
+    session,
+    user: FoodUser,
+    settings: UserSettings,
+    romanian: bool,
+    reference_time: datetime | None = None,
+) -> str:
     from zoneinfo import ZoneInfo
 
     zone = ZoneInfo(settings.timezone)
-    today = datetime.now(zone).date()
+    today = (reference_time or datetime.now(UTC)).astimezone(zone).date()
     calories, _count = await food_entry_repo.today_totals(session, user, settings.timezone, today)
     target = settings.calorie_target
     if romanian:
@@ -116,7 +120,15 @@ def _command_token(raw: str) -> str:
     return raw.strip().lower().split(maxsplit=1)[0]
 
 
-async def command(session, user: FoodUser, settings: UserSettings, raw: str, romanian: bool, is_admin: bool = False) -> str:
+async def command(
+    session,
+    user: FoodUser,
+    settings: UserSettings,
+    raw: str,
+    romanian: bool,
+    is_admin: bool = False,
+    reference_time: datetime | None = None,
+) -> str:
     cmd = _command_token(raw)
     if cmd == "/start":
         if settings.onboarding_completed:
@@ -138,7 +150,7 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
             "/settings, /cancel, /privacy, /undo" + admin_commands
         )
     if cmd in ("/today", "/report"):
-        return await _today_text(session, user, settings, romanian)
+        return await _today_text(session, user, settings, romanian, reference_time)
     if cmd == "/settings":
         target_text = ("nesetată" if romanian else "not set") if settings.calorie_target is None else f"{settings.calorie_target} kcal"
         reports_text = ("pornite" if settings.reports_enabled else "oprite") if romanian else ("on" if settings.reports_enabled else "off")
@@ -181,8 +193,10 @@ class JournalApplicationService:
         media_kind: str | None = None,
         media_text: str | None = None,
         media_caption: str | None = None,
+        started_at: datetime | None = None,
     ) -> str:
         settings = await food_user_repo.get_settings(session, user.id)
+        request_time = started_at or datetime.now(UTC)
 
         if message.startswith("/"):
             romanian = settings.preferred_language == "ro"
@@ -194,14 +208,22 @@ class JournalApplicationService:
                 # "anuleaza") already calls through the agent.
                 if self._agent is None:
                     return unavailable(romanian)
-                context = AgentContext(user=user, chat_id=chat_id, message=message)
+                context = AgentContext(user=user, chat_id=chat_id, message=message, started_at=request_time)
                 return await self._agent.run_undo(session, context)
             is_private_admin = (
                 user.telegram_user_id is not None
                 and chat_id == str(user.telegram_user_id)
                 and await telegram_access_repo.is_admin(session, user.telegram_user_id)
             )
-            return await command(session, user, settings, message, romanian, is_private_admin)
+            return await command(
+                session,
+                user,
+                settings,
+                message,
+                romanian,
+                is_private_admin,
+                request_time,
+            )
 
         # v2.0: the model decides the reply language. is_romanian() is no longer
         # called in the agent path. preferred_language is kept as a hint for
@@ -216,6 +238,7 @@ class JournalApplicationService:
                 media_kind=media_kind,
                 media_text=media_text,
                 media_caption=media_caption,
+                started_at=request_time,
             )
             return await self._agent.run(session, context)
         return unavailable(settings.preferred_language == "ro")

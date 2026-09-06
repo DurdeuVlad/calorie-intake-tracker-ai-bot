@@ -23,6 +23,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.constraints import (
+    MAX_CALORIES,
+    MAX_CALORIES_PER_100G,
+    MAX_TEXT_CHARS,
+    MIN_CALORIES,
+    MIN_CALORIES_PER_100G,
+)
 
 
 class FoodAlias(Base):
@@ -30,11 +37,11 @@ class FoodAlias(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "alias_lower", name="uq_food_aliases_user_alias_ci"),
         CheckConstraint(
-            "calories_per_100g IS NULL OR (calories_per_100g > 0 AND calories_per_100g <= 10000)",
+            f"calories_per_100g IS NULL OR (calories_per_100g >= {MIN_CALORIES_PER_100G} AND calories_per_100g <= {MAX_CALORIES_PER_100G})",
             name="ck_alias_cph_range",
         ),
         CheckConstraint(
-            "fixed_calories IS NULL OR (fixed_calories >= 0 AND fixed_calories <= 10000)",
+            f"fixed_calories IS NULL OR (fixed_calories >= {MIN_CALORIES} AND fixed_calories <= {MAX_CALORIES})",
             name="ck_alias_fixed_range",
         ),
         CheckConstraint(
@@ -45,9 +52,9 @@ class FoodAlias(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("food_users.id", ondelete="CASCADE"))
-    alias: Mapped[str] = mapped_column(String(255))
-    alias_lower: Mapped[str] = mapped_column(String(255), Computed("lower(alias)", persisted=True))
-    canonical_name: Mapped[str] = mapped_column(String(255))
+    alias: Mapped[str] = mapped_column(String(MAX_TEXT_CHARS))
+    alias_lower: Mapped[str] = mapped_column(String(MAX_TEXT_CHARS), Computed("lower(alias)", persisted=True))
+    canonical_name: Mapped[str] = mapped_column(String(MAX_TEXT_CHARS))
     calories_per_100g: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fixed_calories: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column()

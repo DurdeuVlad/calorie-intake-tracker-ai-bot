@@ -1,7 +1,7 @@
 """Provider-neutral per-turn status text, ported from MessagingDailyStatusService.java.
 Distinct from the Telegram-only pinned status in daily_status_service.py."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,10 +15,16 @@ from app.repositories import (
 )
 
 
-async def refresh(session: AsyncSession, user: FoodUser, provider: str, conversation_id: str) -> None:
+async def refresh(
+    session: AsyncSession,
+    user: FoodUser,
+    provider: str,
+    conversation_id: str,
+    now: datetime | None = None,
+) -> None:
     settings = await food_user_repo.get_settings(session, user.id)
     zone = ZoneInfo(settings.timezone)
-    today = datetime.now(zone).date()
+    today = (now or datetime.now(UTC)).astimezone(zone).date()
     start, end = food_entry_repo.day_bounds(today, zone)
     rows = await food_entry_repo.find_between(session, user, start, end)
     total = sum(r.calories or 0 for r in rows)

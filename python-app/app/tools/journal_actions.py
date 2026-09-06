@@ -1,44 +1,79 @@
 """Journal mutation tools: apply_journal_actions (CREATE/EDIT/MOVE/DELETE) and undo_last_change."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from app.db.constraints import (
+    MAX_ACTIONS_PER_BATCH,
+    MAX_CALORIES,
+    MAX_DATE_CHARS,
+    MAX_PROVIDER_CHARS,
+    MAX_QUANTITY,
+    MAX_TEXT_CHARS,
+    MAX_UNIT_CHARS,
+    MAX_WEB_SEARCH_RESULTS,
+    MIN_CALORIES,
+    UNDO_WINDOW,
+)
 from app.db.models.entries import FoodEntry, FoodItem
 from app.db.models.journal_changes import JournalChangeSet
-from app.db.models.nutrition import PendingNutritionQuote
+from app.db.models.nutrition import NutritionEvidence, PendingNutritionQuote
 from app.domain import journal_entry_snapshot as snapshot
 from app.domain.agent_types import AgentToolFailure, AgentToolResult
 from app.domain.quantity_unit import QuantityUnit
 from app.repositories import (
     food_entry_repo,
     food_item_repo,
+    food_user_repo,
     journal_change_set_repo,
+    nutrition_evidence_repo,
     pending_nutrition_quote_repo,
 )
 from app.tools.shared import (
-    MAX_ACTIONS_PER_BATCH,
+    MAX_DATABASE_ID,
     ValidationError,
-    _decimal_number,
     _normalize,
+    _optional_int,
+    _quantity_number,
     _quantity_unit,
     _quote_id,
     _resolve_meal_instant,
     _search_date,
-    _str,
     _summary,
+    _text,
     _unverified_source_claim,
+    _valid_calories_per_100g,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def _settings_for(executor, session, context):
     return await executor._settings_for(session, context)
 
 
+async def _evidence_for_items(session, items: list[FoodItem]):
+    return await nutrition_evidence_repo.find_by_food_item_ids(session, [item.id for item in items])
+
+
+async def _refresh_daily_status_safely(executor, session, context) -> None:
+    """Do not let optional pinned-status bookkeeping roll back journal state."""
+    try:
+        async with session.begin_nested():
+            await executor.refresh_daily_status(session, context.user, context.chat_id)
+    except Exception:
+        logger.exception("Pinned daily status refresh failed for user_id=%s", context.user.id)
+
+
 async def _owned_entry(session, context, args) -> FoodEntry:
     if "entryId" not in args:
         raise ValidationError("An entry ID is required.")
-    entry = await food_entry_repo.find_by_id_and_user(session, int(args["entryId"]), context.user)
+    entry_id = _optional_int(args, "entryId", min_value=1, max_value=MAX_DATABASE_ID)
+    if entry_id is None:
+        raise ValidationError("An entry ID is required.")
+    entry = await food_entry_repo.find_by_id_and_user(session, entry_id, context.user, for_update=True)
     if entry is None:
         raise AgentToolFailure(AgentToolResult.failure("NOT_FOUND", "No matching journal entry exists."))
     return entry
@@ -80,16 +115,15 @@ def _action_failure(action_type: str, message: str) -> dict[str, Any]:
 
 
 async def _create_action(executor, session, context, args, change_set, now, timezone_name) -> dict[str, Any]:
-    description = _str(args, "description") or _str(args, "name")
-    if not description:
-        raise ValidationError("A description is required.")
-    calories: int | None = int(args["calories"]) if "calories" in args and args["calories"] is not None else None
-    requested_source = _str(args, "nutritionSource")
+    description = _text(args, "description", MAX_TEXT_CHARS) or _text(args, "name", MAX_TEXT_CHARS)
+    calories = _optional_int(args, "calories", min_value=MIN_CALORIES, max_value=MAX_CALORIES)
+    requested_source = _text(args, "nutritionSource", MAX_PROVIDER_CHARS)
     source = _normalize(requested_source, "manual", {"manual", "private", "open_food_facts", "open_food_facts_estimate", "ai_estimate", "mixed"})
-    confidence = _normalize(_str(args, "nutritionConfidence"), "high" if source == "manual" else "estimate", {"high", "estimate", "unknown"})
-    quantity = _decimal_number(args, "quantity")
-    unit = _quantity_unit(_str(args, "unit"), quantity)
+    confidence = _normalize(_text(args, "nutritionConfidence", MAX_PROVIDER_CHARS), "high" if source == "manual" else "estimate", {"high", "estimate", "unknown"})
+    quantity = _quantity_number(args, "quantity")
+    unit = _quantity_unit(_text(args, "unit", MAX_UNIT_CHARS), quantity)
     consumed: list[PendingNutritionQuote] = []
+    created_evidence: dict[int, NutritionEvidence] = {}
     receipt: dict[str, Any] = {"quantity": quantity, "unit": unit}
     unverified_source = args.get("quoteId") is None and _unverified_source_claim(requested_source)
     derivation: str | None = None
@@ -108,8 +142,14 @@ async def _create_action(executor, session, context, args, change_set, now, time
         quote = await pending_nutrition_quote_repo.lock_owned_active(session, quote_id, context.user, datetime.now(UTC)) if quote_id else None
         if quote is None:
             raise AgentToolFailure(AgentToolResult.failure("NOT_FOUND", "The selected nutrition result is unavailable or expired."))
+        if quote.quote_type not in {"PACKAGED_MATCH", "AI_ESTIMATE"}:
+            raise ValidationError("The selected nutrition result has an unsupported type.")
+        if not _valid_calories_per_100g(quote.calories_per_100g):
+            raise ValidationError("The selected nutrition result has invalid calorie data.")
         quoted = executor._quote_item(quote)
         calories = quoted.total_calories
+        if calories > MAX_CALORIES:
+            raise ValidationError(f"The selected nutrition result exceeds the {MAX_CALORIES} kcal journal limit.")
         quantity = quoted.grams
         unit = QuantityUnit.G.value
         receipt.update({"quantity": quantity, "unit": unit})
@@ -125,18 +165,27 @@ async def _create_action(executor, session, context, args, change_set, now, time
             source_name = "Open Food Facts"
         consumed.append(quote)
 
-    if calories is None or calories <= 0 or calories > 10000:
-        raise ValidationError("Calories must be between 1 and 10000.")
-    if quantity is not None and (quantity <= 0 or quantity > 100000):
+    if not description or not description.strip():
+        raise ValidationError("A description is required unless the selected quote supplies one.")
+    if calories is None or calories < MIN_CALORIES or calories > MAX_CALORIES:
+        raise ValidationError(f"Calories must be between {MIN_CALORIES} and {MAX_CALORIES}.")
+    if quantity is not None and (quantity <= 0 or quantity > float(MAX_QUANTITY)):
         raise ValidationError("Quantity must be positive.")
 
-    eaten_at = _resolve_meal_instant(context, timezone_name, _str(args, "date"), _str(args, "localTime"))
+    eaten_at = _resolve_meal_instant(context, timezone_name, _text(args, "date", MAX_DATE_CHARS), _text(args, "localTime", MAX_DATE_CHARS))
     entry = FoodEntry(user_id=context.user.id, original_message=description, eaten_at=eaten_at, calories=calories, nutrition_source=source, confidence=confidence, created_at=now)
     session.add(entry)
     await session.flush()
+    quantity_value = Decimal(str(quantity)) if quantity is not None else None
     item = FoodItem(
-        entry_id=entry.id, name=description, quantity=Decimal(str(quantity)) if quantity is not None else None,
-        quantity_unit=unit, calories=calories, nutrition_source=source, nutrition_confidence=confidence,
+        entry_id=entry.id,
+        name=description,
+        quantity_grams=quantity_value if unit == QuantityUnit.G.value else None,
+        quantity=quantity_value,
+        quantity_unit=unit,
+        calories=calories,
+        nutrition_source=source,
+        nutrition_confidence=confidence,
     )
     session.add(item)
     await session.flush()
@@ -144,10 +193,13 @@ async def _create_action(executor, session, context, args, change_set, now, time
     for quote in consumed:
         if quote.quote_type == "PACKAGED_MATCH":
             await executor._cache_selected(session, quote)
-            executor._record_packaged_evidence(session, entry, item, quote, now)
+            created_evidence[item.id] = executor._record_packaged_evidence(session, entry, item, quote, now)
+        elif quote.quote_type == "AI_ESTIMATE":
+            created_evidence[item.id] = executor._record_ai_estimate_evidence(session, entry, item, quote, now)
         await session.delete(quote)
 
-    after = snapshot.capture(entry, [item])
+    await session.flush()
+    after = snapshot.capture(entry, [item], created_evidence)
     if change_set is not None:
         change_set.add_mutation("CREATE", None, after)
     if unverified_source:
@@ -157,7 +209,7 @@ async def _create_action(executor, session, context, args, change_set, now, time
     if derivation is None and receipt.get("caloriesPer100g") is not None and quantity is not None and unit == "g":
         per_100g = receipt["caloriesPer100g"]
         derivation = f"{quantity} g × {per_100g} kcal/100 g = {calories} kcal"
-    undo_deadline = now + timedelta(minutes=10) if change_set is not None else None
+    undo_deadline = now + UNDO_WINDOW if change_set is not None else None
     return _action_success(
         "CREATE", entry, timezone_name, receipt,
         undo_deadline=undo_deadline, derivation=derivation,
@@ -165,45 +217,55 @@ async def _create_action(executor, session, context, args, change_set, now, time
     )
 
 
-async def _edit_action(executor, session, context, args, change_set, timezone_name) -> dict[str, Any]:
+async def _edit_action(executor, session, context, args, change_set, now, timezone_name) -> dict[str, Any]:
     entry = await _owned_entry(session, context, args)
     current = await food_item_repo.find_by_entry(session, entry)
-    before = snapshot.capture(entry, current)
-    description = _str(args, "description") or entry.original_message
-    calories = int(args["calories"]) if "calories" in args and args["calories"] is not None else entry.calories
-    if calories is None or calories < 0 or calories > 10000:
-        raise ValidationError("Calories must be between 0 and 10000.")
+    evidence_by_item_id = await _evidence_for_items(session, current)
+    before = snapshot.capture(entry, current, evidence_by_item_id)
+    description = _text(args, "description", MAX_TEXT_CHARS) or entry.original_message
+    if not description.strip():
+        raise ValidationError("A description is required.")
+    calories = _optional_int(args, "calories", min_value=MIN_CALORIES, max_value=MAX_CALORIES)
+    if calories is None:
+        calories = entry.calories
+    if calories is None or calories < MIN_CALORIES or calories > MAX_CALORIES:
+        raise ValidationError(f"Calories must be between {MIN_CALORIES} and {MAX_CALORIES}.")
     entry.revise(description, calories)
     executor._synchronize_items_after_edit(current, description, calories)
-    after = snapshot.capture(entry, current)
+    after = snapshot.capture(entry, current, evidence_by_item_id)
     if change_set is not None:
         change_set.add_mutation("EDIT", before, after)
-    undo_deadline = context.started_at + timedelta(minutes=10) if change_set is not None else None
+    undo_deadline = now + UNDO_WINDOW if change_set is not None else None
     return _action_success("EDIT", entry, timezone_name, undo_deadline=undo_deadline)
 
 
-async def _move_action(executor, session, context, args, change_set, timezone_name) -> dict[str, Any]:
+async def _move_action(executor, session, context, args, change_set, now, timezone_name) -> dict[str, Any]:
     entry = await _owned_entry(session, context, args)
+    requested_date = _text(args, "date", MAX_DATE_CHARS)
+    if not requested_date or not requested_date.strip():
+        raise ValidationError("A date is required when moving a journal entry.")
     current = await food_item_repo.find_by_entry(session, entry)
-    before = snapshot.capture(entry, current)
-    new_when = _resolve_meal_instant(context, timezone_name, _str(args, "date"), _str(args, "localTime"), entry.eaten_at)
+    evidence_by_item_id = await _evidence_for_items(session, current)
+    before = snapshot.capture(entry, current, evidence_by_item_id)
+    new_when = _resolve_meal_instant(context, timezone_name, requested_date, _text(args, "localTime", MAX_DATE_CHARS), entry.eaten_at)
     entry.move_to(new_when, context.started_at)
-    after = snapshot.capture(entry, current)
+    after = snapshot.capture(entry, current, evidence_by_item_id)
     if change_set is not None:
         change_set.add_mutation("MOVE", before, after)
-    undo_deadline = context.started_at + timedelta(minutes=10) if change_set is not None else None
+    undo_deadline = now + UNDO_WINDOW if change_set is not None else None
     return _action_success("MOVE", entry, timezone_name, undo_deadline=undo_deadline)
 
 
 async def _delete_action(executor, session, context, args, change_set, now, timezone_name) -> dict[str, Any]:
     entry = await _owned_entry(session, context, args)
     current = await food_item_repo.find_by_entry(session, entry)
-    before = snapshot.capture(entry, current)
+    evidence_by_item_id = await _evidence_for_items(session, current)
+    before = snapshot.capture(entry, current, evidence_by_item_id)
     entry.mark_deleted(now)
-    after = snapshot.capture(entry, current)
+    after = snapshot.capture(entry, current, evidence_by_item_id)
     if change_set is not None:
         change_set.add_mutation("DELETE", before, after)
-    undo_deadline = now + timedelta(minutes=10) if change_set is not None else None
+    undo_deadline = now + UNDO_WINDOW if change_set is not None else None
     return _action_success("DELETE", entry, timezone_name, undo_deadline=undo_deadline)
 
 
@@ -212,12 +274,15 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
     if not isinstance(requested, list) or not requested:
         return AgentToolResult.failure("VALIDATION_ERROR", "At least one journal action is required.")
     if len(requested) > MAX_ACTIONS_PER_BATCH:
-        return AgentToolResult.failure("VALIDATION_ERROR", "A message may contain at most 20 journal actions.")
+        return AgentToolResult.failure(
+            "VALIDATION_ERROR", f"A message may contain at most {MAX_ACTIONS_PER_BATCH} journal actions."
+        )
 
+    await food_user_repo.lock_for_journal_mutation(session, context.user.id)
     settings = await executor._settings_for(session, context)
-    now = context.started_at
+    now = datetime.now(UTC)
     await journal_change_set_repo.delete_expired(session, now)
-    change_set = JournalChangeSet(user_id=context.user.id, created_at=now, expires_at=now + timedelta(minutes=10))
+    change_set = JournalChangeSet(user_id=context.user.id, created_at=now, expires_at=now + UNDO_WINDOW)
 
     results: list[dict[str, Any]] = []
     changed = 0
@@ -225,14 +290,21 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
         if not isinstance(raw, dict):
             results.append(_action_failure("ACTION", "Invalid journal action."))
             continue
-        action_type = (raw.get("type") or "ACTION").upper()
+        raw_type = raw.get("type")
+        if raw_type is None:
+            action_type = "ACTION"
+        elif not isinstance(raw_type, str):
+            results.append(_action_failure("ACTION", "The action type must be text."))
+            continue
+        else:
+            action_type = raw_type.upper()
         try:
             if action_type == "CREATE":
                 result = await _create_action(executor, session, context, raw, change_set, now, settings.timezone)
             elif action_type == "EDIT":
-                result = await _edit_action(executor, session, context, raw, change_set, settings.timezone)
+                result = await _edit_action(executor, session, context, raw, change_set, now, settings.timezone)
             elif action_type == "MOVE":
-                result = await _move_action(executor, session, context, raw, change_set, settings.timezone)
+                result = await _move_action(executor, session, context, raw, change_set, now, settings.timezone)
             elif action_type == "DELETE":
                 result = await _delete_action(executor, session, context, raw, change_set, now, settings.timezone)
             else:
@@ -249,7 +321,7 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
     if changed > 0:
         session.add(change_set)
         await session.flush()
-        await executor.refresh_daily_status(session, context.user, context.chat_id)
+        await _refresh_daily_status_safely(executor, session, context)
 
     return AgentToolResult.success(
         {"results": results, "successful": changed, "failed": len(results) - changed, "undoAvailable": changed > 0}
@@ -257,19 +329,76 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
 
 
 async def undo_last_change(executor, session, context, args, todos) -> AgentToolResult:
-    now = context.started_at
+    try:
+        async with session.begin_nested():
+            return await _undo_last_change(executor, session, context, args, todos)
+    except (ArithmeticError, KeyError, TypeError, ValueError) as failure:
+        logger.warning("Malformed journal snapshot prevented Undo for user_id=%s: %s", context.user.id, type(failure).__name__)
+        return AgentToolResult.failure("CONFLICT", "The latest journal change can no longer be undone safely.")
+
+
+async def _undo_last_change(executor, session, context, args, todos) -> AgentToolResult:
+    await food_user_repo.lock_for_journal_mutation(session, context.user.id)
+    now = datetime.now(UTC)
     change_set = await journal_change_set_repo.find_first_undoable(session, context.user, now)
     if change_set is None:
         return AgentToolResult.failure("NOT_FOUND", "There is no recent journal change to undo.")
     mutations = list(reversed(change_set.mutations))
-    undone_actions: list[dict[str, Any]] = []
+    resolved_entries: list[tuple[Any, FoodEntry]] = []
+    validated_entry_ids: set[int] = set()
     for mutation in mutations:
         before = mutation.before_state
         after = mutation.after_state
-        entry_id = before["entryId"] if before else after["entryId"]
-        entry = await food_entry_repo.find_by_id_and_user(session, entry_id, context.user, include_deleted=True)
+        invalid_snapshot = (
+            not isinstance(after, dict)
+            or (before is not None and not isinstance(before, dict))
+            or (mutation.action_type != "CREATE" and before is None)
+            or (isinstance(after, dict) and "entryId" not in after)
+            or (isinstance(before, dict) and "entryId" not in before)
+        )
+        if invalid_snapshot:
+            raise AgentToolFailure(
+                AgentToolResult.failure("CONFLICT", "The latest journal change can no longer be undone safely.")
+            )
+        entry_id = before["entryId"] if before is not None else after["entryId"]
+        entry = await food_entry_repo.find_by_id_and_user(
+            session, entry_id, context.user, include_deleted=True, for_update=True
+        )
         if entry is None:
-            continue
+            raise AgentToolFailure(
+                AgentToolResult.failure("CONFLICT", "The latest journal change can no longer be undone safely.")
+            )
+        if entry_id not in validated_entry_ids:
+            current_items = await food_item_repo.find_by_entry(session, entry)
+            after_items = after.get("items")
+            include_evidence = isinstance(after_items, list) and any(
+                isinstance(item_snapshot, dict) and "nutritionEvidence" in item_snapshot
+                for item_snapshot in after_items
+            )
+            evidence_by_item_id = await _evidence_for_items(session, current_items) if include_evidence else None
+            current = snapshot.capture(entry, current_items, evidence_by_item_id)
+            if current != after:
+                raise AgentToolFailure(
+                    AgentToolResult.failure("CONFLICT", "The latest journal change has been modified and cannot be undone safely.")
+                )
+            validated_entry_ids.add(entry_id)
+        resolved_entries.append((mutation, entry))
+
+    if not change_set.is_undoable_at(now):
+        raise AgentToolFailure(
+            AgentToolResult.failure("NOT_FOUND", "The latest journal change can no longer be undone.")
+        )
+    try:
+        change_set.mark_undone(now)
+    except ValueError as failure:
+        raise AgentToolFailure(
+            AgentToolResult.failure("NOT_FOUND", "The latest journal change can no longer be undone.")
+        ) from failure
+
+    undone_actions: list[dict[str, Any]] = []
+    for mutation, entry in resolved_entries:
+        before = mutation.before_state
+        after = mutation.after_state
         if mutation.action_type == "CREATE":
             entry.mark_deleted(now)
             undone_actions.append({
@@ -279,17 +408,39 @@ async def undo_last_change(executor, session, context, args, todos) -> AgentTool
             })
             continue
         executor._restore_from(entry, before)
+        current_items = await food_item_repo.find_by_entry(session, entry)
+        current_evidence = await _evidence_for_items(session, current_items)
+        for evidence in current_evidence.values():
+            session.expunge(evidence)
         await food_item_repo.delete_by_entry(session, entry)
         await session.flush()
-        for item_snapshot in before.get("items", []):
-            session.add(snapshot.recreate_item_for(entry, item_snapshot))
+        item_snapshots = before.get("items", [])
+        if not isinstance(item_snapshots, list) or any(not isinstance(item_snapshot, dict) for item_snapshot in item_snapshots):
+            raise ValueError("Journal item snapshot must be a list of objects")
+        restoration_snapshots: list[dict[str, Any]] = []
+        for item_snapshot in item_snapshots:
+            if "nutritionEvidence" in item_snapshot:
+                restoration_snapshots.append(item_snapshot)
+                continue
+            evidence = current_evidence.get(item_snapshot.get("itemId"))
+            restoration_snapshots.append(
+                {
+                    **item_snapshot,
+                    "nutritionEvidence": [snapshot.capture_evidence(evidence)] if evidence is not None else [],
+                }
+            )
+        restored_items = [snapshot.recreate_item_for(entry, item_snapshot) for item_snapshot in restoration_snapshots]
+        session.add_all(restored_items)
+        await session.flush()
+        for item_snapshot, restored_item in zip(restoration_snapshots, restored_items, strict=True):
+            session.add_all(snapshot.recreate_evidence_for(entry, restored_item, item_snapshot))
+        await session.flush()
         undone_actions.append({
             "type": mutation.action_type,
             "description": before["originalMessage"] if before else "entry",
             "calories": before["calories"] if before else None,
         })
-    change_set.mark_undone(now)
-    await executor.refresh_daily_status(session, context.user, context.chat_id)
+    await _refresh_daily_status_safely(executor, session, context)
     return AgentToolResult.success({
         "changeSetId": change_set.id,
         "actions": len(mutations),
@@ -318,7 +469,7 @@ async def get_weekly_summary(executor, session, context, args, todos) -> AgentTo
     settings = await executor._settings_for(session, context)
     zone = ZoneInfo(settings.timezone)
     today = context.started_at.astimezone(zone).date()
-    reference = _search_date(context, _str(args, "date"), today)
+    reference = _search_date(context, _text(args, "date", MAX_DATE_CHARS), today)
     if reference > today:
         return AgentToolResult.failure("VALIDATION_ERROR", "The reference date cannot be in the future.")
 
@@ -358,10 +509,10 @@ async def search_entries(executor, session, context, args, todos) -> AgentToolRe
     from zoneinfo import ZoneInfo
 
     settings = await executor._settings_for(session, context)
-    q = _str(args, "query")
-    date_arg = _str(args, "date")
-    from_arg = _str(args, "fromDate")
-    to_arg = _str(args, "toDate")
+    q = _text(args, "query", MAX_TEXT_CHARS)
+    date_arg = _text(args, "date", MAX_DATE_CHARS)
+    from_arg = _text(args, "fromDate", MAX_DATE_CHARS)
+    to_arg = _text(args, "toDate", MAX_DATE_CHARS)
     zone = ZoneInfo(settings.timezone)
     today = context.started_at.astimezone(zone).date()
 
@@ -372,7 +523,11 @@ async def search_entries(executor, session, context, args, todos) -> AgentToolRe
 async def get_entry(executor, session, context, args, todos) -> AgentToolResult:
     from app.tools.shared import _int_required
 
-    entry = await food_entry_repo.find_by_id_and_user(session, _int_required(args, "entryId"), context.user)
+    entry = await food_entry_repo.find_by_id_and_user(
+        session,
+        _int_required(args, "entryId", min_value=1, max_value=MAX_DATABASE_ID),
+        context.user,
+    )
     if entry is None:
         return AgentToolResult.failure("NOT_FOUND", "No matching journal entry exists.")
     return AgentToolResult.success({"entry": _summary(entry)})
@@ -384,7 +539,7 @@ async def search_food_history(executor, session, context, args, todos) -> AgentT
     calories per entry, and the five most recent matching entries. Only
     owned, non-deleted entries are considered. Used for questions like
     "when did I last eat yogurt?" or "how many times have I had pizza?"."""
-    q = _str(args, "query")
+    q = _text(args, "query", MAX_TEXT_CHARS)
     if not q or not q.strip():
         return AgentToolResult.failure("VALIDATION_ERROR", "A search term is required.")
     rows = await food_entry_repo.search_by_term(session, context.user, q.strip())
@@ -398,7 +553,7 @@ async def search_food_history(executor, session, context, args, todos) -> AgentT
             "recentEntries": [],
         })
     calories = [r.calories or 0 for r in rows]
-    recent = sorted(rows, key=lambda r: r.eaten_at, reverse=True)[:5]
+    recent = sorted(rows, key=lambda r: r.eaten_at, reverse=True)[:MAX_WEB_SEARCH_RESULTS]
     return AgentToolResult.success({
         "query": q,
         "count": len(rows),

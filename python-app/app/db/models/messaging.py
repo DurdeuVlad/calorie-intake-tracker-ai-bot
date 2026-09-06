@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,8 +10,14 @@ from app.db.base import Base
 
 LEASE_SECONDS = 60
 INBOX_MAX_ATTEMPTS = 3
+INBOX_MAX_BACKOFF_SECONDS = 300
+INBOX_BACKOFF_BASE = 2
 OUTBOX_MAX_BACKOFF_SECONDS = 300
+OUTBOX_BACKOFF_BASE = 2
+OUTBOX_BACKOFF_MAX_EXPONENT = 8
 PINNED_STATUS_MAX_BACKOFF_SECONDS = 300
+PINNED_STATUS_BACKOFF_BASE = 2
+PINNED_STATUS_BACKOFF_MAX_EXPONENT = 16
 
 
 def _utcnow() -> datetime:
@@ -62,6 +68,8 @@ class FrontendLinkCode(Base):
         return self.consumed_at is None and self.expires_at > now
 
     def consume(self, now: datetime) -> None:
+        if not self.redeemable(now):
+            raise ValueError("This link code can no longer be redeemed.")
         self.consumed_at = now
 
 
@@ -72,6 +80,7 @@ class MessagingInboxMessage(Base):
     provider: Mapped[str] = mapped_column(String(32))
     event_id: Mapped[str] = mapped_column(Text)
     payload: Mapped[str] = mapped_column(Text)
+    received_at: Mapped[datetime] = mapped_column(default=_utcnow, server_default=func.now())
     status: Mapped[str] = mapped_column(String(16), default="PENDING")  # PENDING|IN_PROGRESS|COMPLETED|FAILED
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column()
@@ -100,7 +109,18 @@ class MessagingInboxMessage(Base):
             self.payload = ""
         else:
             self.status = "PENDING"
-            self.next_attempt_at = _utcnow() + timedelta(seconds=min(300, 2**self.attempts))
+            self.next_attempt_at = _utcnow() + timedelta(
+                seconds=min(INBOX_MAX_BACKOFF_SECONDS, INBOX_BACKOFF_BASE**self.attempts)
+            )
+        self.lease_token = None
+        self.lease_expires_at = None
+
+    def fail(self, token: uuid.UUID) -> None:
+        if token != self.lease_token:
+            return
+        self.attempts += 1
+        self.status = "FAILED"
+        self.payload = ""
         self.lease_token = None
         self.lease_expires_at = None
 
@@ -131,7 +151,9 @@ class MessagingOutboundMessage(Base):
     def retry(self) -> None:
         self.status = "PENDING"
         self.attempts += 1
-        self.next_attempt_at = _utcnow() + timedelta(seconds=min(OUTBOX_MAX_BACKOFF_SECONDS, 2 ** min(self.attempts, 8)))
+        self.next_attempt_at = _utcnow() + timedelta(
+            seconds=min(OUTBOX_MAX_BACKOFF_SECONDS, OUTBOX_BACKOFF_BASE ** min(self.attempts, OUTBOX_BACKOFF_MAX_EXPONENT))
+        )
         self.lease_token = None
         self.lease_expires_at = None
 
@@ -220,7 +242,12 @@ class PinnedDailyStatus(Base):
             return
         attempt = _pinned_retry_attempt(self.status) + 1
         self.status = f"RETRY_{attempt}"
-        self.updated_at = _utcnow() + timedelta(seconds=min(PINNED_STATUS_MAX_BACKOFF_SECONDS, 2 ** min(attempt, 16)))
+        self.updated_at = _utcnow() + timedelta(
+            seconds=min(
+                PINNED_STATUS_MAX_BACKOFF_SECONDS,
+                PINNED_STATUS_BACKOFF_BASE ** min(attempt, PINNED_STATUS_BACKOFF_MAX_EXPONENT),
+            )
+        )
         self.lease_token = None
         self.lease_expires_at = None
 

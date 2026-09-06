@@ -11,8 +11,10 @@ import pytest
 from app.db.models.nutrition import NutritionEvidence
 from app.domain.agent_types import (
     AgentContext,
+    AgentExchange,
     AgentToolFailure,
     AgentToolResult,
+    ToolCall,
 )
 from app.terminal.trace_collector import TerminalTraceCollector
 
@@ -85,6 +87,177 @@ def test_action_success_without_optional_fields_omits_them():
     assert "receipt" not in result
     assert result["calories"] == 120
     assert result["description"] == "toast"
+
+
+@pytest.mark.parametrize("action_name", ["apply_journal_actions", "undo_last_change"])
+def test_fallback_receipt_does_not_report_an_undone_mutation(action_name):
+    from app.agent.journal_agent import JournalAgent
+
+    apply_result = AgentToolResult.success({
+        "successful": 1,
+        "results": [{"ok": True, "type": "CREATE", "description": "meal", "calories": 100}],
+        "undoAvailable": True,
+    })
+    exchanges = [AgentExchange(ToolCall("create", "apply_journal_actions", "{}"), apply_result)]
+    if action_name == "undo_last_change":
+        exchanges.append(
+            AgentExchange(
+                ToolCall("undo", "undo_last_change", "{}"),
+                AgentToolResult.success({"undoneActions": [{"description": "meal", "calories": 100}]}),
+            )
+        )
+
+    receipt = JournalAgent(None, None, 10)._fallback_receipt(exchanges)
+
+    assert receipt is not None
+    if action_name == "undo_last_change":
+        assert "Undid" in receipt
+        assert "Logged" not in receipt
+    else:
+        assert "Logged: meal" in receipt
+
+
+def test_fallback_receipt_acknowledges_durable_non_journal_tools():
+    from app.agent.journal_agent import JournalAgent
+
+    exchanges = [
+        AgentExchange(
+            ToolCall("quote", "search_packaged_food", "{}"),
+            AgentToolResult.success({"products": [{"name": "cereal"}, {"name": "oats"}]}),
+        ),
+        AgentExchange(
+            ToolCall("settings", "update_settings", "{}"),
+            AgentToolResult.success({"timezone": "UTC", "updated": True}),
+        ),
+    ]
+
+    receipt = JournalAgent(None, None, 10)._fallback_receipt(exchanges)
+
+    assert receipt is not None
+    assert "Found 2 packaged nutrition choices" in receipt
+    assert "Updated your settings" in receipt
+    assert "try again" not in receipt.lower()
+
+
+def test_fallback_receipt_does_not_acknowledge_noop_settings_result():
+    from app.agent.journal_agent import JournalAgent
+
+    exchanges = [
+        AgentExchange(
+            ToolCall("settings", "update_settings", "{}"),
+            AgentToolResult.success({"timezone": "UTC"}),
+        )
+    ]
+
+    assert JournalAgent(None, None, 10)._fallback_receipt(exchanges) is None
+
+
+def test_fallback_receipt_aggregates_durable_work_after_undo_and_journal_success():
+    from app.agent.journal_agent import JournalAgent
+
+    exchanges = [
+        AgentExchange(
+            ToolCall("create", "apply_journal_actions", "{}"),
+            AgentToolResult.success({
+                "successful": 1,
+                "results": [{"ok": True, "type": "CREATE", "description": "meal", "calories": 100}],
+                "undoAvailable": True,
+            }),
+        ),
+        AgentExchange(
+            ToolCall("undo", "undo_last_change", "{}"),
+            AgentToolResult.success({"undoneActions": [{"description": "meal", "calories": 100}]}),
+        ),
+        AgentExchange(
+            ToolCall("alias", "save_alias", "{}"),
+            AgentToolResult.success({"message": "Saved alias 'oats'."}),
+        ),
+        AgentExchange(
+            ToolCall("create2", "apply_journal_actions", "{}"),
+            AgentToolResult.success({
+                "successful": 1,
+                "results": [{"ok": True, "type": "CREATE", "description": "new meal", "calories": 200}],
+                "undoAvailable": True,
+            }),
+        ),
+    ]
+
+    receipt = JournalAgent(None, None, 10)._fallback_receipt(exchanges)
+
+    assert receipt is not None
+    assert "Undid: meal (100 kcal)" in receipt
+    assert "Saved alias 'oats'." in receipt
+    assert "Logged: new meal — 200 kcal." in receipt
+    assert "Logged: meal" not in receipt
+
+
+def test_fallback_receipt_limits_undo_claim_to_latest_mutation_batch():
+    from app.agent.journal_agent import JournalAgent
+
+    exchanges = [
+        AgentExchange(
+            ToolCall("create1", "apply_journal_actions", "{}"),
+            AgentToolResult.success({
+                "successful": 1,
+                "results": [{"ok": True, "type": "CREATE", "description": "first meal", "calories": 100}],
+                "undoAvailable": True,
+            }),
+        ),
+        AgentExchange(
+            ToolCall("create2", "apply_journal_actions", "{}"),
+            AgentToolResult.success({
+                "successful": 1,
+                "results": [{"ok": True, "type": "CREATE", "description": "second meal", "calories": 200}],
+                "undoAvailable": True,
+            }),
+        ),
+    ]
+
+    receipt = JournalAgent(None, None, 10)._fallback_receipt(exchanges)
+
+    assert receipt is not None
+    assert "only the latest successful change batch" in receipt
+
+
+@pytest.mark.asyncio
+async def test_daily_status_adapter_ignores_opaque_non_telegram_chat_ids(monkeypatch):
+    from app.services import daily_status_service
+
+    called = False
+
+    async def fail_if_called(session, user, chat_id):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(daily_status_service, "refresh", fail_if_called)
+    await daily_status_service.refresh_for_tool_executor(None, None, "mattermost-channel")
+    assert not called
+
+
+def test_shared_tool_validation_rejects_oversized_text_and_numeric_boundaries():
+    from app.tools.shared import (
+        MAX_DATABASE_ID,
+        MAX_GRAMS,
+        ValidationError,
+        _decimal_number,
+        _int_required,
+        _quantity_number,
+        _text,
+    )
+
+    with pytest.raises(ValidationError):
+        _text({"description": "x" * 256}, "description", 255)
+    with pytest.raises(ValidationError):
+        _text({"description": "meal\nwith control"}, "description", 255)
+    with pytest.raises(ValidationError):
+        _decimal_number({"grams": MAX_GRAMS + 1}, "grams", min_value=0, max_value=MAX_GRAMS)
+    with pytest.raises(ValidationError):
+        _decimal_number({"grams": 0}, "grams", min_value=0, max_value=MAX_GRAMS, exclusive_min_value=0)
+    with pytest.raises(ValidationError):
+        _int_required({"entryId": MAX_DATABASE_ID + 1}, "entryId", min_value=1, max_value=MAX_DATABASE_ID)
+    with pytest.raises(ValidationError):
+        _quantity_number({"grams": 0.001}, "grams")
+    assert _quantity_number({"grams": 1.25}, "grams") == 1.25
 
 
 # --- Undo result includes undone actions (issue #97) ---------------------
