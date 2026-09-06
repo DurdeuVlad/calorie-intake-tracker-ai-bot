@@ -146,8 +146,8 @@ async def test_eval_runner_caps_score_on_critical_failure_and_returns_nonzero_ex
     report_path = tmp_path / "report.json"
     terminal = TerminalSettings(user_id=TERMINAL_USER_ID, display_name="Tester", eval_repeats=1, report_file=str(report_path))
 
-    # apply_journal_actions is a canonical short-circuit -- one model call creates
-    # an entry and the reply is rendered deterministically, no second model call.
+    # v2.0: the model writes the reply after the tool call, so we need two
+    # model replies: the tool call and then the text reply.
     tool_call_reply = AgentReply(
         None,
         [
@@ -158,7 +158,8 @@ async def test_eval_runner_caps_score_on_critical_failure_and_returns_nonzero_ex
             )
         ],
     )
-    chat, _ = _build_chat([tool_call_reply])
+    text_reply = AgentReply("Logged: pui — 300 kcal.", [])
+    chat, _ = _build_chat([tool_call_reply, text_reply])
     settings = get_settings()
 
     exit_code = await eval_runner.run(str(fixture_path), chat, settings, terminal)

@@ -16,6 +16,11 @@ The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 
 | `journal_change_mutations` | V17 | Ordered before/after state diffs (INSERT, UPDATE, DELETE) belonging to a `journal_change_set`. |
 | `nutrition_sources` | V5 | Cached provenance records for Open Food Facts, private foods, and web lookups (`source_type`, `external_id`, payload JSON). |
 | `private_foods` | V5 | Custom user-created food items and custom calorie/macro definitions (`user_id` FK). |
+| `nutrition_evidence` | `d4f1a7c8e902` | Durable server-owned provenance for nutrition estimates and packaged food quotes (`user_id` FK, source type, payload). |
+| `nutrition_source_cache` | `d4f1a7c8e902` | Global barcode/source cache for Open Food Facts and web lookups (no FK to `food_users`). |
+| `open_food_facts_lookup_cache` | `e6c2b8d4f103` | Cached Open Food Facts API responses keyed by barcode or search query. |
+| `food_aliases` | `a1b2c3d4e5f6` | User-scoped food shorthand mappings (e.g. "cafea" → "coffee with milk"). Case-insensitive unique on `(user_id, alias_lower)` via stored generated column. Optional `calories_per_100g` or `fixed_calories` (mutually exclusive, CHECK constrained). |
+| `telegram_access_grants` | `7e9f2c4a1b6d` | Persistent Telegram access grants replacing the env-var allowlist (`user_id` FK, `telegram_user_id`, `granted_at`). |
 
 ---
 

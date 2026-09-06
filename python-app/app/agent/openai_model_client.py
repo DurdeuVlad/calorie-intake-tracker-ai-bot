@@ -16,6 +16,23 @@ class AgentProviderUnavailableError(RuntimeError):
     pass
 
 
+def _user_content(context: AgentContext) -> str:
+    """Build the user message, appending server-supplied media context so the
+    model can include transcribed voice / interpreted photo content in its
+    reply without deterministic rendering."""
+    parts: list[str] = [context.message]
+    media_text = (context.media_text or "").strip()
+    if context.media_kind == "voice" and media_text:
+        parts.append(f"\n[Server transcript: {media_text[:500]}]")
+        if context.media_caption:
+            parts.append(f"[Voice caption: {context.media_caption[:180]}]")
+    elif context.media_kind == "voice_caption_only" and context.media_caption:
+        parts.append(f"\n[Voice caption (no transcript): {context.media_caption[:180]}]")
+    elif context.media_kind == "photo" and media_text:
+        parts.append(f"\n[Photo interpretation: {media_text[:500]}]")
+    return "\n".join(parts)
+
+
 class OpenAiJournalAgentModel:
     def __init__(self, settings: Settings, http: httpx.AsyncClient | None = None) -> None:
         self._settings = settings
@@ -29,10 +46,10 @@ class OpenAiJournalAgentModel:
         if not self._settings.openai_api_key:
             return AgentReply(None, [])
 
-        messages: list[dict[str, Any]] = [{"role": "system", "content": instructions(context.romanian)}]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": instructions()}]
         for turn in memory:
             messages.append({"role": turn.role, "content": turn.content})
-        messages.append({"role": "user", "content": context.message})
+        messages.append({"role": "user", "content": _user_content(context)})
         for exchange in exchanges:
             messages.append(
                 {
