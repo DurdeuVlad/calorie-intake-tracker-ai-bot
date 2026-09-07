@@ -1,14 +1,14 @@
 # Nutrition resolution rules
 
-## Decision flow for a food without explicit calories
+## Default: estimate_food for foods without explicit calories
 
-1. If the user gave explicit calories, use them directly. Skip all search/estimate tools.
-2. If a barcode/package or private-food result is available, use it.
-3. Call `search_web` to ground the value. If `search_web` returns TEMPORARY_FAILURE (unavailable) or NOT_FOUND, proceed to step 4 — do NOT ask the user for calories.
-4. Call `estimate_food` with a transparent typical-portion estimate. This is always preferred over asking the user for nutrition data they may not have.
-5. After estimate_food returns a quote, call `apply_journal_actions` with a CREATE action to log the entry.
+When the user ate a food without giving calories, call `estimate_food` with a typical adult portion, then `apply_journal_actions` to log it. Do not ask the user for calories or grams.
 
-Never ask the user for calories or grams for a single common food item. The user named a food they ate — your job is to estimate and log it, not to quiz them.
+Use `search_packaged_food` + `select_packaged_food` for barcode/package lookups, `get_private_food` for saved household foods, or `search_web` + `fetch_web_page` for web grounding when available. These are optional refinements — `estimate_food` is always a valid fallback.
+
+## When the user asks "cate calorii are X?" (a question, not a logging request)
+
+Answer the nutrition question using search_web or estimate_food. Offer to log it if they want, but do not call apply_journal_actions unless the user explicitly says to log it.
 
 ## When the user asks "cate calorii are X?" (a question, not a logging request)
 

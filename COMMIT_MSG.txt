@@ -1,0 +1,36 @@
+fix(agent): remove message rewriting, trust model with honest input
+
+The v2.0 agent previously rewrote the user's message before sending it to
+the model — replacing "mulțumesc" with "Estimate this meal now: ..." or
+prepending "[Server note: estimate and log ...]". That was wrong: it put
+words in the user's mouth and made the model act on instructions the user
+never sent.
+
+Removed:
+- estimate_followup_context message rewriting (now a no-op passthrough)
+- _is_conversational_message guard in journal_tool_executor
+- [Server note] injection for single-food intake
+- "Estimate this meal now" rewrite for decline replies
+
+The model now sees exactly what the user sent. With GPT-5.6 Terra:
+- 95.8/100 (excellent), safety release PASS, 0 critical failures
+- "mulțumesc" correctly gets "Cu placere!" — no logging
+- Single foods without calories are estimated and logged immediately
+- Combo meals with no numbers get one question, then logged on decline
+- Multiple foods in one message are batched in one apply_journal_actions call
+
+Changed files:
+- app/agent/portion_followup.py: no-op passthrough, no message rewriting
+- app/services/journal_tool_executor.py: removed conversational guard + regex
+- app/agent/system_prompt.py: clearer framing, batch multiple CREATEs
+- app/agent/capabilities/nutrition.md: estimate_food as default, not last resort
+- app/agent/capabilities/combos.md: ask-once rule clarified
+- app/agent/tool_schemas.py: clearer estimate_food description
+- litellm_config.yaml: added gpt-5.6-terra model
+- tests/unit/test_portion_followup.py: passthrough regression tests
+
+252 tests pass, ruff clean, migration preflight pass.
+
+Generated with [Devin](https://devin.ai)
+
+Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>

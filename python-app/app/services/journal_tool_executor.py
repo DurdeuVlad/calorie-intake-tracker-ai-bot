@@ -12,7 +12,6 @@ modules. The SSRF guard (_is_safe_external_url, _resolve_safe_final_url) moved
 to nutrition.py."""
 
 import json
-import re
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -94,31 +93,6 @@ async def _noop_refresh(session: AsyncSession, user, chat_id: str) -> None:
     return None
 
 
-# Purely conversational messages that must never trigger journal mutations.
-# This is a deterministic safety guard — the prompt instructs the model, but
-# the executor enforces it so a prompt-hallucinated mutation on "thanks"
-# cannot persist food the user never asked to log.
-_CONVERSATIONAL_RE = re.compile(
-    r"^(?:mul\s*țumesc|mul\W*umesc|mersi|multumesc|thanks|thank you|thx|ok\b|ok\W*|"
-    r"bine|great|super|perfect|de acord|agree|da\b|yes\b|yeah|yep|salut\b|hi\b|hello\b|"
-    r"hey\b|servus\b|buna\b|bună\b|ceau\b|pa\b|la revedere|bye\b|gata|"
-    r"no problem|np|cool|nice|foarte bine|foarte bun|excelent|"
-    r"👍|👌|🙂|😄|😅|😊|💪|❤️|🔥)\W*$",
-    re.IGNORECASE,
-)
-
-
-def _is_conversational_message(message: str) -> bool:
-    """True when the user's message is a greeting, thanks, or bare acknowledgment
-    with no food-logging intent. Emoji-only messages are conversational."""
-    if not message:
-        return True
-    stripped = message.strip()
-    if not stripped:
-        return True
-    return len(stripped) <= 30 and bool(_CONVERSATIONAL_RE.match(stripped))
-
-
 class JournalToolExecutor:
     def __init__(
         self,
@@ -150,14 +124,6 @@ class JournalToolExecutor:
 
         if not isinstance(call.name, str):
             return AgentToolResult.failure("VALIDATION_ERROR", "That tool is not available.")
-        # Deterministic guard: a purely conversational message (greeting, thanks,
-        # bare acknowledgment) must never trigger a journal mutation, even if
-        # the model hallucinates logging intent from conversation memory.
-        if call.name == "apply_journal_actions" and _is_conversational_message(context.message):
-            return AgentToolResult.failure(
-                "NOT_A_LOGGING_REQUEST",
-                "The current message is conversational and does not request food logging.",
-            )
         handler = HANDLERS.get(call.name)
         if handler is None:
             return AgentToolResult.failure("VALIDATION_ERROR", "That tool is not available.")
