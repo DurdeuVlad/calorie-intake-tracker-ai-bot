@@ -322,6 +322,10 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
         session.add(change_set)
         await session.flush()
         await _refresh_daily_status_safely(executor, session, context)
+        try:
+            await executor.send_budget_alert(session, context.user, context.chat_id)
+        except Exception:
+            pass
 
     return AgentToolResult.success(
         {"results": results, "successful": changed, "failed": len(results) - changed, "undoAvailable": changed > 0}
@@ -455,7 +459,7 @@ async def get_today_summary(executor, session, context, args, todos) -> AgentToo
     total = sum(r.calories or 0 for r in rows)
     settings = await executor._settings_for(session, context)
     target = settings.calorie_target
-    return AgentToolResult.success({"calories": total, "entries": len(rows), "target": "unset" if target is None else target})
+    return AgentToolResult.success({"calories": total, "entries": len(rows), "target": "unset" if target is None else target, "targetMode": settings.target_mode})
 
 
 async def get_weekly_summary(executor, session, context, args, todos) -> AgentToolResult:
@@ -468,15 +472,15 @@ async def get_weekly_summary(executor, session, context, args, todos) -> AgentTo
 
     settings = await executor._settings_for(session, context)
     zone = ZoneInfo(settings.timezone)
-    today = context.started_at.astimezone(zone).date()
+    today = food_entry_repo.local_tracking_date(context.started_at.astimezone(zone), zone, settings.day_boundary_hour)
     reference = _search_date(context, _text(args, "date", MAX_DATE_CHARS), today)
     if reference > today:
         return AgentToolResult.failure("VALIDATION_ERROR", "The reference date cannot be in the future.")
 
     end_date = reference
     start_date = end_date - timedelta(days=6)
-    start, _ = food_entry_repo.day_bounds(start_date, zone)
-    _, end = food_entry_repo.day_bounds(end_date, zone)
+    start, _ = food_entry_repo.day_bounds(start_date, zone, settings.day_boundary_hour)
+    _, end = food_entry_repo.day_bounds(end_date, zone, settings.day_boundary_hour)
     rows = await food_entry_repo.find_between(session, context.user, start, end)
 
     per_day: dict[str, dict[str, Any]] = {}
@@ -514,9 +518,9 @@ async def search_entries(executor, session, context, args, todos) -> AgentToolRe
     from_arg = _text(args, "fromDate", MAX_DATE_CHARS)
     to_arg = _text(args, "toDate", MAX_DATE_CHARS)
     zone = ZoneInfo(settings.timezone)
-    today = context.started_at.astimezone(zone).date()
+    today = food_entry_repo.local_tracking_date(context.started_at.astimezone(zone), zone, settings.day_boundary_hour)
 
-    rows = await executor._search_entries_impl(session, context, q, date_arg, from_arg, to_arg, zone, today)
+    rows = await executor._search_entries_impl(session, context, q, date_arg, from_arg, to_arg, zone, today, settings.day_boundary_hour)
     return AgentToolResult.success({"entries": [_summary(r) for r in rows[:10]]})
 
 

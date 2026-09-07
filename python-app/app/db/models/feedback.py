@@ -20,7 +20,8 @@ class UserFeedback(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("food_users.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(16))  # 'bug' | 'correction' | 'suggestion'
-    message: Mapped[str] = mapped_column(Text)  # what the user said
-    context: Mapped[str | None] = mapped_column(Text, nullable=True)  # recent conversation + tool trace
+    source: Mapped[str] = mapped_column(String(16))  # 'command' | 'ai_detected'
+    message: Mapped[str] = mapped_column(Text)
+    context: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column()

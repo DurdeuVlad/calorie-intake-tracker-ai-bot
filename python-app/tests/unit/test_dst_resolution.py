@@ -9,7 +9,7 @@ import pytest
 
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext
-from app.services.journal_tool_executor import ValidationError, _resolve_meal_instant
+from app.tools.shared import ValidationError, _resolve_meal_instant
 
 
 def _context(started_at: datetime) -> AgentContext:

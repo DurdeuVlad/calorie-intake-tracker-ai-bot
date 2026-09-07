@@ -70,6 +70,7 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
     ],
     "feedback": [
         "save_feedback",
+        "get_recent_feedback",
     ],
 }
 
@@ -288,21 +289,36 @@ def tool_definitions() -> list[dict[str, Any]]:
         ),
         _tool(
             "update_settings",
-            "Update settings.",
+            "Update settings. During onboarding, setting timezone advances onboarding to the calorie-target step; "
+            "setting calorieTarget or skipCalorieTarget true completes onboarding. dayBoundaryHour (0-23) is the "
+            "local hour a tracking day starts at, so a meal eaten before that hour still counts toward the previous "
+            "day; 0 is midnight, the default every user starts with. dayBoundaryReminderEnabled turns on a once-daily "
+            "reminder shortly before that boundary. targetMode is max (calorieTarget is a ceiling, default) or min "
+            "(a floor, for someone who needs to eat more, not less) -- set it before or with calorieTarget when the "
+            "user describes a minimum instead of a limit. budgetAlertsEnabled turns on an alert when the day's total "
+            "crosses 90% and 100% of the target in max mode, or reaches the target in min mode; each fires at most "
+            "once per tracking day. trackingNudgeEnabled turns on a reminder if nothing has been logged in a while.",
             _object(
                 {
                     "name": _string(max_length=MAX_TEXT_CHARS),
                     "timezone": _string(max_length=MAX_TIMEZONE_CHARS),
                     "calorieTarget": _integer(minimum=1200, maximum=5000),
+                    "skipCalorieTarget": {"type": "boolean"},
                     "reportsEnabled": {"type": "boolean"},
+                    "dayBoundaryHour": _integer(minimum=0, maximum=23),
+                    "dayBoundaryReminderEnabled": {"type": "boolean"},
+                    "targetMode": {"type": "string", "enum": ["max", "min"]},
+                    "budgetAlertsEnabled": {"type": "boolean"},
+                    "trackingNudgeEnabled": {"type": "boolean"},
                 }
             ) | {"minProperties": 1},
         ),
         _tool(
             "save_feedback",
-            "Save a user bug report, correction, or suggestion when the user says something unexpected "
-            "happened or the bot made a mistake. Use kind='bug' for errors, 'correction' for wrong data, "
-            "'suggestion' for feature requests.",
+            "Record feedback, a bug report, or a feature request about the bot itself -- not a food log. Call this "
+            "whenever the user volunteers an opinion or problem about the bot (unprompted or in reply to being asked), "
+            "even mid-conversation about something else. Use kind='bug' for errors, 'correction' for wrong data, "
+            "'suggestion' for feature requests. Store their words faithfully; do not paraphrase away detail.",
             _object(
                 {
                     "kind": {"type": "string", "enum": ["bug", "correction", "suggestion"]},
@@ -311,6 +327,12 @@ def tool_definitions() -> list[dict[str, Any]]:
                 },
                 ["message"],
             ),
+        ),
+        _tool(
+            "get_recent_feedback",
+            "Read the caller's own recently submitted feedback. Call this when asked what feedback was logged or "
+            "recorded; never call save_feedback again just to answer that question.",
+            _object({}),
         ),
     ]
 

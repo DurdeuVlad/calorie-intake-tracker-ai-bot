@@ -50,4 +50,5 @@ HANDLERS: dict[str, Handler] = {
     "complete_todo": planning.complete_todo,
     # feedback
     "save_feedback": feedback.save_feedback,
+    "get_recent_feedback": feedback.get_recent_feedback,
 }

@@ -27,3 +27,13 @@ async def save_feedback(executor, session, context: AgentContext, args, todos) -
         session, context.user, kind=kind, message=message.strip(), context=context_text
     )
     return AgentToolResult.success({"saved": True, "id": record.id, "kind": kind})
+
+
+async def get_recent_feedback(executor, session, context: AgentContext, args, todos) -> AgentToolResult:
+    """Read the caller's own recently submitted feedback. Call this when asked
+    what feedback was logged or recorded; never call save_feedback again just
+    to answer that question."""
+    rows = await feedback_repo.recent(session, context.user)
+    return AgentToolResult.success(
+        {"feedback": [{"message": row.message, "loggedAt": row.created_at.isoformat()} for row in rows]}
+    )

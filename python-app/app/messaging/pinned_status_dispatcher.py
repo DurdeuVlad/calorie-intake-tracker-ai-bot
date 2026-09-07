@@ -29,8 +29,21 @@ async def dispatch_once(telegram: TelegramFrontend) -> bool:
                     await telegram.edit(str(status.chat_id), str(message_id), status.text)
                 except Exception:  # noqa: BLE001
                     logger.warning("Pinned-status edit failed; sending a replacement (status_id=%s)", status.id)
+                    old_message_id = message_id
                     message_id = int(await telegram.send(str(status.chat_id), status.text))
                     await daily_status_service.remember_message(session, status.id, status.lease_token, message_id)
+                    try:
+                        await telegram.unpin(str(status.chat_id), str(old_message_id))
+                    except Exception:  # noqa: BLE001
+                        # The replaced message may still be pinned, which would leave
+                        # a stale pin outranking the fresh one (Telegram surfaces the
+                        # pinned message with the latest send date, not the latest
+                        # pin action). Not fatal to this delivery: the new message
+                        # still gets pinned below, we just log to see it happen.
+                        logger.warning(
+                            "Pinned-status unpin of replaced message failed (status_id=%s, old_message_id=%s)",
+                            status.id, old_message_id,
+                        )
 
             try:
                 await telegram.pin(str(status.chat_id), str(message_id))

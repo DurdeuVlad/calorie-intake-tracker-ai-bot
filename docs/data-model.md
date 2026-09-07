@@ -21,6 +21,7 @@ The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 
 | `open_food_facts_lookup_cache` | `e6c2b8d4f103` | Cached Open Food Facts API responses keyed by barcode or search query. |
 | `food_aliases` | `a1b2c3d4e5f6` | User-scoped food shorthand mappings (e.g. "cafea" → "coffee with milk"). Case-insensitive unique on `(user_id, alias_lower)` via stored generated column. Optional `calories_per_100g` or `fixed_calories` (mutually exclusive, CHECK constrained). |
 | `telegram_access_grants` | `7e9f2c4a1b6d` | Persistent Telegram access grants replacing the env-var allowlist (`user_id` FK, `telegram_user_id`, `granted_at`). |
+| `user_feedback` | Alembic `b3f7a1c9d4e2` | Bug reports, complaints, and feature requests, captured verbatim via `/feedback` or the `save_feedback` agent tool (`user_id` FK, `source`: `command` \| `ai_detected`, `message`, `created_at`). |
 
 ---
 

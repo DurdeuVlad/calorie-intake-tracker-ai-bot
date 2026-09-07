@@ -52,10 +52,9 @@ from app.tools.nutrition import (
     _resolve_safe_final_url,
 )
 from app.tools.registry import HANDLERS
-from app.tools.shared import (  # noqa: F401
+from app.tools.shared import (
     ValidationError,
     _derived_calories,
-    _resolve_meal_instant,
     _search_date,
 )
 
@@ -100,12 +99,14 @@ class JournalToolExecutor:
         searxng=None,
         browserless=None,
         refresh_daily_status: RefreshDailyStatus = _noop_refresh,
+        send_budget_alert: RefreshDailyStatus = _noop_refresh,
         http: httpx.AsyncClient | None = None,
     ) -> None:
         self.off = off or NullOpenFoodFactsClient()
         self.searxng = searxng
         self.browserless = browserless
         self.refresh_daily_status = refresh_daily_status
+        self.send_budget_alert = send_budget_alert
         self._http = http
         self._web_search_cache: dict[str, tuple[datetime, list[dict[str, str]]]] = {}
 
@@ -159,30 +160,30 @@ class JournalToolExecutor:
         from zoneinfo import ZoneInfo
 
         zone = ZoneInfo(settings.timezone)
-        today = context.started_at.astimezone(zone).date()
-        start, end = food_entry_repo.day_bounds(today, zone)
+        today = food_entry_repo.local_tracking_date(context.started_at.astimezone(zone), zone, settings.day_boundary_hour)
+        start, end = food_entry_repo.day_bounds(today, zone, settings.day_boundary_hour)
         return await food_entry_repo.find_between(session, context.user, start, end)
 
-    async def _search_entries_impl(self, session, context, q, date_arg, from_arg, to_arg, zone, today) -> list[FoodEntry]:
+    async def _search_entries_impl(self, session, context, q, date_arg, from_arg, to_arg, zone, today, boundary_hour: int = 0) -> list[FoodEntry]:
         rows: list[FoodEntry]
         if date_arg:
             day = _search_date(context, date_arg, today)
-            start, end = food_entry_repo.day_bounds(day, zone)
+            start, end = food_entry_repo.day_bounds(day, zone, boundary_hour)
             rows = await food_entry_repo.find_between(session, context.user, start, end)
         elif from_arg or to_arg:
             start_date = _search_date(context, from_arg or to_arg, today)
             end_date = _search_date(context, to_arg or from_arg, today)
             if end_date < start_date:
                 return []
-            start, _ = food_entry_repo.day_bounds(start_date, zone)
-            _, end = food_entry_repo.day_bounds(end_date, zone)
+            start, _ = food_entry_repo.day_bounds(start_date, zone, boundary_hour)
+            _, end = food_entry_repo.day_bounds(end_date, zone, boundary_hour)
             rows = await food_entry_repo.find_between(session, context.user, start, end)
         else:
             rows = await self._for_today(session, context) if not q else await food_entry_repo.search_by_term(session, context.user, q)
 
         if q and (date_arg or from_arg or to_arg):
-            needle = q.lower()
-            rows = [r for r in rows if needle in r.original_message.lower()]
+            needle = food_entry_repo.normalized(q)
+            rows = [r for r in rows if needle in food_entry_repo.normalized(r.original_message)]
         return rows
 
     async def _owned_quote(self, session, context, quote_id, expected_type) -> PendingNutritionQuote | None:

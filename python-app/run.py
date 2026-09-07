@@ -5,6 +5,8 @@ background workers as asyncio tasks in one process.
 
 import asyncio
 import logging
+import subprocess
+import sys
 
 import uvicorn
 
@@ -85,5 +87,20 @@ async def main() -> None:
             await mattermost_frontend.close()
 
 
+def _migrate_database() -> None:
+    """Apply pending Alembic revisions before serving traffic.
+
+    Runs unconditionally on every boot so a merged migration can never be
+    skipped regardless of how the container was started (auto-deploy,
+    manual redeploy, rollback). Alembic no-ops past revisions already
+    applied, so this is safe and cheap to run every time.
+    """
+    result = subprocess.run(["alembic", "upgrade", "head"], check=False)
+    if result.returncode != 0:
+        logger.error("Alembic migration failed; refusing to start with a stale schema")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
+    _migrate_database()
     asyncio.run(main())
