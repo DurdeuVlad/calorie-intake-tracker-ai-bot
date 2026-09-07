@@ -40,7 +40,8 @@ async def test_start_shows_onboarding_prompt_for_a_new_user():
         user = await _make_user(session)
         await session.commit()
         reply = await journal.handle(session, user, "1", "/start")
-    assert "IANA" in reply or "timezone" in reply.lower()
+    # New users are greeted and asked for their name first
+    assert "cheamă" in reply.lower() or "name" in reply.lower() or "IANA" in reply or "timezone" in reply.lower()
 
 
 @pytest.mark.asyncio

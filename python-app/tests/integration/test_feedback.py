@@ -1,4 +1,4 @@
-﻿"""Tests for the feedback tool and /bug command."""
+"""Tests for the feedback tool and /bug command."""
 
 from datetime import UTC, datetime
 
@@ -107,5 +107,3 @@ async def test_recent_feedback_returns_user_scoped():
         assert len(recent) == 2
         assert recent[0].message == "test1"
         assert recent[1].message == "test2"
-
-

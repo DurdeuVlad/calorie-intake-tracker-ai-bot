@@ -18,15 +18,25 @@ from app.tools.shared import ValidationError, _optional_int, _text
 
 async def get_settings(executor, session, context: AgentContext, args, todos) -> AgentToolResult:
     s = await executor._settings_for(session, context)
-    return AgentToolResult.success({"timezone": s.timezone, "calorieTarget": "unset" if s.calorie_target is None else s.calorie_target, "reportsEnabled": s.reports_enabled})
+    return AgentToolResult.success({"name": context.user.display_name or "", "timezone": s.timezone, "calorieTarget": "unset" if s.calorie_target is None else s.calorie_target, "reportsEnabled": s.reports_enabled})
 
 
 async def update_settings(executor, session, context: AgentContext, args, todos) -> AgentToolResult:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
     s = await executor._settings_for(session, context)
-    if not args or all(args.get(key) is None for key in ("timezone", "calorieTarget", "reportsEnabled")):
+    if not args or all(args.get(key) is None for key in ("name", "timezone", "calorieTarget", "reportsEnabled")):
         return AgentToolResult.failure("VALIDATION_ERROR", "Provide at least one setting to update.")
+    name = None
+    if "name" in args and args["name"] is not None:
+        try:
+            name = _text(args, "name", MAX_TEXT_CHARS)
+        except ValidationError:
+            return AgentToolResult.failure("VALIDATION_ERROR", "Name must be 1-100 characters.")
+        if not name or not name.strip():
+            return AgentToolResult.failure("VALIDATION_ERROR", "Name must be 1-100 characters.")
+        name = name.strip()
+
     timezone = None
     if "timezone" in args:
         timezone = _text(args, "timezone", MAX_TIMEZONE_CHARS)
@@ -52,6 +62,8 @@ async def update_settings(executor, session, context: AgentContext, args, todos)
         if not isinstance(reports_enabled, bool):
             return AgentToolResult.failure("VALIDATION_ERROR", "reportsEnabled must be true or false.")
 
+    if name is not None:
+        context.user.display_name = name
     if timezone is not None:
         s.timezone = timezone
     if target is not None:

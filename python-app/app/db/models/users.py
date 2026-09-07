@@ -51,10 +51,13 @@ class UserSettings(Base):
     evening_report_time: Mapped[time] = mapped_column(Time, default=time(22, 0))
     pinned_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    onboarding_stage: Mapped[str] = mapped_column(String(MAX_PROVIDER_CHARS), default="TIMEZONE", server_default="TIMEZONE")
+    onboarding_stage: Mapped[str] = mapped_column(String(MAX_PROVIDER_CHARS), default="NAME", server_default="NAME")
     preferred_language: Mapped[str] = mapped_column(String(2), default="ro", server_default="ro")
 
     user: Mapped[FoodUser] = relationship(back_populates="settings")
+
+    def require_timezone(self) -> None:
+        self.onboarding_stage = "TIMEZONE"
 
     def require_calorie_target(self) -> None:
         self.onboarding_stage = "CALORIE_TARGET"

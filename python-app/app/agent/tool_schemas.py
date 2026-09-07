@@ -291,6 +291,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "Update settings.",
             _object(
                 {
+                    "name": _string(max_length=MAX_TEXT_CHARS),
                     "timezone": _string(max_length=MAX_TIMEZONE_CHARS),
                     "calorieTarget": _integer(minimum=1200, maximum=5000),
                     "reportsEnabled": {"type": "boolean"},

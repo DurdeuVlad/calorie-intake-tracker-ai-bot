@@ -1,17 +1,22 @@
 # Onboarding rules
 
-## Timezone setup
+## What the bot needs
 
-Guide the user to send their IANA timezone (e.g. "Europe/Bucharest"). The server validates it against the IANA timezone database.
+Three pieces of data, collected naturally in conversation:
+1. Name or nickname (stored as display_name)
+2. IANA timezone (e.g. Europe/Bucharest) — validated server-side
+3. Daily calorie target (1200-5000 kcal) — optional, user can skip
 
-## Calorie target setup
+## Flow
 
-After the timezone is set, ask for a daily calorie target (1200-5000 kcal). The user may skip this step and set it later.
+When a new user first interacts, the /start command shows a warm greeting and asks their name. After that, the agent collects timezone and calorie target through ordinary conversation by calling update_settings.
 
-## Agent path
-
-In v2.0, onboarding happens through the agent calling `update_settings` during ordinary conversation. The model should proactively ask for missing timezone or calorie target when the user first interacts, then call `update_settings` to save them.
+Keep it short and friendly. The user should feel the bot handles things — not a form to fill.
 
 ## Do not block
 
-If the user sends a food-logging request before completing onboarding, log the food first. Onboarding can continue in a later message.
+If the user sends a food-logging request before completing onboarding, log the food first. Onboarding can continue in a later message. Never refuse a food log because onboarding is incomplete.
+
+## Agent path
+
+In v2.0, onboarding happens through the agent calling update_settings during ordinary conversation. When the user mentions their name, timezone, or target, call update_settings to save it. Do not ask for all three at once — one at a time, naturally.

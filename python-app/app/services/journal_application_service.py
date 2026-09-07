@@ -35,22 +35,52 @@ class Agent(Protocol):
 
 
 def onboarding_prompt(settings: UserSettings, romanian: bool) -> str:
+    if settings.onboarding_stage == "NAME":
+        return (
+            "Salut! Sunt botul tău de jurnal alimentar. Trimite-mi ce mănânci și eu notez caloriile. "
+            "Cum te cheamă?"
+            if romanian
+            else "Hi! I'm your food journal bot. Send me what you eat and I'll log the calories. What's your name?"
+        )
+    if settings.onboarding_stage == "TIMEZONE":
+        return (
+            f"Mulțumesc, {settings.user.display_name or ''}! ".strip() + " "
+            "În ce fus orar ești? De exemplu Europe/Bucharest."
+            if romanian
+            else f"Thanks, {settings.user.display_name or ''}! ".strip() + " "
+            "What timezone are you in? For example Europe/Bucharest."
+        )
     if settings.onboarding_stage == "CALORIE_TARGET":
         return (
-            "Care este ținta ta zilnică (1200–5000 kcal) sau scrie «skip»?"
+            "Cât vrei să mănânci pe zi? O țintă între 1200 și 5000 kcal, sau scrie «skip»."
             if romanian
-            else "What is your daily calorie target (1200-5000), or say skip?"
+            else "What's your daily calorie target? A number between 1200 and 5000, or say skip."
         )
     return (
-        "Bun venit. Trimite fusul IANA, de exemplu Europe/Bucharest."
+        "Bun venit. Trimite-mi ce mănânci și notez caloriile."
         if romanian
-        else "Welcome. Send your IANA timezone, for example Europe/Bucharest."
+        else "Welcome. Send me what you eat and I'll log the calories."
     )
 
 
 def continue_onboarding(settings: UserSettings, message: str, romanian: bool) -> str | None:
     if settings.onboarding_completed:
         return None
+    if settings.onboarding_stage == "NAME":
+        name = message.strip()
+        if not name or len(name) > 100:
+            return (
+                "Cum te cheamă? Un scurt nume sau poreclă."
+                if romanian
+                else "What's your name? A short name or nickname."
+            )
+        settings.user.display_name = name
+        settings.require_timezone()
+        return (
+            f"Mulțumesc, {name}! În ce fus orar ești? De exemplu Europe/Bucharest."
+            if romanian
+            else f"Thanks, {name}! What timezone are you in? For example Europe/Bucharest."
+        )
     if settings.onboarding_stage == "TIMEZONE":
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -65,9 +95,9 @@ def continue_onboarding(settings: UserSettings, message: str, romanian: bool) ->
         settings.timezone = message.strip()
         settings.require_calorie_target()
         return (
-            "Fus salvat. Care este ținta ta zilnică (1200–5000 kcal) sau scrie «skip»?"
+            "Fus salvat. Cât vrei să mănânci pe zi? O țintă între 1200 și 5000 kcal, sau scrie «skip»."
             if romanian
-            else "Timezone saved. What is your daily calorie target (1200-5000), or say skip?"
+            else "Timezone saved. What's your daily calorie target? A number between 1200 and 5000, or say skip."
         )
     # stage == "CALORIE_TARGET"
     if message.strip().lower() == "skip":
