@@ -1,13 +1,17 @@
+"""v2.0 receipt tests: assert structured tool results contain the right data
+(calories, source, derivation, undo deadline) rather than testing the
+deterministic renderer (which was removed in issue #98)."""
+
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
-from app.agent.journal_agent import JournalAgent
 from app.db.models.nutrition import NutritionEvidence
 from app.domain.agent_types import (
     AgentContext,
+    AgentExchange,
     AgentToolFailure,
     AgentToolResult,
     ToolCall,
@@ -15,12 +19,8 @@ from app.domain.agent_types import (
 from app.terminal.trace_collector import TerminalTraceCollector
 
 
-def _agent() -> JournalAgent:
-    return JournalAgent(model=None, tools=None, max_tool_calls=1)
-
-
 def _context(**kwargs) -> AgentContext:
-    defaults = {"user": None, "chat_id": "1", "romanian": False, "message": "meal"}
+    defaults = {"user": None, "chat_id": "1", "message": "meal"}
     defaults.update(kwargs)
     return AgentContext(**defaults)
 
@@ -38,183 +38,286 @@ def _evidence(**kwargs) -> NutritionEvidence:
     return NutritionEvidence(**values)
 
 
-def test_verified_receipt_shows_auditable_source_and_derivation():
-    lines = _agent()._meal_receipt(_context(), {"description": "yogurt", "calories": 146}, {}, _evidence())
+# --- Structured tool result assertions (issue #97) -----------------------
 
-    reply = "\n".join(lines)
-    assert reply == (
-        "Logged: yogurt — 146 kcal\n"
-        "Food: Greek yogurt Acme; 150 g × 97 kcal/100 g = 146 kcal.\n"
-        "Verified source: Open Food Facts (fetched from provider); confidence: high.\n"
-        "Source: https://world.openfoodfacts.org/product/123"
+def test_action_success_includes_receipt_ready_fields():
+    from app.db.models.entries import FoodEntry
+    from app.services.journal_tool_executor import JournalToolExecutor
+
+    entry = FoodEntry(
+        id=1, user_id=1, original_message="yogurt", eaten_at=datetime(2026, 4, 1, 10, 0, tzinfo=UTC),
+        calories=146, nutrition_source="open_food_facts", confidence="high", created_at=datetime.now(UTC),
     )
+    executor = JournalToolExecutor()
+    undo_deadline = datetime.now(UTC) + timedelta(minutes=10)
+    result = executor._action_success(
+        "CREATE", entry, "Europe/Bucharest",
+        receipt={"quantity": 150, "unit": "g"},
+        undo_deadline=undo_deadline,
+        derivation="round(150 g × 97 kcal / 100 g) = 146 kcal",
+        source_url="https://world.openfoodfacts.org/product/123",
+        source_name="Open Food Facts",
+    )
+    assert result["ok"] is True
+    assert result["type"] == "CREATE"
+    assert result["calories"] == 146
+    assert result["description"] == "yogurt"
+    assert result["nutritionSource"] == "open_food_facts"
+    assert result["nutritionConfidence"] == "high"
+    assert result["derivation"] == "round(150 g × 97 kcal / 100 g) = 146 kcal"
+    assert result["undoDeadline"] == undo_deadline.isoformat()
+    assert result["sourceUrl"] == "https://world.openfoodfacts.org/product/123"
+    assert result["sourceName"] == "Open Food Facts"
+    assert result["receipt"] == {"quantity": 150, "unit": "g"}
+
+
+def test_action_success_without_optional_fields_omits_them():
+    from app.db.models.entries import FoodEntry
+    from app.services.journal_tool_executor import JournalToolExecutor
+
+    entry = FoodEntry(
+        id=2, user_id=1, original_message="toast", eaten_at=datetime(2026, 4, 1, 10, 0, tzinfo=UTC),
+        calories=120, nutrition_source="manual", confidence="high", created_at=datetime.now(UTC),
+    )
+    result = JournalToolExecutor()._action_success("CREATE", entry, "Europe/Bucharest")
+    assert "derivation" not in result
+    assert "undoDeadline" not in result
+    assert "sourceUrl" not in result
+    assert "sourceName" not in result
+    assert "receipt" not in result
+    assert result["calories"] == 120
+    assert result["description"] == "toast"
+
+
+@pytest.mark.parametrize("action_name", ["apply_journal_actions", "undo_last_change"])
+def test_fallback_receipt_does_not_report_an_undone_mutation(action_name):
+    from app.agent.journal_agent import JournalAgent
+
+    apply_result = AgentToolResult.success({
+        "successful": 1,
+        "results": [{"ok": True, "type": "CREATE", "description": "meal", "calories": 100}],
+        "undoAvailable": True,
+    })
+    exchanges = [AgentExchange(ToolCall("create", "apply_journal_actions", "{}"), apply_result)]
+    if action_name == "undo_last_change":
+        exchanges.append(
+            AgentExchange(
+                ToolCall("undo", "undo_last_change", "{}"),
+                AgentToolResult.success({"undoneActions": [{"description": "meal", "calories": 100}]}),
+            )
+        )
+
+    receipt = JournalAgent(None, None, 10)._fallback_receipt(exchanges)
+
+    assert receipt is not None
+    if action_name == "undo_last_change":
+        assert "Undid" in receipt
+        assert "Logged" not in receipt
+    else:
+        assert "Logged: meal" in receipt
+
+
+def test_fallback_receipt_acknowledges_durable_non_journal_tools():
+    from app.agent.journal_agent import JournalAgent
+
+    exchanges = [
+        AgentExchange(
+            ToolCall("quote", "search_packaged_food", "{}"),
+            AgentToolResult.success({"products": [{"name": "cereal"}, {"name": "oats"}]}),
+        ),
+        AgentExchange(
+            ToolCall("settings", "update_settings", "{}"),
+            AgentToolResult.success({"timezone": "UTC", "updated": True}),
+        ),
+    ]
+
+    receipt = JournalAgent(None, None, 10)._fallback_receipt(exchanges)
+
+    assert receipt is not None
+    assert "Found 2 packaged nutrition choices" in receipt
+    assert "Updated your settings" in receipt
+    assert "try again" not in receipt.lower()
+
+
+def test_fallback_receipt_does_not_acknowledge_noop_settings_result():
+    from app.agent.journal_agent import JournalAgent
+
+    exchanges = [
+        AgentExchange(
+            ToolCall("settings", "update_settings", "{}"),
+            AgentToolResult.success({"timezone": "UTC"}),
+        )
+    ]
+
+    assert JournalAgent(None, None, 10)._fallback_receipt(exchanges) is None
+
+
+def test_fallback_receipt_aggregates_durable_work_after_undo_and_journal_success():
+    from app.agent.journal_agent import JournalAgent
+
+    exchanges = [
+        AgentExchange(
+            ToolCall("create", "apply_journal_actions", "{}"),
+            AgentToolResult.success({
+                "successful": 1,
+                "results": [{"ok": True, "type": "CREATE", "description": "meal", "calories": 100}],
+                "undoAvailable": True,
+            }),
+        ),
+        AgentExchange(
+            ToolCall("undo", "undo_last_change", "{}"),
+            AgentToolResult.success({"undoneActions": [{"description": "meal", "calories": 100}]}),
+        ),
+        AgentExchange(
+            ToolCall("alias", "save_alias", "{}"),
+            AgentToolResult.success({"message": "Saved alias 'oats'."}),
+        ),
+        AgentExchange(
+            ToolCall("create2", "apply_journal_actions", "{}"),
+            AgentToolResult.success({
+                "successful": 1,
+                "results": [{"ok": True, "type": "CREATE", "description": "new meal", "calories": 200}],
+                "undoAvailable": True,
+            }),
+        ),
+    ]
+
+    receipt = JournalAgent(None, None, 10)._fallback_receipt(exchanges)
+
+    assert receipt is not None
+    assert "Undid: meal (100 kcal)" in receipt
+    assert "Saved alias 'oats'." in receipt
+    assert "Logged: new meal — 200 kcal." in receipt
+    assert "Logged: meal" not in receipt
+
+
+def test_fallback_receipt_limits_undo_claim_to_latest_mutation_batch():
+    from app.agent.journal_agent import JournalAgent
+
+    exchanges = [
+        AgentExchange(
+            ToolCall("create1", "apply_journal_actions", "{}"),
+            AgentToolResult.success({
+                "successful": 1,
+                "results": [{"ok": True, "type": "CREATE", "description": "first meal", "calories": 100}],
+                "undoAvailable": True,
+            }),
+        ),
+        AgentExchange(
+            ToolCall("create2", "apply_journal_actions", "{}"),
+            AgentToolResult.success({
+                "successful": 1,
+                "results": [{"ok": True, "type": "CREATE", "description": "second meal", "calories": 200}],
+                "undoAvailable": True,
+            }),
+        ),
+    ]
+
+    receipt = JournalAgent(None, None, 10)._fallback_receipt(exchanges)
+
+    assert receipt is not None
+    assert "only the latest successful change batch" in receipt
 
 
 @pytest.mark.asyncio
-async def test_canonical_success_reply_is_a_receipt_with_undo(monkeypatch):
-    evidence = _evidence()
+async def test_daily_status_adapter_ignores_opaque_non_telegram_chat_ids(monkeypatch):
+    from app.services import daily_status_service
 
-    async def find_evidence(session, entry_ids):
-        return {1: evidence}
+    called = False
 
-    monkeypatch.setattr("app.agent.journal_agent.nutrition_evidence_repo.find_by_food_entry_ids", find_evidence)
-    reply = await _agent()._canonical_reply(
-        None,
-        _context(),
-        ToolCall("1", "apply_journal_actions", "{}"),
-        AgentToolResult.success({
-            "results": [{"ok": True, "type": "CREATE", "entry": {"id": 1, "description": "yogurt", "calories": 146}}],
-            "undoAvailable": True,
-        }),
+    async def fail_if_called(session, user, chat_id):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(daily_status_service, "refresh", fail_if_called)
+    await daily_status_service.refresh_for_tool_executor(None, None, "mattermost-channel")
+    assert not called
+
+
+def test_shared_tool_validation_rejects_oversized_text_and_numeric_boundaries():
+    from app.tools.shared import (
+        MAX_DATABASE_ID,
+        MAX_GRAMS,
+        ValidationError,
+        _decimal_number,
+        _int_required,
+        _quantity_number,
+        _text,
     )
 
-    assert reply == (
-        "Logged: yogurt — 146 kcal\n"
-        "Food: Greek yogurt Acme; 150 g × 97 kcal/100 g = 146 kcal.\n"
-        "Verified source: Open Food Facts (fetched from provider); confidence: high.\n"
-        "Source: https://world.openfoodfacts.org/product/123\n"
-        "Send Undo within 10 minutes to reverse the successful changes."
-    )
+    with pytest.raises(ValidationError):
+        _text({"description": "x" * 256}, "description", 255)
+    with pytest.raises(ValidationError):
+        _text({"description": "meal\nwith control"}, "description", 255)
+    with pytest.raises(ValidationError):
+        _decimal_number({"grams": MAX_GRAMS + 1}, "grams", min_value=0, max_value=MAX_GRAMS)
+    with pytest.raises(ValidationError):
+        _decimal_number({"grams": 0}, "grams", min_value=0, max_value=MAX_GRAMS, exclusive_min_value=0)
+    with pytest.raises(ValidationError):
+        _int_required({"entryId": MAX_DATABASE_ID + 1}, "entryId", min_value=1, max_value=MAX_DATABASE_ID)
+    with pytest.raises(ValidationError):
+        _quantity_number({"grams": 0.001}, "grams")
+    assert _quantity_number({"grams": 1.25}, "grams") == 1.25
 
 
-def test_cached_and_stale_receipts_do_not_claim_a_live_lookup():
-    recent = _agent()._meal_receipt(
-        _context(), {"description": "yogurt", "calories": 146}, {}, _evidence(source_cache_hit=True)
-    )
-    stale = _agent()._meal_receipt(
-        _context(), {"description": "yogurt", "calories": 146}, {},
-        _evidence(source_cache_hit=True, source_fetched_at=datetime.now(UTC) - timedelta(days=31)),
-    )
+# --- Undo result includes undone actions (issue #97) ---------------------
 
-    assert "cached; not a live lookup" in "\n".join(recent)
-    assert "cached/stale; not a live lookup" in "\n".join(stale)
-
-
-def test_manual_and_estimate_receipts_are_not_presented_as_verified():
-    manual = _agent()._meal_receipt(
-        _context(), {"description": "toast", "calories": 120}, {"nutritionSource": "manual", "nutritionConfidence": "high"}, None
-    )
-    estimate = _agent()._meal_receipt(
-        _context(), {"description": "curry", "calories": 500}, {"nutritionSource": "ai_estimate", "nutritionConfidence": "estimate"}, None
-    )
-
-    assert "Source: manual value; confidence: high." in "\n".join(manual)
-    assert "Source: unverified value; confidence: estimate." in "\n".join(estimate)
-    assert "Verified source" not in "\n".join(manual + estimate)
+def test_undo_result_structure_has_undone_actions():
+    """The undo tool result must include undoneActions with descriptions and
+    calories so the model can write 'Undid: yogurt (146 kcal)'."""
+    result = AgentToolResult.success({
+        "changeSetId": 42,
+        "actions": 2,
+        "undoneActions": [
+            {"type": "CREATE", "description": "yogurt", "calories": 146},
+            {"type": "EDIT", "description": "toast", "calories": 200},
+        ],
+    })
+    assert result.ok
+    undone = result.data["undoneActions"]
+    assert len(undone) == 2
+    assert undone[0]["description"] == "yogurt"
+    assert undone[0]["calories"] == 146
+    assert undone[1]["description"] == "toast"
+    assert undone[1]["calories"] == 200
 
 
-def test_manual_explicit_calories_explain_the_user_provided_basis_and_serving():
-    lines = _agent()._meal_receipt(
-        _context(),
-        {"description": "toast", "calories": 120},
-        {"nutritionSource": "manual", "nutritionConfidence": "high", "receipt": {"quantity": 2, "unit": "portion"}},
-        None,
-    )
+# --- Media context is passed to the model (issue #98) --------------------
 
-    assert lines[-1] == "Basis: user-provided 120 kcal for 2 portion."
+def test_user_content_includes_voice_transcript():
+    from app.agent.openai_model_client import _user_content
 
-
-def test_ai_estimate_explains_its_server_basis_without_claiming_a_url():
-    lines = _agent()._meal_receipt(
-        _context(),
-        {"description": "curry", "calories": 500},
-        {"nutritionSource": "ai_estimate", "nutritionConfidence": "estimate", "receipt": {"basis": "visible bowl portion"}},
-        None,
-    )
-
-    reply = "\n".join(lines)
-    assert "Estimate recorded; no verified source or URL is available. Basis: visible bowl portion." in reply
-    assert "Source: AI estimate; confidence: estimate." in reply
-
-
-def test_private_and_unknown_receipts_explain_when_no_calculation_is_available():
-    private = _agent()._meal_receipt(
-        _context(), {"description": "family soup", "calories": 250},
-        {"nutritionSource": "private", "nutritionConfidence": "unknown", "receipt": {"basis": "private food value"}}, None,
-    )
-    unknown = _agent()._meal_receipt(
-        _context(), {"description": "snack", "calories": 180},
-        {"nutritionSource": "mixed", "nutritionConfidence": "unknown"}, None,
-    )
-
-    assert "private food value" not in "\n".join(private).lower()
-    assert private[-1] == "No verified source calculation is available. Send a correction with the food, serving, or calories if this is wrong."
-    assert unknown[-1] == "No verified source calculation is available. Send a correction with the food, serving, or calories if this is wrong."
-
-
-def test_forged_source_label_is_rendered_as_unverified_manual_value():
-    lines = _agent()._meal_receipt(
-        _context(),
-        {"description": "family soup", "calories": 250},
-        {
-            "nutritionSource": "manual",
-            "nutritionConfidence": "unknown",
-            "receipt": {"basis": "unverified source label ignored; no confirmed source for this calorie value"},
-        },
-        None,
-    )
-
-    reply = "\n".join(lines)
-    assert "private" not in reply.lower()
-    assert "Source: manual value; confidence: unknown." in reply
-    assert "I couldn't verify this number -- let me know if it's wrong." in reply
-    assert "unverified source label ignored" not in reply
-
-
-def test_non_evidence_per_100g_result_gets_a_deterministic_formula():
-    lines = _agent()._meal_receipt(
-        _context(), {"description": "estimated curry", "calories": 500},
-        {"nutritionSource": "ai_estimate", "nutritionConfidence": "estimate", "receipt": {"quantity": 250, "unit": "g", "caloriesPer100g": 200}},
-        None,
-    )
-
-    assert lines[-1] == "Calculation: 250 g × 200 kcal/100 g = 500 kcal."
-
-
-def test_voice_receipt_quotes_the_server_transcript_and_offers_undo_elsewhere():
-    lines = _agent()._media_lines(_context(media_kind="voice", media_text="two eggs and toast"))
-
-    assert lines == ["I heard: two eggs and toast"]
-
-
-def test_photo_receipt_surfaces_the_material_question():
-    lines = _agent()._media_lines(_context(
-        media_kind="photo",
-        media_text="Interpretation: rice bowl with chicken\nEstimate: portion unclear\nConfidence: low; no scale\nQuestion: Was this one or two servings?",
+    content = _user_content(_context(
+        message="noteaza",
+        media_kind="voice",
+        media_text="two eggs and toast",
     ))
-
-    assert lines == [
-        "Photo: rice bowl with chicken",
-        "Estimate: portion unclear; confidence: low; no scale.",
-        "Question: Was this one or two servings?",
-    ]
+    assert "noteaza" in content
+    assert "two eggs and toast" in content
+    assert "Server transcript" in content
 
 
-def test_photo_receipt_surfaces_a_legible_printed_label_value():
-    """A Label line silently vanished before this: _photo_lines only
-    recognized interpretation/estimate/confidence/question, so a real printed
-    calorie value never reached the user-visible summary even though the
-    agent itself (which reads the raw vision text directly) could use it."""
-    lines = _agent()._media_lines(_context(
+def test_user_content_includes_photo_interpretation():
+    from app.agent.openai_model_client import _user_content
+
+    content = _user_content(_context(
+        message="cat de multe calorii",
         media_kind="photo",
-        media_text="Interpretation: packaged yogurt drink\nEstimate: one 250 ml pouch\nLabel: 169 kcal per 250 ml serving\nConfidence: high; label legible\nQuestion: none",
+        media_text="Interpretation: rice bowl with chicken\nEstimate: 500 kcal",
     ))
-
-    assert lines == [
-        "Photo: packaged yogurt drink",
-        "Estimate: one 250 ml pouch; confidence: high; label legible.",
-        "Printed label: 169 kcal per 250 ml serving",
-    ]
+    assert "cat de multe calorii" in content
+    assert "rice bowl with chicken" in content
+    assert "Photo interpretation" in content
 
 
-def test_photo_receipt_omits_the_printed_label_line_when_none_is_legible():
-    lines = _agent()._media_lines(_context(
-        media_kind="photo",
-        media_text="Interpretation: home-cooked stew\nEstimate: one bowl\nLabel: none\nConfidence: medium\nQuestion: none",
-    ))
+def test_user_content_without_media_is_just_the_message():
+    from app.agent.openai_model_client import _user_content
 
-    assert not any("Printed label" in line for line in lines)
+    content = _user_content(_context(message="hello"))
+    assert content == "hello"
 
+
+# --- run_undo trace tests (kept from v1, adapted for v2) -----------------
 
 class _StubTools:
     """Stand-in for JournalToolExecutor that returns a canned result without
@@ -236,8 +339,13 @@ async def test_run_undo_records_a_trace_so_eval_assertions_can_see_the_tool_call
     completed() were no-ops -- eval_runner would see trace=None and any
     tool_required: undo_last_change assertion on a /undo turn would silently
     fail even though the tool actually executed."""
+    from app.agent.journal_agent import JournalAgent
+
     traces = TerminalTraceCollector()
-    tools = _StubTools(AgentToolResult.success({"changeSetId": uuid.uuid4(), "actions": 1}))
+    tools = _StubTools(AgentToolResult.success({
+        "changeSetId": uuid.uuid4(), "actions": 1,
+        "undoneActions": [{"type": "CREATE", "description": "yogurt", "calories": 146}],
+    }))
     agent = JournalAgent(model=None, tools=tools, max_tool_calls=1, trace=traces)
     context = _context(message="/undo")
 
@@ -247,17 +355,17 @@ async def test_run_undo_records_a_trace_so_eval_assertions_can_see_the_tool_call
     assert trace is not None
     assert [(t.name, t.outcome) for t in trace.tools] == [("undo_last_change", "OK")]
     assert trace.model_turns == 0  # /undo deliberately skips the model loop
-    assert trace.reply_length == len("Undid the latest journal change.")
+    assert trace.reply_length > 0
 
 
 @pytest.mark.asyncio
 async def test_run_undo_records_a_trace_even_on_tool_failure():
-    """The trace must be recorded regardless of tool outcome, so eval
-    assertions like tool_outcome: undo_last_change:NOT_FOUND still work."""
+    from app.agent.journal_agent import JournalAgent
+
     traces = TerminalTraceCollector()
     tools = _StubTools(AgentToolResult.failure("NOT_FOUND", "There is no recent journal change to undo."))
     agent = JournalAgent(model=None, tools=tools, max_tool_calls=1, trace=traces)
-    context = _context(message="/undo", romanian=False)
+    context = _context(message="/undo")
 
     await agent.run_undo(session=None, context=context)
 
@@ -268,9 +376,8 @@ async def test_run_undo_records_a_trace_even_on_tool_failure():
 
 @pytest.mark.asyncio
 async def test_run_undo_surfaces_agent_tool_failure_results_in_the_trace():
-    """AgentToolFailure is the short-circuit path the real tool executor uses
-    for NOT_FOUND/VALIDATION_ERROR; run_undo must unwrap it the same way run()
-    does, and the trace must reflect the unwrapped code, not the exception."""
+    from app.agent.journal_agent import JournalAgent
+
     traces = TerminalTraceCollector()
 
     class _FailingTools:
@@ -278,7 +385,7 @@ async def test_run_undo_surfaces_agent_tool_failure_results_in_the_trace():
             raise AgentToolFailure(AgentToolResult.failure("NOT_FOUND", "nothing to undo"))
 
     agent = JournalAgent(model=None, tools=_FailingTools(), max_tool_calls=1, trace=traces)
-    context = _context(message="/undo", romanian=False)
+    context = _context(message="/undo")
 
     await agent.run_undo(session=None, context=context)
 

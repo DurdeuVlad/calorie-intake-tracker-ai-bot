@@ -55,10 +55,18 @@ async def today_totals(session: AsyncSession, user: FoodUser, timezone_name: str
     return calories, len(rows)
 
 
-async def find_by_id_and_user(session: AsyncSession, entry_id: int, user: FoodUser, include_deleted: bool = False) -> FoodEntry | None:
+async def find_by_id_and_user(
+    session: AsyncSession,
+    entry_id: int,
+    user: FoodUser,
+    include_deleted: bool = False,
+    for_update: bool = False,
+) -> FoodEntry | None:
     stmt = select(FoodEntry).where(FoodEntry.id == entry_id, FoodEntry.user_id == user.id)
     if not include_deleted:
         stmt = stmt.where(FoodEntry.deleted_at.is_(None))
+    if for_update:
+        stmt = stmt.with_for_update()
     return (await session.execute(stmt)).scalar_one_or_none()
 
 

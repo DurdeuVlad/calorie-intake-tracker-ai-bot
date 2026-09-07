@@ -57,6 +57,42 @@ async def test_every_model_column_exists_in_the_real_schema():
 
 
 @pytest.mark.asyncio
+async def test_data_bound_constraints_exist_in_the_real_schema():
+    engine = get_engine()
+    expected = {
+        "food_entries": {"ck_food_entries_calories_range"},
+        "food_items": {
+            "ck_food_items_calories_range",
+            "ck_food_items_quantity_range",
+            "ck_food_items_quantity_grams_range",
+        },
+        "pending_nutrition_quotes": {
+            "ck_pending_nutrition_quotes_grams_range",
+            "ck_pending_nutrition_quotes_calories_range",
+        },
+        "nutrition_evidence": {
+            "ck_nutrition_evidence_quantity_range",
+            "ck_nutrition_evidence_calories_range",
+            "ck_nutrition_evidence_total_calories_range",
+        },
+        "user_settings": {"ck_user_settings_calorie_target_range"},
+    }
+
+    async with engine.connect() as conn:
+        def _reflect(sync_conn):
+            inspector = inspect(sync_conn)
+            return {
+                table: {constraint["name"] for constraint in inspector.get_check_constraints(table)}
+                for table in expected
+            }
+
+        actual = await conn.run_sync(_reflect)
+
+    for table, names in expected.items():
+        assert names <= actual[table]
+
+
+@pytest.mark.asyncio
 async def test_full_round_trip_through_every_aggregate():
     now = datetime.now(UTC)
     Session = get_session_factory()

@@ -13,7 +13,10 @@ from app.db.base import session_scope
 from app.db.models.conversation import ConversationMemory
 from app.db.models.users import UserSettings
 from app.db.onboarding_backfill import STUCK_ONBOARDING_BACKFILL_SQL
-from app.repositories.food_user_repo import get_or_create_by_telegram_user_id, get_settings
+from app.repositories.food_user_repo import (
+    get_or_create_by_telegram_user_id,
+    get_settings,
+)
 
 
 @pytest.mark.asyncio
@@ -59,7 +62,7 @@ async def test_backfill_leaves_a_genuinely_new_user_alone():
     async with session_scope() as session:
         settings = (await session.execute(select(UserSettings).where(UserSettings.user_id == user.id))).scalar_one()
     assert settings.onboarding_completed is False
-    assert settings.onboarding_stage == "TIMEZONE"
+    assert settings.onboarding_stage == "NAME"
 
 
 @pytest.mark.asyncio
@@ -85,7 +88,7 @@ async def test_backfill_ignores_differently_cased_or_padded_start_replays():
     async with session_scope() as session:
         settings = (await session.execute(select(UserSettings).where(UserSettings.user_id == user.id))).scalar_one()
     assert settings.onboarding_completed is False
-    assert settings.onboarding_stage == "TIMEZONE"
+    assert settings.onboarding_stage == "NAME"
 
 
 @pytest.mark.asyncio

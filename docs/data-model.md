@@ -16,7 +16,12 @@ The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 
 | `journal_change_mutations` | V17 | Ordered before/after state diffs (INSERT, UPDATE, DELETE) belonging to a `journal_change_set`. |
 | `nutrition_sources` | V5 | Cached provenance records for Open Food Facts, private foods, and web lookups (`source_type`, `external_id`, payload JSON). |
 | `private_foods` | V5 | Custom user-created food items and custom calorie/macro definitions (`user_id` FK). |
-| `user_feedback` | Alembic `b3f7a1c9d4e2` | Bug reports, complaints, and feature requests, captured verbatim via `/feedback` or the `submit_feedback` agent tool (`user_id` FK, `source`: `command` \| `ai_detected`, `message`, `created_at`). |
+| `nutrition_evidence` | `d4f1a7c8e902` | Durable server-owned provenance for nutrition estimates and packaged food quotes (`user_id` FK, source type, payload). |
+| `nutrition_source_cache` | `d4f1a7c8e902` | Global barcode/source cache for Open Food Facts and web lookups (no FK to `food_users`). |
+| `open_food_facts_lookup_cache` | `e6c2b8d4f103` | Cached Open Food Facts API responses keyed by barcode or search query. |
+| `food_aliases` | `a1b2c3d4e5f6` | User-scoped food shorthand mappings (e.g. "cafea" → "coffee with milk"). Case-insensitive unique on `(user_id, alias_lower)` via stored generated column. Optional `calories_per_100g` or `fixed_calories` (mutually exclusive, CHECK constrained). |
+| `telegram_access_grants` | `7e9f2c4a1b6d` | Persistent Telegram access grants replacing the env-var allowlist (`user_id` FK, `telegram_user_id`, `granted_at`). |
+| `user_feedback` | Alembic `b3f7a1c9d4e2` | Bug reports, complaints, and feature requests, captured verbatim via `/feedback` or the `save_feedback` agent tool (`user_id` FK, `source`: `command` \| `ai_detected`, `message`, `created_at`). |
 
 ---
 
@@ -27,7 +32,7 @@ The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 
 | `processed_telegram_updates` | V1 | Legacy Telegram idempotency ledger retained for schema compatibility. Current Python ingress deduplicates through `messaging_inbox`. |
 | `messaging_identities` | V13 | Unified messaging identity mapping Telegram and Mattermost accounts (`user_id` FK, platform, platform_user_id). |
 | `frontend_link_codes` | V13 | Temporary 10-minute one-time authentication codes for linking Mattermost accounts (`code` UNIQUE, `user_id` FK, `expires_at`). |
-| `messaging_inbox` | V14 | Inbound platform-agnostic messaging queue (`id`, provider, event_id, payload, retry state). |
+| `messaging_inbox` | V14 + d5e6f7a8b9c0 | Inbound platform-agnostic messaging queue (`id`, provider, event_id, payload, received_at, retry state). |
 | `messaging_outbox` | V14 | Provider-neutral outbox queue for outbound platform replies (`provider`, conversation, text, retry state). |
 | `messaging_routes` | V14 | Maps user messaging routing preferences to active frontend adapters. |
 | `messaging_daily_status` | V15 | Outbox ledger for sending and updating daily status summary messages across frontends. |
@@ -52,4 +57,5 @@ The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 
 1. **Ownership Isolation**: Foreign key constraints enforce `user_id` ownership on all food entries, settings, change sets, and messaging identities.
 2. **Timezone Awareness**: Instants are stored as `TIMESTAMP WITH TIME ZONE` (UTC). User queries group entries according to the user's configured IANA timezone (`user_settings.timezone`).
 3. **No Media Retention**: Original images, audio files, and documents are never stored in PostgreSQL tables.
+4. **Data-Boundary Validation**: Database CHECK constraints enforce journal calorie ranges, positive two-decimal quantities, nutrition quote/evidence bounds, and calorie-target bounds in addition to application validation.
 

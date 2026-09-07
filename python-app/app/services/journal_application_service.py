@@ -1,28 +1,38 @@
-"""Slash commands and the onboarding stage machine.
+"""Slash commands and onboarding fallback.
 
-Note on onboarding: continue_onboarding() is
-confirmed (by direct investigation) to have NO call site in handle() -- in
-production, once agent != null (always true when OPENAI_API_KEY is set), the
-onboarding-stage transition actually happens through the agent calling the
-update_settings tool during ordinary conversation, not through this
-deterministic continuation path. That is replicated faithfully here: this
-module exposes onboarding_prompt()/continue_onboarding() for completeness and
-for the terminal/eval harness, but handle() below does not call
-continue_onboarding for non-slash messages, matching confirmed production
-behavior rather than an idealized one.
+v2.0: onboarding is driven by the agent, not deterministic if-else stage
+branches. When the agent is available, /start for an incomplete user is
+routed to the agent, which greets the user, explains what the bot does
+(text/voice/photo logging, totals, undo), and collects name, timezone,
+and calorie target naturally via update_settings. The functions below
+are minimal fallbacks for when no agent is configured.
 """
 
+from datetime import UTC, datetime
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.language import is_romanian
 from app.db.models.users import FoodUser, UserSettings
 from app.domain.agent_types import AgentContext
-from app.repositories import feedback_repo, food_entry_repo, food_user_repo, telegram_access_repo
+from app.repositories import (
+    feedback_repo,
+    food_entry_repo,
+    food_user_repo,
+    telegram_access_repo,
+)
 
-MIN_CALORIE_TARGET = 1200
-MAX_CALORIE_TARGET = 5000
+
+def onboarding_fallback(romanian: bool) -> str:
+    """Minimal static greeting used only when no agent is configured.
+    The agent normally drives onboarding with a richer, conversational prompt."""
+    return (
+        "Salut! Sunt botul tău de jurnal alimentar. Trimite-mi ce mănânci prin "
+        "text, notă vocală sau poză și notez caloriile. Cum te cheamă?"
+        if romanian
+        else "Hi! I'm your food journal bot. Send me what you eat by text, voice, "
+        "or photo and I'll log the calories. What's your name?"
+    )
 
 
 class Agent(Protocol):
@@ -31,80 +41,17 @@ class Agent(Protocol):
     async def run_undo(self, session: AsyncSession, context: AgentContext) -> str: ...
 
 
-def onboarding_prompt(settings: UserSettings, romanian: bool) -> str:
-    if settings.onboarding_stage == "CALORIE_TARGET":
-        return (
-            "Care este ținta ta zilnică (1200–5000 kcal) sau scrie «skip»?"
-            if romanian
-            else "What is your daily calorie target (1200-5000), or say skip?"
-        )
-    return (
-        "Bun venit! Sunt jurnalul tău privat de calorii -- scrie-mi ce ai mâncat (text, notă vocală sau poză) și "
-        "îl notez cu calorii. Mai întâi, care este fusul tău orar? Trimite formatul IANA, de exemplu Europe/Bucharest."
-        if romanian
-        else "Welcome! I'm your private food journal -- just tell me what you ate (text, a voice note, or a photo) "
-        "and I'll log it with calories. First, what's your timezone? Send the IANA format, for example Europe/Bucharest."
-    )
-
-
-def continue_onboarding(settings: UserSettings, message: str, romanian: bool) -> str | None:
-    if settings.onboarding_completed:
-        return None
-    if settings.onboarding_stage == "TIMEZONE":
-        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-        try:
-            ZoneInfo(message.strip())
-        except (ZoneInfoNotFoundError, ValueError, KeyError):
-            return (
-                "Trimite un fus IANA valid, de exemplu Europe/Bucharest."
-                if romanian
-                else "Please send a valid IANA timezone, for example Europe/Bucharest."
-            )
-        settings.timezone = message.strip()
-        settings.require_calorie_target()
-        return (
-            "Fus salvat. Care este ținta ta zilnică (1200–5000 kcal) sau scrie «skip»?"
-            if romanian
-            else "Timezone saved. What is your daily calorie target (1200-5000), or say skip?"
-        )
-    # stage == "CALORIE_TARGET"
-    if message.strip().lower() == "skip":
-        settings.skip_calorie_target()
-        return (
-            "Configurare terminată. Poți seta ținta mai târziu din /settings."
-            if romanian
-            else "Setup complete. You can set a calorie target later in /settings."
-        )
-    try:
-        target = int(message.strip())
-    except ValueError:
-        return (
-            "Trimite o țintă între 1200 și 5000 kcal sau «skip»."
-            if romanian
-            else "Send a daily calorie target between 1200 and 5000, or say skip."
-        )
-    if target < MIN_CALORIE_TARGET or target > MAX_CALORIE_TARGET:
-        return (
-            "Ținta trebuie să fie între 1200 și 5000 kcal sau scrie «skip»."
-            if romanian
-            else "Your daily target must be between 1200 and 5000 kcal, or say skip."
-        )
-    settings.calorie_target = target
-    settings.skip_calorie_target()
-    return (
-        f"Configurare terminată. Ținta ta este {target} kcal."
-        if romanian
-        else f"Setup complete. Your daily target is {target} kcal."
-    )
-
-
-async def _today_text(session, user: FoodUser, settings: UserSettings, romanian: bool) -> str:
-    from datetime import datetime
+async def _today_text(
+    session,
+    user: FoodUser,
+    settings: UserSettings,
+    romanian: bool,
+    reference_time: datetime | None = None,
+) -> str:
     from zoneinfo import ZoneInfo
 
     zone = ZoneInfo(settings.timezone)
-    today = food_entry_repo.local_tracking_date(datetime.now(zone), zone, settings.day_boundary_hour)
+    today = food_entry_repo.local_tracking_date(reference_time or datetime.now(zone), zone, settings.day_boundary_hour)
     calories, _count = await food_entry_repo.today_totals(session, user, settings.timezone, today, settings.day_boundary_hour)
     target = settings.calorie_target
     if target is None:
@@ -125,7 +72,15 @@ def _command_token(raw: str) -> str:
     return raw.strip().lower().split(maxsplit=1)[0]
 
 
-async def command(session, user: FoodUser, settings: UserSettings, raw: str, romanian: bool, is_admin: bool = False) -> str:
+async def command(
+    session,
+    user: FoodUser,
+    settings: UserSettings,
+    raw: str,
+    romanian: bool,
+    is_admin: bool = False,
+    reference_time: datetime | None = None,
+) -> str:
     cmd = _command_token(raw)
     if cmd == "/start":
         if settings.onboarding_completed:
@@ -134,20 +89,20 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
                 if romanian
                 else "Welcome back. Examples: “165 g crispy, 229 kcal/100 g”, “how many calories today?”, “show yesterday's meals”."
             )
-        return onboarding_prompt(settings, romanian)
+        return onboarding_fallback(romanian)
     if cmd == "/help":
         admin_commands = "\n\nAdmin commands: /adduser TELEGRAM_ID, /removeuser TELEGRAM_ID" if is_admin else ""
         return (
             "Pot nota mai multe mese dintr-un singur mesaj, inclusiv pe zile trecute; pot estima nutriția, muta, corecta "
             "sau șterge direct și poți folosi Undo timp de 10 minute.\n\nComenzi: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy, /undo, /feedback" + admin_commands
+            "/settings, /cancel, /privacy, /undo, /feedback, /bug" + admin_commands
             if romanian
             else "I can log several meals from one message, including past dates; estimate nutrition; and move, edit, "
             "or delete entries immediately with a 10-minute Undo window.\n\nCommands: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy, /undo, /feedback" + admin_commands
+            "/settings, /cancel, /privacy, /undo, /feedback, /bug" + admin_commands
         )
     if cmd in ("/today", "/report"):
-        return await _today_text(session, user, settings, romanian)
+        return await _today_text(session, user, settings, romanian, reference_time)
     if cmd == "/settings":
         target_text = ("nesetată" if romanian else "not set") if settings.calorie_target is None else f"{settings.calorie_target} kcal"
         reports_text = ("pornite" if settings.reports_enabled else "oprite") if romanian else ("on" if settings.reports_enabled else "off")
@@ -191,6 +146,20 @@ async def command(session, user: FoodUser, settings: UserSettings, raw: str, rom
             else "I retain journal entries, at most 10 recent messages, temporary Undo change sets, and any "
             "feedback sent via /feedback or in conversation. Original media files are not retained."
         )
+    if cmd in ("/bug", "/feedback"):
+        rest = raw.strip()[len(cmd):].strip()
+        if not rest:
+            return (
+                "Folosește /bug <descriere> pentru a raporta o problemă. Ex: /bug a logat pizza de două ori."
+                if romanian
+                else "Use /bug <description> to report a problem. E.g. /bug it logged pizza twice."
+            )
+        await feedback_repo.save(session, user, kind="bug", message=rest)
+        return (
+            "Am salvat raportul tău. Mulțumesc!"
+            if romanian
+            else "Saved your report. Thank you!"
+        )
     return "Comandă necunoscută. Folosește /help." if romanian else "Unknown command. Use /help."
 
 
@@ -217,8 +186,10 @@ class JournalApplicationService:
         media_kind: str | None = None,
         media_text: str | None = None,
         media_caption: str | None = None,
+        started_at: datetime | None = None,
     ) -> str:
         settings = await food_user_repo.get_settings(session, user.id)
+        request_time = started_at or datetime.now(UTC)
 
         if message.startswith("/"):
             romanian = settings.preferred_language == "ro"
@@ -230,27 +201,52 @@ class JournalApplicationService:
                 # "anuleaza") already calls through the agent.
                 if self._agent is None:
                     return unavailable(romanian)
-                context = AgentContext(user=user, chat_id=chat_id, romanian=romanian, message=message)
+                context = AgentContext(user=user, chat_id=chat_id, message=message, started_at=request_time)
                 return await self._agent.run_undo(session, context)
+            if cmd == "/start" and not settings.onboarding_completed and self._agent is not None:
+                # v2.0: onboarding is driven by the agent, not deterministic if-else
+                # stage branches. The system prompt tells the model to greet the
+                # user, explain what the bot does (text/voice/photo), and collect
+                # name, timezone, and calorie target naturally via update_settings.
+                context = AgentContext(
+                    user=user,
+                    chat_id=chat_id,
+                    message=message,
+                    media_kind=media_kind,
+                    media_text=media_text,
+                    media_caption=media_caption,
+                    started_at=request_time,
+                )
+                return await self._agent.run(session, context)
             is_private_admin = (
                 user.telegram_user_id is not None
                 and chat_id == str(user.telegram_user_id)
                 and await telegram_access_repo.is_admin(session, user.telegram_user_id)
             )
-            return await command(session, user, settings, message, romanian, is_private_admin)
+            return await command(
+                session,
+                user,
+                settings,
+                message,
+                romanian,
+                is_private_admin,
+                request_time,
+            )
 
-        romanian = is_romanian(message)
-        settings.set_preferred_language("ro" if romanian else "en")
+        # v2.0: the model decides the reply language. is_romanian() is no longer
+        # called in the agent path. preferred_language is kept as a hint for
+        # slash-command dispatch only, derived from the user's last slash-command
+        # language or explicit setting.
 
         if self._agent is not None:
             context = AgentContext(
                 user=user,
                 chat_id=chat_id,
-                romanian=romanian,
                 message=message,
                 media_kind=media_kind,
                 media_text=media_text,
                 media_caption=media_caption,
+                started_at=request_time,
             )
             return await self._agent.run(session, context)
-        return unavailable(romanian)
+        return unavailable(settings.preferred_language == "ro")

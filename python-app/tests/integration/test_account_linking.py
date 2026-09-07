@@ -3,7 +3,12 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db.base import session_scope
-from app.db.models.messaging import MessagingIdentity, MessagingOutboundMessage
+from app.db.models.messaging import (
+    FrontendLinkCode,
+    MessagingIdentity,
+    MessagingOutboundMessage,
+    MessagingRoute,
+)
 from app.messaging import inbox_worker, ingress
 from app.messaging.frontend_registry import FrontendRegistry
 from app.messaging.inbound_message import InboundMessage
@@ -106,3 +111,66 @@ async def test_invalid_link_code_via_inbox_worker_gets_a_rejection_reply():
     async with session_scope() as session:
         rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
     assert any("invalid, expired, or already used" in r.text for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_telegram_link_code_is_not_issued_in_a_group_chat():
+    journal = JournalApplicationService(default_timezone="Europe/Bucharest")
+    deps = InboxWorkerDeps(journal=journal, frontends=FrontendRegistry([]))
+
+    async with session_scope() as session:
+        await ingress.accept(
+            session,
+            InboundMessage(
+                provider="telegram",
+                event_id="evt-group-link",
+                user_id="501",
+                conversation_id="-100501",
+                display_name="Member",
+                language_code="en",
+                text="/link",
+                caption=None,
+            ),
+        )
+    await inbox_worker.process_one(deps)
+
+    async with session_scope() as session:
+        replies = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
+        codes = (await session.execute(select(FrontendLinkCode))).scalars().all()
+
+    assert any("private chat" in reply.text for reply in replies)
+    assert not any("link code is" in reply.text for reply in replies)
+    assert codes == []
+
+
+@pytest.mark.asyncio
+async def test_redeem_rejects_an_identity_won_by_another_user(monkeypatch):
+    async with session_scope() as session:
+        owner = await get_or_create_by_telegram_user_id(session, 610, "Owner", "Europe/Bucharest")
+        other = await get_or_create_by_telegram_user_id(session, 611, "Other", "Europe/Bucharest")
+        code = await message_link_service.issue(session, owner)
+        existing = MessagingIdentity(user_id=other.id, provider="mattermost", external_user_id="mm-race")
+        session.add(existing)
+        await session.flush()
+
+        async def return_existing(*args, **kwargs):
+            return existing
+
+        async def no_identity_yet(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(message_link_service.messaging_identity_repo, "create", return_existing)
+        monkeypatch.setattr(message_link_service.messaging_identity_repo, "find_by_provider_and_external_id", no_identity_yet)
+        with pytest.raises(message_link_service.LinkError, match="already linked"):
+            await message_link_service.redeem(session, code, "mattermost", "mm-race", "channel-race")
+
+        routes = (
+            await session.execute(
+                select(MessagingRoute).where(
+                    MessagingRoute.provider == "mattermost",
+                    MessagingRoute.conversation_id == "channel-race",
+                )
+            )
+        ).scalars().all()
+
+    assert routes == []

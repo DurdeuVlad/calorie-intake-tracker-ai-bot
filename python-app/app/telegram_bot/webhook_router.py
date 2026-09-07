@@ -1,4 +1,5 @@
 import hmac
+import json
 import logging
 
 from aiogram.types import Update
@@ -11,6 +12,24 @@ from app.messaging.inbound_message import Attachment, AttachmentKind, InboundMes
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+MAX_WEBHOOK_BODY_BYTES = 256 * 1024
+
+
+async def _read_bounded_body(request: Request) -> bytes | None:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > MAX_WEBHOOK_BODY_BYTES:
+                return None
+        except ValueError:
+            return None
+
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_WEBHOOK_BODY_BYTES:
+            return None
+        body.extend(chunk)
+    return bytes(body)
 
 
 def _valid_secret(secret: str | None) -> bool:
@@ -59,9 +78,13 @@ async def telegram_webhook(
     if not _valid_secret(x_telegram_bot_api_secret_token):
         return Response(status_code=403)
 
-    body = await request.json()
+    raw_body = await _read_bounded_body(request)
+    if raw_body is None:
+        logger.warning("Rejected oversized Telegram webhook payload")
+        return Response(status_code=200)
+
     try:
-        update = Update.model_validate(body)
+        update = Update.model_validate(json.loads(raw_body))
     except Exception:  # noqa: BLE001 -- untrusted webhook body, must never crash the worker
         logger.warning("Rejected malformed Telegram update payload")
         return Response(status_code=200)

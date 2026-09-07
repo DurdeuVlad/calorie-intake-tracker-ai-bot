@@ -9,12 +9,12 @@ import pytest
 
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext
-from app.services.journal_tool_executor import ValidationError, _resolve_meal_instant
+from app.tools.shared import ValidationError, _resolve_meal_instant
 
 
 def _context(started_at: datetime) -> AgentContext:
     user = FoodUser(id=1, telegram_user_id=1, display_name="Tester", created_at=started_at)
-    return AgentContext(user=user, chat_id="1", romanian=False, message="test", started_at=started_at)
+    return AgentContext(user=user, chat_id="1", message="test", started_at=started_at)
 
 
 def test_rejects_a_nonexistent_local_time_in_the_spring_forward_gap():

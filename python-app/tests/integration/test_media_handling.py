@@ -73,7 +73,18 @@ class ReceiptJournal:
 
     default_timezone = "Europe/Bucharest"
 
-    async def handle(self, session, user, chat_id, message, *, media_kind=None, media_text=None, media_caption=None):
+    async def handle(
+        self,
+        session,
+        user,
+        chat_id,
+        message,
+        *,
+        media_kind=None,
+        media_text=None,
+        media_caption=None,
+        started_at=None,
+    ):
         if media_kind == "voice":
             return f"I heard: {media_text}\nLogged: eggs — 140 kcal\nSend Undo within 10 minutes."
         if media_kind == "photo":

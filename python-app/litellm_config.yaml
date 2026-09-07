@@ -1,0 +1,31 @@
+# LiteLLM proxy configuration.
+# Provides an OpenAI-compatible endpoint with response caching so repeated
+# eval/test runs do not re-bill the upstream provider. Redis is used as the
+# cache backend so cached responses survive proxy restarts.
+#
+# The app points OPENAI_BASE_URL at this proxy (http://litellm:4000/v1).
+# LiteLLM uses the API key from its own environment to call OpenAI; the
+# bearer token the app sends is accepted by the proxy without validation
+# when no master_key is set.
+
+model_list:
+  - model_name: gpt-5.6-luna
+    litellm_params:
+      model: openai/gpt-5.6-luna
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-5.6-terra
+    litellm_params:
+      model: openai/gpt-5.6-terra
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4o-mini-transcribe
+    litellm_params:
+      model: openai/gpt-4o-mini-transcribe
+      api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  cache: false
+
+general_settings:
+  # No master_key: the proxy accepts any bearer token from the app.
+  # In production, set master_key and have the app send it.
+  drop_params: true

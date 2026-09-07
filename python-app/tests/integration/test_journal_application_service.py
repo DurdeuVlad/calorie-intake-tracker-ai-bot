@@ -40,7 +40,8 @@ async def test_start_shows_onboarding_prompt_for_a_new_user():
         user = await _make_user(session)
         await session.commit()
         reply = await journal.handle(session, user, "1", "/start")
-    assert "IANA" in reply or "timezone" in reply.lower()
+    # New users are greeted and asked for their name first
+    assert "cheamă" in reply.lower() or "name" in reply.lower() or "IANA" in reply or "timezone" in reply.lower()
 
 
 @pytest.mark.asyncio
@@ -186,7 +187,9 @@ async def test_unknown_command_gets_a_helpful_message():
 
 
 @pytest.mark.asyncio
-async def test_romanian_message_gets_romanian_unavailable_reply_and_sets_preferred_language():
+async def test_non_slash_message_without_agent_uses_default_preferred_language():
+    """v2.0: non-slash messages without an agent use the stored preferred_language
+    for the unavailable reply. The model decides language when an agent is present."""
     journal = JournalApplicationService(default_timezone="Europe/Bucharest")
     async with session_scope() as session:
         user = await _make_user(session)
@@ -194,19 +197,25 @@ async def test_romanian_message_gets_romanian_unavailable_reply_and_sets_preferr
         reply = await journal.handle(session, user, "1", "cate calorii azi?")
         await session.commit()
 
+    # Default preferred_language is "ro" for new users
     assert "Nu pot procesa" in reply
     async with session_scope() as session:
         from app.repositories.food_user_repo import get_settings
 
         settings = await get_settings(session, user.id)
-        assert settings.preferred_language == "ro"
+        # v2.0: non-slash messages no longer call set_preferred_language
+        assert settings.preferred_language == "ro"  # unchanged from default
 
 
 @pytest.mark.asyncio
-async def test_english_message_gets_english_unavailable_reply():
+async def test_english_unavailable_reply_when_preferred_language_is_en():
     journal = JournalApplicationService(default_timezone="Europe/Bucharest")
     async with session_scope() as session:
         user = await _make_user(session)
+        from app.repositories.food_user_repo import get_settings
+
+        settings = await get_settings(session, user.id)
+        settings.set_preferred_language("en")
         await session.commit()
         reply = await journal.handle(session, user, "1", "how many calories today")
     assert "cannot process" in reply
@@ -220,15 +229,8 @@ async def test_slash_commands_do_not_change_preferred_language():
     async with session_scope() as session:
         user = await _make_user(session)
         await session.commit()
-        await journal.handle(session, user, "1", "cate calorii azi?")  # sets preferred_language to "ro"
-        await session.commit()
-
-    async with session_scope() as session:
-        from app.repositories.food_user_repo import get_settings
-
-        settings = await get_settings(session, user.id)
-        assert settings.preferred_language == "ro"
-        reply = await journal.handle(session, user, "1", "/help")  # should stay Romanian
+        # Default preferred_language is "ro" for new users
+        reply = await journal.handle(session, user, "1", "/help")
     assert "Comenzi" in reply
 
 

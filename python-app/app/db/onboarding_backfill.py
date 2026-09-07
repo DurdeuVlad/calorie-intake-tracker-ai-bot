@@ -5,7 +5,7 @@ STUCK_ONBOARDING_BACKFILL_SQL = """
     UPDATE user_settings
     SET onboarding_stage = 'COMPLETE', onboarding_completed = true
     WHERE onboarding_completed = false
-      AND onboarding_stage IN ('TIMEZONE', 'CALORIE_TARGET')
+      AND onboarding_stage IN ('NAME', 'TIMEZONE', 'CALORIE_TARGET')
       AND EXISTS (
           SELECT 1 FROM conversation_memory cm
           WHERE cm.user_id = user_settings.user_id

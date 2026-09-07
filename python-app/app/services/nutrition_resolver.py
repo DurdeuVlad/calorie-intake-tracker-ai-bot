@@ -11,10 +11,15 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.constraints import MAX_CALORIES
 from app.db.models.nutrition import NutritionSourceCache
 from app.db.models.users import FoodUser
 from app.domain.journal_intent import MealItem
-from app.integrations.openfoodfacts_types import NutritionProfile, OpenFoodFactsClient
+from app.integrations.openfoodfacts_types import (
+    NutritionProfile,
+    OpenFoodFactsClient,
+    validate_nutrition_profile,
+)
 from app.repositories import nutrition_source_cache_repo, private_food_repo
 from app.services import openfoodfacts_cache
 
@@ -36,15 +41,24 @@ def _scale(value: float | None, factor: float) -> float | None:
 
 
 def _cache_to_profile(cache: NutritionSourceCache) -> NutritionProfile:
-    return NutritionProfile(
-        name=cache.product_name,
-        calories_per_100g=cache.calories_per_100g,
-        protein_per_100g=float(cache.protein_per_100g) if cache.protein_per_100g is not None else None,
-        carbs_per_100g=float(cache.carbs_per_100g) if cache.carbs_per_100g is not None else None,
-        fat_per_100g=float(cache.fat_per_100g) if cache.fat_per_100g is not None else None,
-        source="open_food_facts",
-        source_url=cache.source_url,
+    return validate_nutrition_profile(
+        NutritionProfile(
+            name=cache.product_name,
+            calories_per_100g=cache.calories_per_100g,
+            protein_per_100g=float(cache.protein_per_100g) if cache.protein_per_100g is not None else None,
+            carbs_per_100g=float(cache.carbs_per_100g) if cache.carbs_per_100g is not None else None,
+            fat_per_100g=float(cache.fat_per_100g) if cache.fat_per_100g is not None else None,
+            source="open_food_facts",
+            source_url=cache.source_url,
+        )
     )
+
+
+def _safe_scale_item(item: MealItem, profile: NutritionProfile) -> MealItem | None:
+    scaled = _scale_item(item, profile)
+    if scaled.total_calories is not None and not 0 <= scaled.total_calories <= MAX_CALORIES:
+        return None
+    return scaled
 
 
 def _scale_item(item: MealItem, profile: NutritionProfile) -> MealItem:
@@ -76,15 +90,20 @@ async def resolve(
         profile: NutritionProfile | None = None
         if isinstance(cached_lookup.value, NutritionProfile):
             profile = cached_lookup.value
-        elif cached_lookup.status not in {"RATE_LIMITED", "TEMPORARY_FAILURE"}:
+        elif cached_lookup.status not in {"RATE_LIMITED", "TEMPORARY_FAILURE", "STALE_PROVIDER_FAILURE"}:
             # Compatibility bridge for the pre-cache barcode table. It keeps
             # existing deployments warm while fresh responses move into the
             # provider-aware cache above.
             existing = await nutrition_source_cache_repo.find_by_barcode(session, item.barcode)
             if existing is not None and existing.fetched_at > now - CACHE_TTL:
-                profile = _cache_to_profile(existing)
+                try:
+                    profile = _cache_to_profile(existing)
+                except (TypeError, ValueError, OverflowError):
+                    profile = None
         if profile is not None:
-            return ResolvedMealItem(_scale_item(item, profile), "open_food_facts")
+            scaled = _safe_scale_item(item, profile)
+            if scaled is not None:
+                return ResolvedMealItem(scaled, "open_food_facts")
 
     private = await private_food_repo.find_by_user_and_name_ignore_case(session, user, item.name)
     if private is not None:

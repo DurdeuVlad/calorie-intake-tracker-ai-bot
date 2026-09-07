@@ -32,6 +32,7 @@ The canonical implementation in this repository is `python-app/`. The Java imple
 - Never commit secrets, `.env` files, tokens, raw user data, media, or database dumps.
 - Never rewrite an applied migration. Add a new Alembic revision for a schema change.
 - Keep deterministic business rules, authorization, validation, and calculations outside prompts.
+- Trust the model as an agent. Never rewrite, augment, or fabricate user input before sending it to the model. The model sees exactly what the user sent. Prefer prompt engineering and capability docs over deterministic pre-processing of user messages. Application code may validate tool arguments and enforce ownership, but must not alter the user's words or inject hidden instructions.
 
 ## How to work
 

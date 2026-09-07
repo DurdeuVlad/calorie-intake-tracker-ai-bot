@@ -16,7 +16,7 @@ async def find_first_undoable(session: AsyncSession, user: FoodUser, now: dateti
         # relationship outside an awaited call raises MissingGreenlet, and
         # _undo_last() needs the full mutation list right after this query.
         .options(selectinload(JournalChangeSet.mutations))
-        .order_by(JournalChangeSet.created_at.desc(), JournalChangeSet.id.desc())
+        .order_by(JournalChangeSet.id.desc())
         .limit(1)
         .with_for_update()
     )

@@ -1,9 +1,18 @@
+from app.agent.capabilities import registry as capabilities_registry
+from app.agent.openai_model_client import _user_content
 from app.agent.system_prompt import instructions
-from app.agent.tool_schemas import tool_definitions
+from app.agent.tool_schemas import all_tool_names, tool_categories, tool_definitions
+from app.domain.agent_types import AgentContext
 
 
-def test_gin_tonic_is_estimated_and_edit_calories_replace_the_total():
-    prompt = instructions(romanian=False)
+def test_core_prompt_is_small_and_contains_capability_index():
+    prompt = instructions()
+    # Core prompt should be small (was a 5000+ char monolith)
+    assert len(prompt) < 12000
+    assert "Capability index" in prompt
+    assert "load_instructions" in prompt
+    for topic in ("nutrition", "portions", "combos", "editing", "daily_totals", "onboarding", "aliases"):
+        assert topic in prompt
 
     assert "a user-owned private-food result, and a photo's Label line" in prompt
     assert "as trusted nutrition" in prompt
@@ -14,18 +23,96 @@ def test_gin_tonic_is_estimated_and_edit_calories_replace_the_total():
     assert "gin tonic is not water" in prompt
     assert '"do 150 kcal" means EDIT it with calories 150' in prompt
 
+def test_load_instructions_tool_is_registered():
+    tools = tool_definitions()
+    tool = next((t for t in tools if t["function"]["name"] == "load_instructions"), None)
+    assert tool is not None
+    params = tool["function"]["parameters"]
+    assert "topic" in params["properties"]
+    assert "topic" in params["required"]
+    enum_values = params["properties"]["topic"]["enum"]
+    for topic in ("nutrition", "portions", "combos", "editing", "daily_totals", "onboarding", "aliases"):
+        assert topic in enum_values
+
+
+def test_capability_docs_exist_and_are_readable():
+    for topic in capabilities_registry.valid_topics():
+        content = capabilities_registry.load(topic)
+        assert content is not None
+        assert len(content) > 50  # not empty
+
+
+def test_load_unknown_topic_returns_none():
+    assert capabilities_registry.load("nonexistent") is None
+
+
+def test_apply_actions_description_preserves_edit_is_absolute_rule():
     apply_actions = next(tool for tool in tool_definitions() if tool["function"]["name"] == "apply_journal_actions")
     assert "replacement total, never an increment or delta" in apply_actions["function"]["description"]
+
+
+def test_search_web_description_preserves_trusted_source_rule():
     search_web = next(tool for tool in tool_definitions() if tool["function"]["name"] == "search_web")
     assert "trusted local, private-food, or exact packaged result" in search_web["function"]["description"]
     assert "Checks a fresh cache before an outbound query" in search_web["function"]["description"]
 
 
+def test_media_context_is_not_duplicated_in_model_user_content():
+    voice = AgentContext(
+        user=None,
+        chat_id="1",
+        message="transcript\nUser caption: oatmeal",
+        media_kind="voice",
+        media_text="transcript",
+        media_caption="oatmeal",
+    )
+    photo = AgentContext(
+        user=None,
+        chat_id="1",
+        message="photo interpretation\nUser caption: lunch",
+        media_kind="photo",
+        media_text="photo interpretation",
+    )
+
+    voice_content = _user_content(voice)
+    photo_content = _user_content(photo)
+
+    assert voice_content.count("[Server transcript:") == 1
+    assert voice_content.count("oatmeal") == 1
+    assert "[Server transcript: transcript]" in voice_content
+    assert photo_content.count("[Photo interpretation:") == 1
+    assert "[Photo interpretation: photo interpretation]" in photo_content
+
+
+def test_tool_categories_cover_all_tools():
+    """Every tool in tool_definitions() must appear in exactly one category."""
+    defined_names = {t["function"]["name"] for t in tool_definitions()}
+    categorized_names = set(all_tool_names())
+    assert defined_names == categorized_names, (
+        f"Tools without category: {defined_names - categorized_names}, "
+        f"Categories without tool: {categorized_names - defined_names}"
+    )
+
+
+def test_tool_categories_are_organized():
+    categories = tool_categories()
+    assert "always_available" in categories
+    assert "nutrition" in categories
+    assert "settings" in categories
+    assert "planning" in categories
+    # Always-available tools include the core journal and disclosure tools
+    for tool in ("apply_journal_actions", "undo_last_change", "load_instructions", "get_today_summary", "search_entries"):
+        assert tool in categories["always_available"]
+    # Nutrition tools include search and estimate
+    for tool in ("search_web", "fetch_web_page", "estimate_food", "search_packaged_food"):
+        assert tool in categories["nutrition"]
+
+
 def test_feedback_instructions_cover_unprompted_capture_frustration_and_privacy_questions():
     prompt = instructions(romanian=False)
 
-    assert "call submit_feedback with their own words before replying" in prompt
-    assert "call get_recent_feedback and read it back; never call submit_feedback again just to answer that question" in prompt
+    assert "call save_feedback with their own words before replying" in prompt
+    assert "call get_recent_feedback and read it back; never call save_feedback again just to answer that question" in prompt
     assert "correcting a meal you logged wrong is an EDIT/DELETE, not feedback" in prompt
     assert "offer once to note it as feedback even though they did not ask" in prompt
     assert "do not offer again in the same conversation" in prompt
@@ -34,12 +121,12 @@ def test_feedback_instructions_cover_unprompted_capture_frustration_and_privacy_
     assert "answer directly from here rather than deflecting to /privacy" in prompt
     assert "original media files are not retained" in prompt
 
-    submit_feedback = next(tool for tool in tool_definitions() if tool["function"]["name"] == "submit_feedback")
-    assert "not a food log" in submit_feedback["function"]["description"]
-    assert submit_feedback["function"]["parameters"]["required"] == ["message"]
+    save_feedback = next(tool for tool in tool_definitions() if tool["function"]["name"] == "save_feedback")
+    assert "not a food log" in save_feedback["function"]["description"]
+    assert save_feedback["function"]["parameters"]["required"] == ["message"]
 
     get_recent_feedback = next(tool for tool in tool_definitions() if tool["function"]["name"] == "get_recent_feedback")
-    assert "never call submit_feedback again" in get_recent_feedback["function"]["description"]
+    assert "never call save_feedback again" in get_recent_feedback["function"]["description"]
 
 
 def test_a_why_question_about_an_estimate_is_answered_not_logged_as_feedback():
@@ -54,22 +141,21 @@ def test_a_why_question_about_an_estimate_is_answered_not_logged_as_feedback():
     assert "is a request to see your own reasoning, not a complaint" in prompt
     assert "answer it directly from the entry's basis or derivation" in prompt
     assert "for a daily total, by naming the entries that make it up" in prompt
-    assert "only call submit_feedback if they push back after that explanation or are clearly complaining rather than asking" in prompt
+    assert "only call save_feedback if they push back after that explanation or are clearly complaining rather than asking" in prompt
 
 
 def test_onboarding_instructions_explain_capabilities_and_drive_settings_to_completion():
-    """continue_onboarding() never runs in production (see
-    journal_application_service.py's module docstring) -- update_settings is the
-    only path that reaches real onboarding users, so the prompt must tell the
-    model to complete it, not just set a timezone and move on."""
+    """Onboarding is driven by the agent, not deterministic if-else stage
+    branches -- update_settings is the only path that advances onboarding
+    stages, so the prompt must tell the model to complete it through
+    conversation, not just set a timezone and move on."""
     prompt = instructions(romanian=False)
 
-    assert "The first user reply after your /start welcome message is their timezone" in prompt
-    assert "briefly explain what you do" in prompt
-    assert "logged from text, a voice note, or a photo" in prompt
+    assert "When the user sends /start and onboarding is not complete" in prompt
+    assert "meals can be logged from text, a voice note, or a photo" in prompt
     assert "ask once for a daily calorie target between 1200 and 5000, or invite them to say skip" in prompt
-    assert "call update_settings again with calorieTarget or skipCalorieTarget true" in prompt
-    assert "do not ask about the target again in this or any later conversation" in prompt
+    assert "call update_settings with calorieTarget or skipCalorieTarget true" in prompt
+    assert "Do not ask about any of these again in later conversations" in prompt
 
     update_settings = next(tool for tool in tool_definitions() if tool["function"]["name"] == "update_settings")
     assert "skipCalorieTarget" in update_settings["function"]["parameters"]["properties"]

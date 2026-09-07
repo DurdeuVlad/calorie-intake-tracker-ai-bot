@@ -34,7 +34,11 @@ def _status_text(rows_count: int, calories: int, target: int | None, target_mode
 async def refresh_for_tool_executor(session: AsyncSession, user: FoodUser, chat_id: str) -> None:
     """Adapter matching JournalToolExecutor's RefreshDailyStatus callable shape
     (chat_id as the AgentContext's str), delegating to refresh() below."""
-    await refresh(session, user, int(chat_id))
+    try:
+        telegram_chat_id = int(chat_id)
+    except (TypeError, ValueError):
+        return
+    await refresh(session, user, telegram_chat_id)
 
 
 async def refresh(session: AsyncSession, user: FoodUser, chat_id: int) -> None:
