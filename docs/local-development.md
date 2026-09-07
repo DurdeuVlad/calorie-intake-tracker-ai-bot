@@ -6,7 +6,7 @@ The canonical application lives in `python-app/`. Run Python commands from that 
 
 - **Python 3.11+**
 - **Docker Desktop** (or Docker Engine + Docker Compose v2)
-- **PostgreSQL 16+**
+- **PostgreSQL 17+**
 - **OpenAI API key** for real model, vision, or voice checks
 
 ## Fast Start: Local Docker Environment

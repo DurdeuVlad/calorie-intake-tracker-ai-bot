@@ -1,6 +1,6 @@
 # Data Model Reference
 
-The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 PostgreSQL baseline under `python-app/alembic/flyway_baseline/` and schema evolution managed strictly through Alembic revisions.
+The canonical Python application uses PostgreSQL 17 with the retained V1–V17 PostgreSQL baseline under `python-app/alembic/flyway_baseline/` and schema evolution managed through Alembic revisions. The app container self-migrates on boot (`alembic upgrade head`). Current head: `e9f5a2b7c8d3`.
 
 ---
 
@@ -8,20 +8,20 @@ The canonical Python application uses PostgreSQL 16+ with the retained V1–V17 
 
 | Table | Migration | Purpose & Key Constraints |
 | --- | --- | --- |
-| `users` | V1 | Primary user record. Stores numeric Telegram ID and registration timestamp (`id` PK). |
-| `user_settings` | V1 | Per-user configuration: IANA `timezone`, `daily_calorie_target`, preferred language, report schedule/preferences (`user_id` FK, 1:1). |
-| `food_entries` | V1 | Represents one eating event (timestamp, meal type, original text evidence, total calories/macros, `user_id` FK). |
-| `food_items` | V1 | Structured food item within an entry (food name, quantity value, unit: `g`, `ml`, `portion`, `unspecified`, calories, protein, carbs, fat, nutrition source provenance). |
-| `journal_change_sets` | V17 | Message-level change set holding snapshots for 10-minute reversible undo (`user_id`, `created_at`, `expires_at`). |
+| `food_users` | V1 | Primary user record. Stores numeric Telegram ID and registration timestamp (`id` PK). |
+| `user_settings` | V1 + Alembic | Per-user configuration: IANA `timezone`, `calorie_target`, `preferred_language`, `reports_enabled`, `onboarding_stage` (`NAME` → `TIMEZONE` → `CALORIE_TARGET` → `COMPLETE`), `onboarding_completed`, `day_boundary_hour` (0-23, default 0), `day_boundary_reminder_enabled`, `target_mode` (`max` \| `min`), `budget_alerts_enabled`, `tracking_nudge_enabled` (`user_id` FK, 1:1). |
+| `food_entries` | V1 | One eating event: timestamp, meal type, original text evidence, total calories/macros, `user_id` FK. |
+| `food_items` | V1 | Structured food item within an entry: food name, quantity value, unit (`g`, `ml`, `portion`, `unspecified`), calories, protein, carbs, fat, nutrition source provenance. |
+| `journal_change_sets` | V17 | Message-level change set for 10-minute reversible undo (`user_id`, `created_at`, `expires_at`). |
 | `journal_change_mutations` | V17 | Ordered before/after state diffs (INSERT, UPDATE, DELETE) belonging to a `journal_change_set`. |
-| `nutrition_sources` | V5 | Cached provenance records for Open Food Facts, private foods, and web lookups (`source_type`, `external_id`, payload JSON). |
-| `private_foods` | V5 | Custom user-created food items and custom calorie/macro definitions (`user_id` FK). |
-| `nutrition_evidence` | `d4f1a7c8e902` | Durable server-owned provenance for nutrition estimates and packaged food quotes (`user_id` FK, source type, payload). |
-| `nutrition_source_cache` | `d4f1a7c8e902` | Global barcode/source cache for Open Food Facts and web lookups (no FK to `food_users`). |
+| `nutrition_sources` | V5 | Cached provenance for Open Food Facts, private foods, and web lookups. |
+| `private_foods` | V5 | User-created food items with custom calorie/macro definitions (`user_id` FK). |
+| `nutrition_evidence` | `d4f1a7c8e902` | Durable server-owned provenance for nutrition estimates and packaged food quotes. |
+| `nutrition_source_cache` | `d4f1a7c8e902` | Global barcode/source cache for Open Food Facts and web lookups. |
 | `open_food_facts_lookup_cache` | `e6c2b8d4f103` | Cached Open Food Facts API responses keyed by barcode or search query. |
-| `food_aliases` | `a1b2c3d4e5f6` | User-scoped food shorthand mappings (e.g. "cafea" → "coffee with milk"). Case-insensitive unique on `(user_id, alias_lower)` via stored generated column. Optional `calories_per_100g` or `fixed_calories` (mutually exclusive, CHECK constrained). |
-| `telegram_access_grants` | `7e9f2c4a1b6d` | Persistent Telegram access grants replacing the env-var allowlist (`user_id` FK, `telegram_user_id`, `granted_at`). |
-| `user_feedback` | Alembic `b3f7a1c9d4e2` | Bug reports, complaints, and feature requests, captured verbatim via `/feedback` or the `save_feedback` agent tool (`user_id` FK, `source`: `command` \| `ai_detected`, `message`, `created_at`). |
+| `food_aliases` | `a1b2c3d4e5f6` | User-scoped food shorthand (e.g. "cafea" → "coffee with milk"). Case-insensitive unique on `(user_id, alias_lower)` via stored generated column. Optional `calories_per_100g` or `fixed_calories` (mutually exclusive, CHECK constrained). |
+| `telegram_access_grants` | `7e9f2c4a1b6d` | Persistent Telegram access grants replacing the env-var allowlist. |
+| `user_feedback` | `b3f7a1c9d4e2` + `f7a3b9c5d204` + `e9f5a2b7c8d3` | Bug reports, complaints, feature requests captured verbatim via `/feedback`, `/bug`, or the `save_feedback` agent tool. Fields: `source` (`command` \| `ai_detected`), `kind` (`bug` \| `correction` \| `suggestion`), `message`, `context`, `resolved`, `created_at`. Recent feedback is loaded into agent context for learning. |
 
 ---
 

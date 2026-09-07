@@ -9,7 +9,7 @@ This runbook guides operators through launching a new production instance of **F
 Before registering the live webhook or enabling user traffic, ensure all prerequisites are met:
 
 - [ ] Protected `master` commit passed the current Python and Docker CI checks.
-- [x] PostgreSQL 16 database provisioned with persistent storage volume and daily backup schedule configured.
+- [x] PostgreSQL 17+ database provisioned with persistent storage volume and daily backup schedule configured.
 - [x] High-entropy `TELEGRAM_WEBHOOK_SECRET` generated.
 - [ ] Bootstrap administrator ID configured in `ADMIN_TELEGRAM_USER_IDS`; keep the old `ALLOWED_TELEGRAM_USER_IDS` only until its grants are migrated.
 - [x] Valid `OPENAI_API_KEY` supplied.
