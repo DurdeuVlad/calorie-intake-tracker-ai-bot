@@ -5,7 +5,7 @@
 ## Completed Milestones (Production Release)
 
 1. [x] **Bootstrap & Governance**: Python Docker architecture, FastAPI service, security scanning, and configuration template.
-2. [x] **Database Schema & Migrations**: PostgreSQL 16+ baseline plus Alembic schema evolution.
+2. [x] **Database Schema & Migrations**: PostgreSQL 17+ baseline plus Alembic schema evolution.
 3. [x] **Multi-Frontend Ingestion**: Telegram HTTPS Webhook API with secret header verification and Mattermost WebSocket client over Tailscale.
 4. [x] **User Isolation & Idempotency**: Atomic update claiming (`messaging_inbox`), strict user-level authorization, and outbox messaging worker (`messaging_outbox`).
 5. [x] **Onboarding & Pinned Status**: Timezone-aware user settings, daily calorie targets, and dynamic pinned daily status updates.

@@ -10,6 +10,12 @@ Collect container stdout/stderr and the metrics endpoint privately. Alert on sta
 
 Compose retains at most three 10 MB JSON log files per application container. This is only a local guardrail, not a replacement for centralized log retention.
 
+### LiteLLM proxy (v2.0)
+
+The Docker Compose stack includes a LiteLLM proxy service (`python-app-litellm-1`, port 4000) that routes `gpt-5.6-luna` and `gpt-4o-mini-transcribe` to the OpenAI API. The app points to it by default (`OPENAI_BASE_URL=http://litellm:4000/v1` inside Compose, `http://localhost:4000/v1` locally). LiteLLM configuration is in `python-app/litellm_config.yaml`.
+
+If the LiteLLM proxy is down, the app falls back to the direct OpenAI endpoint if `OPENAI_BASE_URL` is set to `https://api.openai.com/v1`. Monitor LiteLLM health via its own `/health` endpoint on port 4000.
+
 ### Browserless egress boundary
 
 Keep `BROWSERLESS_EGRESS_RESTRICTED=false` unless Browserless is configured to send navigation through an operator-controlled filtering proxy. When enabling it, set `BROWSERLESS_EGRESS_PROXY_URL` to that proxy and configure the proxy to deny loopback, private, link-local, reserved, and cloud-metadata networks, including IPv4 and IPv6 forms. The application passes the proxy and an exact-domain allow-list on every Browserless request and remains disabled if either setting is absent. Verify the proxy policy from the deployment environment before release; the environment variable alone is not a security control.
@@ -18,13 +24,17 @@ Keep `BROWSERLESS_EGRESS_RESTRICTED=false` unless Browserless is configured to s
 
 Before applying the data-boundary Alembic revision to an existing database, run `python -m app.db.migration_preflight` from `python-app`. The command reports any rows that would violate the new CHECK constraints and exits nonzero without changing data. Remediate and verify the reported rows before running `python -m alembic upgrade head`; do not silently cap journal calories or quantities.
 
+### Self-migration on boot (v2.0)
+
+The app container runs `alembic upgrade head` on startup before serving traffic. This means a container restart applies all pending migrations automatically. The readiness probe only returns 200 after migrations complete and the database is healthy. If a migration fails, the container stays unhealthy — do not force it to ready.
+
 ## Backup and restore
 
 Back up PostgreSQL daily with tested point-in-time or dump recovery. Keep backups encrypted and access-controlled. The database is the system of record; original media is intentionally unrecoverable.
 
 For local Compose, run `bash docker/backup-postgres.sh` from the repository root to create a timestamped, plain-SQL dump under `backups/`. It writes to a restrictive temporary file and publishes the final filename only after `pg_dump` succeeds. Restore only into the separate `foodjournal_restore` database with `RESTORE_CONFIRM=foodjournal_restore bash docker/restore-postgres.sh backups/<dump>.sql`. The restore helper rejects `foodjournal` and recreates only its named restore target; choose another safe target with both `RESTORE_DATABASE=<name>` and a matching `RESTORE_CONFIRM=<name>`. Test restore at least quarterly, verify migration history and a sample of journal entries, then securely delete the temporary restore database. Never restore a dump over a live service as an incident shortcut.
 
-In production, `/usr/local/bin/homelab-backup.sh` (host-level, outside this repository) dumps the `foodjournal` database via `docker exec calorie-tracker-db pg_dump` into `/opt/postgres/backups/foodjournal.sql` every 6 hours (cron: `0 */6 * * *`), mirroring the existing n8n `workflows` dump already there. That file is swept into the same run's Restic snapshot (`/opt` is one of the backed-up paths) with the host's existing retention policy (3 last, 7 daily, 4 weekly, 12 monthly, pruned automatically). This is a plain-SQL dump, not a hot/consistent snapshot of the live volume, so recovery still needs the restore procedure above -- restore into `foodjournal_restore`, verify, then decide how to cut over.
+In production, `/usr/local/bin/homelab-backup.sh` (host-level, outside this repository) dumps the `foodjournal` database via `docker exec calorie-tracker-db pg_dump` into `/opt/postgres/backups/foodjournal.sql` every 6 hours (cron: `0 */6 * * *`). That file is swept into the same run's Restic snapshot (`/opt` is one of the backed-up paths) with the host's existing retention policy (3 last, 7 daily, 4 weekly, 12 monthly, pruned automatically). This is a plain-SQL dump, not a hot/consistent snapshot of the live volume, so recovery still needs the restore procedure above -- restore into `foodjournal_restore`, verify, then decide how to cut over.
 
 ## Incident response
 
@@ -42,4 +52,4 @@ While diagnosing this incident, the GitHub push webhook that drives Coolify's au
 
 ## Cutover
 
-Validate the new deployment using a test user, back up legacy data, register the new webhook once, and observe the first scheduled reports. Keep a reversible DNS/application route, but do not run both bot writers against the same user journal.
+Validate the new deployment using a test user, back up legacy data, register the new webhook once, and observe the first scheduled reports. Keep a reversible DNS/application route, but do not run both bot writers against the same user journal. See [cutover-runbook.md](cutover-runbook.md) for the full checklist.

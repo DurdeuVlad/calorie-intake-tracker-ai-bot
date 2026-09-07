@@ -22,7 +22,7 @@ The canonical implementation in this repository is `python-app/`. The Java imple
 
 - Enforce verified user ownership on every read and write.
 - Reject unauthorized senders without disclosing system state.
-- Treat AI models as interpretation engines. Only validated application code may mutate state.
+- Treat AI models as capable agents. Application code owns authorization, validation, calculations, persistence, ownership, and mutations. The model owns conversation, interpretation, and semantic decisions.
 - Treat model output, tool output, web content, and user content as untrusted input.
 - Require clarification when intent is genuinely ambiguous or unsafe; never invent IDs, facts, or tool outcomes.
 - Preserve idempotency for Telegram `update_id`, Mattermost `post_id`, scheduled work, and outbound delivery.
@@ -31,7 +31,7 @@ The canonical implementation in this repository is `python-app/`. The Java imple
 - Preserve SSRF protections for all URL fetching.
 - Never commit secrets, `.env` files, tokens, raw user data, media, or database dumps.
 - Never rewrite an applied migration. Add a new Alembic revision for a schema change.
-- Keep deterministic business rules, authorization, validation, and calculations outside prompts.
+- Keep deterministic business rules, authorization, validation, and calculations in application code. Keep conversation, language choice, clarification decisions, and semantic interpretation in the prompt.
 - Trust the model as an agent. Never rewrite, augment, or fabricate user input before sending it to the model. The model sees exactly what the user sent. Prefer prompt engineering and capability docs over deterministic pre-processing of user messages. Application code may validate tool arguments and enforce ownership, but must not alter the user's words or inject hidden instructions.
 
 ## How to work

@@ -1,6 +1,6 @@
 # Local Agent System
 
-This document is the routing map for agents working in the repository. It explains which file does what; it is not a replacement for the detailed quality checklist. The canonical implementation is `python-app/`; the Java implementation lives in the standalone sister repository `DurdeuVlad/calorie-intake-tracker-ai-bot-java`.
+This document is the routing map for agents working in the repository. It explains which file does what; it is not a replacement for the detailed quality checklist. The canonical implementation is `python-app/`.
 
 ## Control-plane map
 
@@ -12,9 +12,11 @@ This document is the routing map for agents working in the repository. It explai
 | Product behavior | [`product.md`](product.md), [`requirements.md`](requirements.md) | User goals and acceptance criteria |
 | System boundaries | [`architecture.md`](architecture.md) and relevant ADRs | Ownership, data flow, and deliberate decisions |
 | Runtime operation | [`local-development.md`](local-development.md), [`configuration.md`](configuration.md), [`operations.md`](operations.md) | Commands, configuration, health, recovery |
-| Release readiness | [`acceptance-test-plan.md`](acceptance-test-plan.md), deployment runbook | Release and production gates |
+| Release readiness | [`acceptance-test-plan.md`](acceptance-test-plan.md), [`cutover-runbook.md`](cutover-runbook.md) | Release and production gates |
+| v2.0 architecture | [`adr/0007-progressive-disclosure-agent.md`](adr/0007-progressive-disclosure-agent.md), [`handoffs/v2.0-agent-in-your-inbox.md`](handoffs/v2.0-agent-in-your-inbox.md) | Trust-the-model design, progressive disclosure, tool split |
 | Repeatable procedure | [`.agents/skills/`](../.agents/skills/) | Focused workflow and validation instructions |
 | Completion evidence | [`agent-handoff-template.md`](agent-handoff-template.md) | Standard handoff |
+| What changed and why | [`../CHANGELOG.md`](../CHANGELOG.md) | Release history and migration notes |
 
 ## Read-routing matrix
 
@@ -27,6 +29,8 @@ This document is the routing map for agents working in the repository. It explai
 | Database change | Requirements, data model, migrations, affected repositories/services | Migration/integration tests, deployment and recovery review |
 | Messaging change | Architecture, operations, inbox/outbox code and tests | Replay, concurrency, restart, delivery and ownership checks |
 | Media/privacy change | Requirements, architecture, media tests, security guidance | Retention, cleanup, failure, logging, and unauthorized-access checks |
+| Onboarding change | `system_prompt.py`, `capabilities/onboarding.md`, `tools/settings.py`, `journal_application_service.py` | Integration tests for stage transitions, agent routing for `/start` |
+| Feedback change | `tools/feedback.py`, `repositories/feedback_repo.py`, `db/models/feedback.py`, system prompt feedback section | Feedback integration tests, context loading tests |
 | Release/deployment | Acceptance plan, configuration, operations, deployment runbook | Full release gate and pre-production acceptance matrix |
 | Documentation-only change | Target source-of-truth docs, related links and ADRs | Link/path/command accuracy and contradiction check |
 | Control-plane change | This document, checklist, skills, handoff template, root instructions | Representative task run plus adversarial review |

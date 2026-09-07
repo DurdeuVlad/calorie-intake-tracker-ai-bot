@@ -63,7 +63,7 @@ These are the current project invariants. If implementation changes one of them,
 - [ ] Support the supported input modes: text, voice, image, and nutrition-label/document input.
 - [ ] Preserve the Telegram and Mattermost frontend boundary.
 - [ ] Preserve terminal mode as a local path through the real domain services.
-- [x] Use Python 3.11+, FastAPI, SQLAlchemy, PostgreSQL 16+, and Alembic for the canonical implementation.
+- [x] Use Python 3.11+, FastAPI, SQLAlchemy, PostgreSQL 17+, and Alembic for the canonical implementation.
 - [x] Treat the Java implementation as a separate sister repository, not a second source tree in this repository.
 
 ### Authorization and ownership
@@ -77,12 +77,13 @@ These are the current project invariants. If implementation changes one of them,
 
 ### AI boundary
 
-- [ ] Treat AI models as interpretation engines, not authorities over application state.
+- [ ] Treat the model as a capable agent. Application code owns authorization, validation, calculations, persistence, and mutations. The model owns conversation, language choice, clarification decisions, and semantic interpretation.
 - [ ] Permit mutations only through typed, application-controlled tools.
 - [ ] Validate every model-produced argument before execution.
 - [ ] Reject malformed, ambiguous, incomplete, or unsafe output rather than guessing.
-- [ ] Keep deterministic business rules in application code.
-- [ ] Keep macro calculations and persisted state changes outside the model.
+- [ ] Keep deterministic business rules (authorization, validation, calculations, transactions, undo) in application code.
+- [ ] Keep conversation, language, clarification, and semantic decisions in the prompt and capability docs.
+- [ ] Never rewrite, augment, or fabricate user input before sending it to the model.
 - [ ] Record enough structured trace information to evaluate behavior without retaining prohibited media.
 
 ### Data integrity and reversibility
