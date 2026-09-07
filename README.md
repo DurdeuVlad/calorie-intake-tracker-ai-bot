@@ -138,6 +138,12 @@ Telegram/Mattermost → FastAPI webhook → JournalApplicationService
 
 ## Documentation
 
+**For contributors and maintainers:**
+- [Collaboration](COLLABORATION.md) — ownership, review, and communication
+- [Contributing](CONTRIBUTING.md) — pull-request and development rules
+- [Open-source policy](OSS.md) — project status, support, releases, and scope
+- [Security](SECURITY.md) — vulnerability reporting and deployment baseline
+
 **For developers:**
 - [Architecture](docs/architecture.md) — system components, data flow, tool execution
 - [Data Model](docs/data-model.md) — PostgreSQL schema, migrations, constraints

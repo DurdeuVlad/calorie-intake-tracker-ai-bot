@@ -8,7 +8,7 @@
 - [ ] Python tests passed from `python-app`
 - [ ] Documentation updated if behaviour/configuration changed
 - [ ] Alembic migration added if schema changed
-- [ ] No secrets, private messages, media, or n8n exports included
+- [ ] No secrets, private messages, media, database dumps, or legacy exports included
 
 ## Operational impact
 
