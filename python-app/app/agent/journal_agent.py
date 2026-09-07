@@ -15,7 +15,6 @@ from app.agent.openai_model_client import (
     AgentProviderUnavailableError,
     OpenAiJournalAgentModel,
 )
-from app.agent.portion_followup import estimate_followup_context
 from app.agent.trace_sink import AgentTraceSink, NoopTraceSink
 from app.db.models.conversation import ConversationMemory
 from app.domain.agent_types import (
@@ -50,12 +49,11 @@ class JournalAgent:
         exchanges: list[AgentExchange] = []
         todos: list[str] = []
         recent: list[ConversationMemory] = await self._memory_recent(session, context.user) if self._memory_recent else []
-        active = estimate_followup_context(context, recent)
 
         calls = 0
         while True:
             try:
-                reply = await self._model.next(active, recent, exchanges)
+                reply = await self._model.next(context, recent, exchanges)
             except AgentProviderUnavailableError:
                 logger.exception("Agent model call failed")
                 return self._complete(self._fallback_receipt(exchanges) or self._unavailable())
@@ -74,7 +72,7 @@ class JournalAgent:
                 calls += 1
 
                 try:
-                    raw = await self._tools.execute(session, active, call, todos)
+                    raw = await self._tools.execute(session, context, call, todos)
                 except AgentToolFailure as failure:
                     raw = failure.result
                 except Exception:
