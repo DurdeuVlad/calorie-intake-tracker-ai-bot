@@ -9,6 +9,7 @@ from app.config import Settings
 from app.integrations.browserless import BrowserlessClient
 from app.integrations.openfoodfacts import OpenFoodFactsHttpClient
 from app.integrations.searxng import SearxngClient
+from app.repositories import feedback_repo
 from app.services import daily_status_service
 from app.services.conversation_memory_service import recent as memory_recent
 from app.services.journal_application_service import JournalApplicationService
@@ -28,5 +29,5 @@ def build_journal_application_service(settings: Settings, trace: AgentTraceSink 
         egress_proxy_url=settings.browserless_egress_proxy_url,
     )
     tools = JournalToolExecutor(off=off, searxng=searxng, browserless=browserless, refresh_daily_status=daily_status_service.refresh_for_tool_executor)
-    agent = JournalAgent(model, tools, settings.agent_max_tool_calls, memory_recent=memory_recent, trace=trace)
+    agent = JournalAgent(model, tools, settings.agent_max_tool_calls, memory_recent=memory_recent, feedback_recent=feedback_repo.recent_for_user, trace=trace)
     return JournalApplicationService(settings.default_timezone, agent=agent)

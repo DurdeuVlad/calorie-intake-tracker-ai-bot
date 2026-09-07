@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.constraints import MAX_CALORIE_TARGET, MIN_CALORIE_TARGET
 from app.db.models.users import FoodUser, UserSettings
 from app.domain.agent_types import AgentContext
-from app.repositories import food_entry_repo, food_user_repo, telegram_access_repo
+from app.repositories import (
+    feedback_repo,
+    food_entry_repo,
+    food_user_repo,
+    telegram_access_repo,
+)
 
 
 class Agent(Protocol):
@@ -143,11 +148,11 @@ async def command(
         return (
             "Pot nota mai multe mese dintr-un singur mesaj, inclusiv pe zile trecute; pot estima nutriția, muta, corecta "
             "sau șterge direct și poți folosi Undo timp de 10 minute.\n\nComenzi: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy, /undo" + admin_commands
+            "/settings, /cancel, /privacy, /undo, /bug" + admin_commands
             if romanian
             else "I can log several meals from one message, including past dates; estimate nutrition; and move, edit, "
             "or delete entries immediately with a 10-minute Undo window.\n\nCommands: /start, /help, /today, /report, "
-            "/settings, /cancel, /privacy, /undo" + admin_commands
+            "/settings, /cancel, /privacy, /undo, /bug" + admin_commands
         )
     if cmd in ("/today", "/report"):
         return await _today_text(session, user, settings, romanian, reference_time)
@@ -166,6 +171,20 @@ async def command(
             if romanian
             else "I retain journal entries, at most 10 recent messages, and temporary Undo change sets. "
             "Original media files are not retained."
+        )
+    if cmd in ("/bug", "/feedback"):
+        rest = raw.strip()[len(cmd):].strip()
+        if not rest:
+            return (
+                "Folosește /bug <descriere> pentru a raporta o problemă. Ex: /bug a logat pizza de două ori."
+                if romanian
+                else "Use /bug <description> to report a problem. E.g. /bug it logged pizza twice."
+            )
+        await feedback_repo.save(session, user, kind="bug", message=rest)
+        return (
+            "Am salvat raportul tău. Mulțumesc!"
+            if romanian
+            else "Saved your report. Thank you!"
         )
     return "Comandă necunoscută. Folosește /help." if romanian else "Unknown command. Use /help."
 

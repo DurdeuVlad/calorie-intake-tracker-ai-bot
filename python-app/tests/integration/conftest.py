@@ -14,6 +14,7 @@ async def _truncate_test_tables() -> None:
                 "journal_change_sets, journal_change_mutations, "
                 "pinned_daily_status, messaging_daily_status, report_deliveries, "
                 "food_aliases, "
+                "user_feedback, "
                 # This has no FK relationship to food_users at all (it's a global
                 # barcode cache), so CASCADE from food_users never reaches it --
                 # it must be listed explicitly.

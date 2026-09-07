@@ -39,14 +39,14 @@ class ScriptedModel:
         self._replies = list(replies)
         self.calls = 0
 
-    async def next(self, context, memory, exchanges):
+    async def next(self, context, memory, exchanges, feedback=None):
         reply = self._replies[self.calls]
         self.calls += 1
         return reply
 
 
 class FailingModel:
-    async def next(self, context, memory, exchanges):
+    async def next(self, context, memory, exchanges, feedback=None):
         raise AgentProviderUnavailableError("simulated network failure")
 
 
@@ -55,7 +55,7 @@ class FailingAfterToolModel:
         self.tool_call = tool_call
         self.calls = 0
 
-    async def next(self, context, memory, exchanges):
+    async def next(self, context, memory, exchanges, feedback=None):
         self.calls += 1
         if self.calls == 1:
             return AgentReply(None, [self.tool_call])

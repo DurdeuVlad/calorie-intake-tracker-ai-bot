@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 
 from app.tools import (
     aliases,
+    feedback,
     instructions,
     journal_actions,
     nutrition,
@@ -47,4 +48,6 @@ HANDLERS: dict[str, Handler] = {
     # planning
     "plan_todos": planning.plan_todos,
     "complete_todo": planning.complete_todo,
+    # feedback
+    "save_feedback": feedback.save_feedback,
 }

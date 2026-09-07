@@ -10,10 +10,6 @@ Use `search_packaged_food` + `select_packaged_food` for barcode/package lookups,
 
 Answer the nutrition question using search_web or estimate_food. Offer to log it if they want, but do not call apply_journal_actions unless the user explicitly says to log it.
 
-## When the user asks "cate calorii are X?" (a question, not a logging request)
-
-Answer the nutrition question using search_web or estimate_food. Offer to log it if they want, but do not call apply_journal_actions unless the user explicitly says to log it.
-
 ## Trusted sources
 
 Treat these as trusted nutrition — use them without external search:

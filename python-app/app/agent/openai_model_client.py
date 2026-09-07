@@ -68,12 +68,15 @@ class OpenAiJournalAgentModel:
         )
 
     async def next(
-        self, context: AgentContext, memory: list[ConversationMemory], exchanges: list[AgentExchange]
+        self, context: AgentContext, memory: list[ConversationMemory], exchanges: list[AgentExchange], feedback: list | None = None
     ) -> AgentReply | None:
         if not self._settings.openai_api_key:
             return AgentReply(None, [])
 
         messages: list[dict[str, Any]] = [{"role": "system", "content": instructions()}]
+        if feedback:
+            tips = "\n".join(f"- {f.kind}: {f.message}" for f in feedback[-5:])
+            messages.append({"role": "system", "content": f"Recent feedback from this user — learn from it and avoid repeating these mistakes:\n{tips}"})
         for turn in memory:
             messages.append({"role": turn.role, "content": turn.content})
         messages.append({"role": "user", "content": _user_content(context)})

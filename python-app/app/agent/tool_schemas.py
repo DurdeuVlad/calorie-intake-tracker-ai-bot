@@ -68,6 +68,9 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "plan_todos",
         "complete_todo",
     ],
+    "feedback": [
+        "save_feedback",
+    ],
 }
 
 
@@ -293,6 +296,20 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "reportsEnabled": {"type": "boolean"},
                 }
             ) | {"minProperties": 1},
+        ),
+        _tool(
+            "save_feedback",
+            "Save a user bug report, correction, or suggestion when the user says something unexpected "
+            "happened or the bot made a mistake. Use kind='bug' for errors, 'correction' for wrong data, "
+            "'suggestion' for feature requests.",
+            _object(
+                {
+                    "kind": {"type": "string", "enum": ["bug", "correction", "suggestion"]},
+                    "message": {"type": "string", "minLength": 1, "maxLength": MAX_TEXT_CHARS * 4},
+                    "context": {"type": "string", "maxLength": MAX_TEXT_CHARS * 8},
+                },
+                ["message"],
+            ),
         ),
     ]
 

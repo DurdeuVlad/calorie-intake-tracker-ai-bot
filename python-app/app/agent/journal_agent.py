@@ -36,12 +36,14 @@ class JournalAgent:
         tools: JournalToolExecutor,
         max_tool_calls: int,
         memory_recent=None,
+        feedback_recent=None,
         trace: AgentTraceSink | None = None,
     ) -> None:
         self._model = model
         self._tools = tools
         self._max_calls = max_tool_calls
         self._memory_recent = memory_recent  # async (session, user) -> list[ConversationMemory], or None
+        self._feedback_recent = feedback_recent  # async (session, user) -> list[UserFeedback], or None
         self._trace = trace or NoopTraceSink()
 
     async def run(self, session: AsyncSession, context: AgentContext) -> str:
@@ -49,11 +51,12 @@ class JournalAgent:
         exchanges: list[AgentExchange] = []
         todos: list[str] = []
         recent: list[ConversationMemory] = await self._memory_recent(session, context.user) if self._memory_recent else []
+        feedback: list = await self._feedback_recent(session, context.user) if self._feedback_recent else []
 
         calls = 0
         while True:
             try:
-                reply = await self._model.next(context, recent, exchanges)
+                reply = await self._model.next(context, recent, exchanges, feedback)
             except AgentProviderUnavailableError:
                 logger.exception("Agent model call failed")
                 return self._complete(self._fallback_receipt(exchanges) or self._unavailable())
