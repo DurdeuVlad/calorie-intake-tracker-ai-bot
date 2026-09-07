@@ -420,14 +420,16 @@ Each skill should make a recurring task easier without turning into an opaque se
 - [ ] Documentation changes are reviewed for operational accuracy, not only grammar.
 - [ ] Documentation is updated in the same change as behavior whenever practical.
 
-### Suggested documentation additions
+### Current documentation base
 
-- [ ] `docs/agent-system.md`: concise map of instructions, skills, docs, and source precedence.
-- [ ] `docs/agent-principles.md`: durable reasoning, safety, scope, and evidence principles.
-- [ ] `docs/agent-handoff-template.md`: required completion report format.
-- [ ] `docs/prompt-contracts.md`: model boundaries, tool contracts, validation, and failure behavior.
-- [ ] `docs/evaluation-strategy.md`: datasets, assertions, scoring, baselines, and regression policy.
-- [ ] `docs/quality-metrics.md`: quality, safety, reliability, and documentation-health measures.
+- [x] `AGENTS.md`: repository rules, source precedence, verification, and handoff requirements.
+- [x] `docs/agent-system.md`: concise map of instructions, skills, docs, and source precedence.
+- [x] `docs/agent-handoff-template.md`: required completion report format.
+- [x] `docs/architecture.md`: model/application boundary, tools, persistence, and security boundaries.
+- [x] `docs/local-development.md`: setup, tests, and prompt-evaluation entry points.
+- [x] `COLLABORATION.md`, `CONTRIBUTING.md`, and `SECURITY.md`: public-project collaboration and security expectations.
+
+New control-plane documents should be added only when a repeated failure or stable interface cannot be documented clearly in the existing base.
 
 ---
 
@@ -528,86 +530,30 @@ Metrics must improve decisions, not create vanity dashboards.
 
 ---
 
-## 11. Rollout plan
+## 11. Rollout status and next work
 
-### Stage 1 — Establish the foundation
+This checklist is a quality reference, not an unfinished task list. The repository already has a working control plane; the remaining items below are explicit follow-up work rather than prerequisites for every change.
 
-- [ ] Add root `AGENTS.md` with routing, principles, non-negotiable constraints, and handoff requirements.
-- [ ] Add `docs/agent-system.md` as the map of the control plane.
-- [ ] Add `docs/agent-handoff-template.md`.
-- [ ] Link the control-plane docs from `README.md`.
-- [ ] Decide the local skills directory and naming convention.
-- [ ] Define ownership and review responsibility for agent-control files.
-
-### Stage 2 — Encode repeatable workflows
-
-- [ ] Create `repo-discovery`.
-- [ ] Create `feature-development`.
-- [ ] Create `prompt-evaluation`.
-- [ ] Create `security-boundary-review`.
-- [ ] Create `database-change`.
-- [ ] Create `messaging-reliability`.
-- [ ] Create `release-acceptance`.
-- [ ] Create `documentation-maintenance`.
-- [ ] Create `adversarial-review`.
-
-### Stage 3 — Add measurable evaluation
-
-- [ ] Define a baseline prompt-evaluation dataset.
-- [ ] Add safety assertions that hard-fail on unauthorized or unsafe behavior.
-- [ ] Add multilingual and ambiguity coverage.
-- [ ] Add regression cases from real defects, sanitized of personal data.
-- [ ] Define score thresholds and release policy.
-- [ ] Store evaluation reports in a safe, reproducible format.
-- [ ] Add a command that a future agent can run without rediscovering setup.
-
-### Stage 4 — Integrate with the Flux framework
-
-- [ ] Define the boundary between repository-local control rules and Flux orchestration.
-- [ ] Decide which instructions live in Flux and which remain local to this repository.
-- [ ] Prevent duplicate or contradictory policy between Flux and local `AGENTS.md` files.
-- [ ] Define how Flux selects skills and required docs.
-- [ ] Define how Flux records task state, evidence, and handoffs.
-- [ ] Define how Flux invokes adversarial review.
-- [ ] Define how Flux consumes prompt-evaluation results.
-- [ ] Define failure and escalation behavior when Flux lacks context or tools.
-- [ ] Test the integration with representative feature, bug, prompt, migration, and release tasks.
-- [ ] Document the final boundary in an ADR.
-
-### Stage 5 — Operate and improve
-
-- [ ] Review the first ten agent tasks using this checklist.
-- [ ] Record where agents still guessed, missed context, or overstated confidence.
-- [ ] Fix the smallest control-plane layer that would have prevented each failure.
-- [ ] Add regression tasks for high-value failures.
-- [ ] Review the system monthly or after any serious defect.
-- [ ] Retire obsolete instructions instead of endlessly appending new ones.
-
----
+| Area | Status | Evidence or next action |
+| --- | --- | --- |
+| Repository rules and routing | complete | `AGENTS.md`, `docs/agent-system.md`, README links |
+| Handoff and local skills | complete | `docs/agent-handoff-template.md`, `.agents/skills/` |
+| Prompt/tool evaluation | partial | Fixture tests and `tests/unit/test_v2_eval_suite.py` exist; keep expanding sanitized adversarial coverage and live-model baselines when budget allows |
+| Security and boundary review | complete for current scope | `SECURITY.md`, architecture boundaries, security skill, CI scan |
+| OSS collaboration surface | complete for current scope | `COLLABORATION.md`, `CONTRIBUTING.md`, `OSS.md` |
+| Flux integration | needs-input | The repository defines its local control plane; document additional Flux ownership only when the external integration contract is known |
+| Ongoing maintenance | ongoing | Review after serious defects, prompt regressions, migration changes, or repeated agent misunderstandings |
 
 ## 12. Definition of done for the control plane
 
-The agent quality-control system is operational only when all of the following are true:
+The control plane is healthy when:
 
-- [ ] A root routing document exists and is discoverable.
-- [ ] The source-of-truth hierarchy is explicit.
-- [ ] The project’s security, privacy, ownership, AI, data, and reliability invariants are encoded.
-- [ ] Agents have a standard lifecycle from intake through adversarial review and handoff.
-- [ ] At least the highest-value repeatable workflows have local skills.
-- [ ] Prompt changes have repeatable evaluation coverage.
-- [ ] Documentation has clear ownership and freshness expectations.
-- [ ] The README points agents to the system.
-- [ ] A representative agent can complete a bounded task using the system without undocumented tribal knowledge.
-- [ ] An independent reviewer can verify the result from the handoff and repository evidence.
-- [ ] Known gaps, unresolved risks, and Flux integration boundaries are documented.
-- [ ] The system itself has been tested against at least one success case and one failure case.
-
-## Current status
-
-- [x] This design checklist is created.
-- [x] Root agent routing is implemented.
-- [x] Local skills are implemented.
-- [x] Agent-specific supporting docs are implemented.
-- [ ] Prompt evaluation policy is implemented.
-- [ ] Flux integration boundary is decided and documented.
-- [ ] Control-plane rollout is complete.
+- The root routing document and source-of-truth hierarchy are discoverable.
+- Security, privacy, ownership, AI, data, and reliability invariants are encoded.
+- Agents have a standard lifecycle from intake through review and handoff.
+- High-value repeatable workflows have local skills.
+- Prompt changes have repeatable evaluation coverage appropriate to their risk.
+- Documentation has clear ownership and freshness expectations.
+- A representative agent can complete bounded work without undocumented tribal knowledge.
+- An independent reviewer can verify the result from the handoff and repository evidence.
+- Known gaps and external integration boundaries are visible rather than implied.

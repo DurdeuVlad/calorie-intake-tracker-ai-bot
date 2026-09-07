@@ -10,7 +10,7 @@ Use for system prompts, tool schemas, model routing, interpretation behavior, ev
 - `python-app/app/agent/tool_schemas.py`.
 - `python-app/app/terminal/fixtures/text-journal.json`.
 - `python-app/tests/unit/test_agent_instructions.py`.
-- `docs/requirements.md`, `docs/architecture.md`, and `docs/local-development.md`.
+- `docs/product.md`, `docs/architecture.md`, and `docs/local-development.md`.
 
 ## Procedure
 

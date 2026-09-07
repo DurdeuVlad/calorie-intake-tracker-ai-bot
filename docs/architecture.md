@@ -63,10 +63,11 @@ flowchart TD
 - **Mattermost Frontend**: Connects over WebSocket to self-hosted Mattermost instances (typically exposed privately over Tailscale Serve). Manages direct message sessions and account linking (`link <code>`).
 - **Terminal CLI**: Standalone interactive local development profile that executes real domain flows without messaging platform dependencies.
 
-### 2. The AI Boundary (Reasoning vs. Execution)
-- OpenAI models (`gpt-5.6-luna` for intent/tool-calling, `gpt-4o-mini-transcribe` for voice) are **strictly interpretation engines**.
-- AI providers **cannot directly mutate the database**. The model calls typed tools exposed by the tool registry (`app/tools/`).
-- The Python application service validates inputs (ownership, bounds, dates, macro math) before committing any changes.
+### 2. The AI Boundary (Agent Reasoning vs. Application Execution)
+- OpenAI models (`gpt-5.6-luna` for conversation/tool-calling, `gpt-4o-mini-transcribe` for voice) are trusted agents for conversation, language choice, semantic interpretation, clarification, and tool selection.
+- AI providers cannot directly mutate the database. The model requests typed tools exposed by the tool registry (`app/tools/`).
+- The Python application service validates tool arguments and owns authorization, ownership, bounds, dates, calculations, transactions, persistence, idempotency, and undo before committing changes.
+- User messages are sent to the model without application-side semantic rewriting or hidden instructions.
 - **Progressive disclosure (v2.0)**: The core system prompt is small (~15 lines). Capability-specific rules live in markdown docs (`app/agent/capabilities/`) loaded on demand via the `load_instructions(topic)` tool. The model writes full replies from structured tool results — no deterministic reply templates. See [ADR 0007](adr/0007-progressive-disclosure-agent.md).
 
 ### 3. Nutrition Resolution & Tool Ecosystem
