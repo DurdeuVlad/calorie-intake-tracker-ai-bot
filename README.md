@@ -149,12 +149,12 @@ Telegram/Mattermost → FastAPI webhook → JournalApplicationService
 - [AGENTS.md](AGENTS.md) — non-negotiable rules, verification, handoff
 - [Agent System](docs/agent-system.md) — routing map for agent tasks
 - [Agent QC Checklist](docs/agent-quality-control-checklist.md) — quality gates
+- [Handoff Template](docs/agent-handoff-template.md) — required evidence for non-trivial tasks
 - [ADR 0007](docs/adr/0007-progressive-disclosure-agent.md) — progressive disclosure architecture
 
 **For operators:**
 - [Operations](docs/operations.md) — health, backup, incident response
-- [Coolify Deployment](docs/deployment-coolify.md) — homelab deployment
-- [Mattermost + Tailscale](docs/mattermost-tailscale.md) — private frontend setup
+- [Product Vision](docs/product.md) — user goals and use cases
 
 **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 

@@ -9,10 +9,10 @@ This document is the routing map for agents working in the repository. It explai
 | Global rules | [`AGENTS.md`](../AGENTS.md) | Non-negotiable constraints and working standards |
 | Task routing | This document | Smallest sufficient context set |
 | Quality gates | [`agent-quality-control-checklist.md`](agent-quality-control-checklist.md) | Required planning, testing, review, and handoff checks |
-| Product behavior | [`product.md`](product.md), [`requirements.md`](requirements.md) | User goals and acceptance criteria |
+| Product behavior | [`product.md`](product.md) | User goals and use cases |
 | System boundaries | [`architecture.md`](architecture.md) and relevant ADRs | Ownership, data flow, and deliberate decisions |
 | Runtime operation | [`local-development.md`](local-development.md), [`configuration.md`](configuration.md), [`operations.md`](operations.md) | Commands, configuration, health, recovery |
-| Release readiness | [`acceptance-test-plan.md`](acceptance-test-plan.md), [`cutover-runbook.md`](cutover-runbook.md) | Release and production gates |
+| Release readiness | [`cutover-runbook.md`](cutover-runbook.md) | Release and production gates |
 | v2.0 architecture | [`adr/0007-progressive-disclosure-agent.md`](adr/0007-progressive-disclosure-agent.md), [`handoffs/v2.0-agent-in-your-inbox.md`](handoffs/v2.0-agent-in-your-inbox.md) | Trust-the-model design, progressive disclosure, tool split |
 | Repeatable procedure | [`.agents/skills/`](../.agents/skills/) | Focused workflow and validation instructions |
 | Completion evidence | [`agent-handoff-template.md`](agent-handoff-template.md) | Standard handoff |
