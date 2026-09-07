@@ -3,10 +3,8 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
 
 from app.db.base import session_scope
-from app.db.models.feedback import UserFeedback
 from app.db.models.users import FoodUser
 from app.domain.agent_types import AgentContext
 from app.repositories import feedback_repo
