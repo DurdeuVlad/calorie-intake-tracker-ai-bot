@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     agent_max_tool_calls: int = Field(default=10, alias="AGENT_MAX_TOOL_CALLS")
     openai_transcription_model: str = Field(default="gpt-4o-mini-transcribe", alias="OPENAI_TRANSCRIPTION_MODEL")
 
+    # Mobile API auth. MOBILE_AUTH_JWT_SECRET signs access tokens; when empty the
+    # app falls back to a per-process ephemeral secret (dev only -- tokens die on
+    # restart). Production deployments must set it.
+    mobile_auth_jwt_secret: str = Field(default="", alias="MOBILE_AUTH_JWT_SECRET")
+    mobile_auth_access_token_ttl_minutes: int = Field(default=30, alias="MOBILE_AUTH_ACCESS_TOKEN_TTL_MINUTES")
+    mobile_auth_refresh_token_ttl_days: int = Field(default=30, alias="MOBILE_AUTH_REFRESH_TOKEN_TTL_DAYS")
+    mobile_auth_rate_limit_per_minute: int = Field(default=10, alias="MOBILE_AUTH_RATE_LIMIT_PER_MINUTE")
+
     # Nutrition / web tools
     open_food_facts_base_url: str = Field(
         default="https://world.openfoodfacts.org/api/v2", alias="OPEN_FOOD_FACTS_BASE_URL"
@@ -94,6 +102,24 @@ class Settings(BaseSettings):
         if value <= 0:
             return 10
         return max(1, min(10, value))
+
+    @field_validator("mobile_auth_access_token_ttl_minutes")
+    @classmethod
+    def _clamp_access_token_ttl(cls, value: int) -> int:
+        # Mobile access tokens are deliberately short-lived (audit: 15-60 min).
+        if value <= 0:
+            return 30
+        return max(15, min(60, value))
+
+    @field_validator("mobile_auth_refresh_token_ttl_days")
+    @classmethod
+    def _default_refresh_ttl(cls, value: int) -> int:
+        return value if value > 0 else 30
+
+    @field_validator("mobile_auth_rate_limit_per_minute")
+    @classmethod
+    def _default_auth_rate_limit(cls, value: int) -> int:
+        return value if value > 0 else 10
 
     @property
     def allowed_telegram_user_id_set(self) -> set[str]:

@@ -4,6 +4,10 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select
 
+# The dispatchers under test pull in the Telegram frontend (aiogram). Where that
+# optional dependency is not installed locally, skip rather than fail collection.
+pytest.importorskip("aiogram", reason="telegram frontend dependency (aiogram) is not installed")
+
 from app.db.base import session_scope
 from app.db.models.messaging import MessagingDailyStatus, MessagingOutboundMessage, MessagingRoute, PinnedDailyStatus
 from app.db.models.reports import ReportDelivery

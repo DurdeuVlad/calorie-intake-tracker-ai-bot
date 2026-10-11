@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.db.base import dispose_engine, get_engine
+from app.mobile.auth import router as mobile_router
 from app.telegram_bot.webhook_router import router as telegram_webhook_router
 from app.web.health import public_router
 
@@ -19,6 +20,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="food-journal-bot", lifespan=lifespan)
     app.include_router(public_router)
     app.include_router(telegram_webhook_router)
+    app.include_router(mobile_router)
     return app
 
 

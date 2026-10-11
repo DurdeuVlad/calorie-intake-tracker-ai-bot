@@ -1,8 +1,11 @@
 import hmac
 import logging
+from typing import TYPE_CHECKING
 
-from aiogram.types import Update
 from fastapi import APIRouter, Header, Request, Response
+
+if TYPE_CHECKING:
+    from aiogram.types import Update
 
 from app.config import get_settings
 from app.db.base import session_scope
@@ -20,7 +23,7 @@ def _valid_secret(secret: str | None) -> bool:
     return hmac.compare_digest(secret.encode("utf-8"), settings.telegram_webhook_secret.encode("utf-8"))
 
 
-def _to_inbound_message(update: Update) -> InboundMessage | None:
+def _to_inbound_message(update: "Update") -> InboundMessage | None:
     message = update.message
     if message is None or message.from_user is None or message.chat is None:
         return None
@@ -61,6 +64,8 @@ async def telegram_webhook(
 
     body = await request.json()
     try:
+        from aiogram.types import Update
+
         update = Update.model_validate(body)
     except Exception:
         logger.warning("Rejected malformed Telegram update payload")
