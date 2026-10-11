@@ -147,8 +147,17 @@ async def test_refresh_rotates_and_reusing_a_rotated_token_revokes_the_chain(cli
     assert successor.status_code == 401
 
     async with session_scope() as session:
-        rows = (await session.execute(select(MobileRefreshToken))).scalars().all()
-        assert all(r.revoked_at is not None for r in rows)
+        rows = (
+            (await session.execute(select(MobileRefreshToken).order_by(MobileRefreshToken.id)))
+            .scalars()
+            .all()
+        )
+        # The theft signal kills the reused token's forward chain (login token
+        # -> its rotation). The signup token is a separate chain and must NOT
+        # be revoked -- reuse detection scopes to the compromised family only.
+        assert len(rows) == 3
+        assert rows[0].revoked_at is None
+        assert all(r.revoked_at is not None for r in rows[1:])
 
 
 @pytest.mark.asyncio
