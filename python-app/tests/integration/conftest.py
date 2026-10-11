@@ -35,7 +35,7 @@ async def _clean_tables():
                 "TRUNCATE food_users, auth_accounts, mobile_refresh_tokens, "
                 "telegram_access_grants, messaging_inbox, messaging_outbox, "
                 "messaging_identities, messaging_routes, frontend_link_codes, "
-                "conversation_memory, pending_nutrition_quotes, "
+                "conversation_memory, companion_memory, pending_nutrition_quotes, "
                 "journal_change_sets, journal_change_mutations, "
                 "pinned_daily_status, messaging_daily_status, report_deliveries, "
                 # This has no FK relationship to food_users at all (it's a global

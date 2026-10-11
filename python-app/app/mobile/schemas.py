@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -99,3 +100,16 @@ class JournalActionResult(BaseModel):
 class MessageResponse(BaseModel):
     reply: str
     actions: list[JournalActionResult] = []
+
+
+class CompanionMemoryItem(BaseModel):
+    id: int
+    kind: str
+    text: str
+    source: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemoryListResponse(BaseModel):
+    memories: list[CompanionMemoryItem]

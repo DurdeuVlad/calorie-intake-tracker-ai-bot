@@ -2,6 +2,7 @@
 (needed by Alembic autogenerate and by any code that touches Base.metadata directly)."""
 
 from app.db.models.auth import AuthAccount, MobileRefreshToken
+from app.db.models.companion import CompanionMemory
 from app.db.models.conversation import ConversationMemory
 from app.db.models.entries import FoodEntry, FoodItem
 from app.db.models.journal_changes import JournalChangeMutation, JournalChangeSet
@@ -22,6 +23,7 @@ from app.db.models.users import FoodUser, UserSettings
 __all__ = [
     "AuthAccount",
     "MobileRefreshToken",
+    "CompanionMemory",
     "ConversationMemory",
     "FoodEntry",
     "FoodItem",

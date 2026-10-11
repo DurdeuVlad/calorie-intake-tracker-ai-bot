@@ -122,6 +122,25 @@ def tool_definitions() -> list[dict[str, Any]]:
         _tool("plan_todos", "Create up to six ephemeral steps.", _object({"todos": {"type": "array", "items": _string(), "maxItems": 6}}, ["todos"])),
         _tool("complete_todo", "Complete one todo.", _object({"todo": _string()}, ["todo"])),
         _tool("save_private_food", "Save a household food.", _object({"name": _string(), "caloriesPer100g": _integer()}, ["name", "caloriesPer100g"])),
+        # Mission 2c additions (no Java predecessor): durable companion memory.
+        _tool(
+            "save_memory",
+            "Save a durable fact about the user to companion memory: a preference, restriction, goal, or other fact "
+            "worth remembering across conversations (for example 'dislikes cilantro' or 'targets 160g protein'). "
+            "Saving the same fact again reports it as already known.",
+            _object(
+                {
+                    "kind": {"type": "string", "enum": ["preference", "restriction", "goal", "fact", "other"]},
+                    "text": _string(),
+                },
+                ["text"],
+            ),
+        ),
+        _tool(
+            "forget_memory",
+            "Forget a saved companion memory, identified by memoryId from save_memory or by a matching text fragment.",
+            _object({"memoryId": _integer(), "text": _string()}),
+        ),
         _tool(
             "update_settings",
             "Update settings.",

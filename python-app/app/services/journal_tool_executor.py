@@ -26,6 +26,7 @@ from app.domain import journal_entry_snapshot as snapshot
 from app.domain.quantity_unit import QuantityUnit
 from app.integrations.openfoodfacts_types import NullOpenFoodFactsClient, OpenFoodFactsClient
 from app.repositories import (
+    companion_memory_repo,
     food_entry_repo,
     food_item_repo,
     food_user_repo,
@@ -44,6 +45,8 @@ MAX_WEB_SEARCH_QUERY_CHARS = 256
 MAX_WEB_SEARCH_TITLE_CHARS = 256
 MAX_WEB_SEARCH_URL_CHARS = 1024
 MAX_WEB_SEARCH_SNIPPET_CHARS = 1024
+MAX_MEMORY_TEXT_CHARS = 500
+_VALID_MEMORY_KINDS = {"preference", "restriction", "goal", "fact", "other"}
 _DATE_WORDS_TODAY = {"today", "azi", "astăzi", "astazi"}
 _DATE_WORDS_YESTERDAY = {"yesterday", "yersterday", "ieri"}
 _VALID_SOURCES = {"manual", "private", "open_food_facts_estimate", "ai_estimate", "mixed"}
@@ -756,6 +759,36 @@ class JournalToolExecutor:
             existing.calories_per_100g = kcal
         return AgentToolResult.success({"name": name, "caloriesPer100g": kcal})
 
+    # --- companion memory --------------------------------------------------
+
+    async def _save_memory(self, session, context, args, todos) -> AgentToolResult:
+        text = _str(args, "text")
+        if not text or not text.strip():
+            return AgentToolResult.failure("VALIDATION_ERROR", "A memory text is required.")
+        text = text.strip()
+        if len(text) > MAX_MEMORY_TEXT_CHARS:
+            return AgentToolResult.failure("VALIDATION_ERROR", "That memory is too long.")
+        kind = _normalize(_str(args, "kind"), "other", _VALID_MEMORY_KINDS)
+        row, created = await companion_memory_repo.save(session, context.user, kind, text, source="agent")
+        return AgentToolResult.success(
+            {"memoryId": row.id, "kind": row.kind, "text": row.text, "alreadyKnown": not created}
+        )
+
+    async def _forget_memory(self, session, context, args, todos) -> AgentToolResult:
+        raw_id = args.get("memoryId")
+        text = _str(args, "text")
+        if raw_id is None and not (text and text.strip()):
+            return AgentToolResult.failure("VALIDATION_ERROR", "A memoryId or a text fragment is required.")
+        row = None
+        if raw_id is not None:
+            row = await companion_memory_repo.find_active_by_id(session, context.user, _int_required(args, "memoryId"))
+        if row is None and text and text.strip():
+            row = await companion_memory_repo.find_best_match(session, context.user, text)
+        if row is None:
+            return AgentToolResult.failure("NOT_FOUND", "No matching memory exists.")
+        row.soft_delete(datetime.now(timezone.utc))
+        return AgentToolResult.success({"forgotten": True, "memoryId": row.id, "text": row.text})
+
     async def _update_settings(self, session, context, args, todos) -> AgentToolResult:
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -801,5 +834,7 @@ JournalToolExecutor._HANDLERS = {
     "plan_todos": JournalToolExecutor._plan_todos,
     "complete_todo": JournalToolExecutor._complete_todo,
     "save_private_food": JournalToolExecutor._save_private,
+    "save_memory": JournalToolExecutor._save_memory,
+    "forget_memory": JournalToolExecutor._forget_memory,
     "update_settings": JournalToolExecutor._update_settings,
 }
