@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -43,3 +44,58 @@ class MeResponse(BaseModel):
     account_id: int
     email: str
     food_user_id: int
+
+
+class MessageRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4096)
+
+    @field_validator("text")
+    @classmethod
+    def _non_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("text must not be blank")
+        return stripped
+
+
+class JournalActionEntry(BaseModel):
+    id: int | None = None
+    calories: int | None = None
+    eaten_at: str | None = None
+    description: str | None = None
+
+
+class JournalActionResult(BaseModel):
+    """One row of an apply_journal_actions batch, shaped for the client's
+    editable confirmation card (audit section 4.3)."""
+
+    ok: bool
+    type: str
+    entry: JournalActionEntry | None = None
+    date: str | None = None
+    message: str | None = None
+
+    @classmethod
+    def from_tool_row(cls, row: dict[str, Any]) -> "JournalActionResult":
+        entry = row.get("entry") or {}
+        return cls(
+            ok=row.get("ok") is True,
+            type=str(row.get("type") or "ACTION"),
+            entry=(
+                JournalActionEntry(
+                    id=entry.get("id"),
+                    calories=entry.get("calories"),
+                    eaten_at=entry.get("eatenAt"),
+                    description=entry.get("description"),
+                )
+                if entry
+                else None
+            ),
+            date=row.get("date"),
+            message=row.get("message"),
+        )
+
+
+class MessageResponse(BaseModel):
+    reply: str
+    actions: list[JournalActionResult] = []

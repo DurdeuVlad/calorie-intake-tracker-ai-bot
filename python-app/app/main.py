@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.db.base import dispose_engine, get_engine
 from app.mobile.auth import router as mobile_router
+from app.mobile.messages import router as mobile_messages_router
 from app.telegram_bot.webhook_router import router as telegram_webhook_router
 from app.web.health import public_router
 
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
     app.include_router(public_router)
     app.include_router(telegram_webhook_router)
     app.include_router(mobile_router)
+    app.include_router(mobile_messages_router)
     return app
 
 

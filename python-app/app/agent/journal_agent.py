@@ -43,8 +43,9 @@ class JournalAgent:
         self._memory_recent = memory_recent  # async (session, user) -> list[ConversationMemory], or None
         self._trace = trace or NoopTraceSink()
 
-    async def run(self, session: AsyncSession, context: AgentContext) -> str:
-        self._trace.started(context)
+    async def run(self, session: AsyncSession, context: AgentContext, trace: AgentTraceSink | None = None) -> str:
+        sink = trace or self._trace
+        sink.started(context)
         exchanges: list[AgentExchange] = []
         todos: list[str] = []
         recent: list[ConversationMemory] = await self._memory_recent(session, context.user) if self._memory_recent else []
@@ -56,17 +57,17 @@ class JournalAgent:
                 reply = await self._model.next(active, recent, exchanges)
             except AgentProviderUnavailableError:
                 logger.exception("Agent model call failed")
-                return self._complete(self._unavailable(active))
+                return self._complete(sink, self._unavailable(active))
 
-            self._trace.model_reply(reply)
+            sink.model_reply(reply)
             if reply is None:
-                return self._complete(self._unavailable(active))
+                return self._complete(sink, self._unavailable(active))
             if not reply.tool_calls:
-                return self._complete(self._safe_reply(reply.text, active))
+                return self._complete(sink, self._safe_reply(reply.text, active))
 
             for call in reply.tool_calls:
                 if calls >= self._max_calls:
-                    return self._complete(self._limit(active))
+                    return self._complete(sink, self._limit(active))
                 calls += 1
 
                 try:
@@ -80,14 +81,14 @@ class JournalAgent:
                 data: dict[str, Any] = {**raw.data, "todos": list(todos)}
                 result = AgentToolResult(raw.ok, raw.code, data, raw.user_hint)
                 exchanges.append(AgentExchange(call, result))
-                self._trace.tool_result(call, result)
+                sink.tool_result(call, result)
 
                 rendered = self._canonical_reply(active, call, result)
                 if rendered is not None:
-                    return self._complete(rendered)
+                    return self._complete(sink, rendered)
 
-    def _complete(self, reply: str) -> str:
-        self._trace.completed(reply)
+    def _complete(self, trace: AgentTraceSink, reply: str) -> str:
+        trace.completed(reply)
         return reply
 
     def _safe_reply(self, text: str | None, context: AgentContext) -> str:

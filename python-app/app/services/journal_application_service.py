@@ -17,6 +17,7 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.language import is_romanian
+from app.agent.trace_sink import AgentTraceSink
 from app.db.models.users import FoodUser, UserSettings
 from app.domain.agent_types import AgentContext
 from app.repositories import food_entry_repo, food_user_repo, telegram_access_repo
@@ -26,7 +27,9 @@ MAX_CALORIE_TARGET = 5000
 
 
 class Agent(Protocol):
-    async def run(self, session: AsyncSession, context: AgentContext) -> str: ...
+    async def run(
+        self, session: AsyncSession, context: AgentContext, trace: AgentTraceSink | None = None
+    ) -> str: ...
 
 
 def onboarding_prompt(settings: UserSettings, romanian: bool) -> str:
@@ -163,7 +166,9 @@ class JournalApplicationService:
         self.default_timezone = default_timezone
         self._agent = agent
 
-    async def handle(self, session, user: FoodUser, chat_id: str, message: str) -> str:
+    async def handle(
+        self, session, user: FoodUser, chat_id: str, message: str, trace: AgentTraceSink | None = None
+    ) -> str:
         settings = await food_user_repo.get_settings(session, user.id)
 
         if message.startswith("/"):
@@ -180,5 +185,5 @@ class JournalApplicationService:
 
         if self._agent is not None:
             context = AgentContext(user=user, chat_id=chat_id, romanian=romanian, message=message)
-            return await self._agent.run(session, context)
+            return await self._agent.run(session, context, trace)
         return unavailable(romanian)

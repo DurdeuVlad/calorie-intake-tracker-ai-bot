@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     mobile_auth_access_token_ttl_minutes: int = Field(default=30, alias="MOBILE_AUTH_ACCESS_TOKEN_TTL_MINUTES")
     mobile_auth_refresh_token_ttl_days: int = Field(default=30, alias="MOBILE_AUTH_REFRESH_TOKEN_TTL_DAYS")
     mobile_auth_rate_limit_per_minute: int = Field(default=10, alias="MOBILE_AUTH_RATE_LIMIT_PER_MINUTE")
+    mobile_message_rate_limit_per_minute: int = Field(default=60, alias="MOBILE_MESSAGE_RATE_LIMIT_PER_MINUTE")
 
     # Nutrition / web tools
     open_food_facts_base_url: str = Field(
@@ -120,6 +121,11 @@ class Settings(BaseSettings):
     @classmethod
     def _default_auth_rate_limit(cls, value: int) -> int:
         return value if value > 0 else 10
+
+    @field_validator("mobile_message_rate_limit_per_minute")
+    @classmethod
+    def _default_message_rate_limit(cls, value: int) -> int:
+        return value if value > 0 else 60
 
     @property
     def allowed_telegram_user_id_set(self) -> set[str]:

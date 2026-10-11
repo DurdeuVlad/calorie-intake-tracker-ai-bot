@@ -24,8 +24,9 @@ async def record_turn(session: AsyncSession, user: FoodUser, user_message: str, 
     MUST NOT invoke this for internal/system-triggered calls (e.g. the identity
     bootstrap that provisions a first-time user) -- a real bug in the Java
     predecessor did exactly that at one call site and double-recorded memory for
-    the same logical turn. Keep this called from exactly one place: the inbox
-    worker's main message-handling path, right after computing the real reply."""
+    the same logical turn. Exactly one call per logical inbound turn: the inbox
+    worker's message-handling path and the mobile /api/v1/messages turn runner,
+    each right after computing the real reply."""
     now = datetime.now(timezone.utc)
     session.add(ConversationMemory(user_id=user.id, role="user", content=_truncate(user_message), created_at=now))
     session.add(ConversationMemory(user_id=user.id, role="assistant", content=_truncate(assistant_message), created_at=now))

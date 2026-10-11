@@ -41,3 +41,9 @@ async def auth_rate_limit(request: Request) -> None:
     client = request.client.host if request.client is not None else "unknown"
     if not limiter.check((request.url.path, client), get_settings().mobile_auth_rate_limit_per_minute):
         raise HTTPException(status_code=429, detail="too many requests")
+
+
+async def message_rate_limit(request: Request) -> None:
+    client = request.client.host if request.client is not None else "unknown"
+    if not limiter.check((request.url.path, client), get_settings().mobile_message_rate_limit_per_minute):
+        raise HTTPException(status_code=429, detail="too many requests")
