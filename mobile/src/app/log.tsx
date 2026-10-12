@@ -106,7 +106,7 @@ export default function LogScreen() {
     setError(null);
 
     try {
-      setResult(await client.sendMessage(trimmed));
+      setResult(await client.sendMessage({ text: trimmed }));
       setText('');
     } catch (err) {
       setError(userFacingMessage(err));

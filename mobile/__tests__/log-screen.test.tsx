@@ -119,7 +119,7 @@ describe('LogScreen text logging', () => {
     await fireEvent.changeText(screen.getByTestId('text-input'), '  ovăz cu lapte  ');
     await fireEvent.press(screen.getByTestId('send-text-button'));
 
-    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith('ovăz cu lapte'));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith({ text: 'ovăz cu lapte' }));
     expect(await screen.findByTestId('agent-reply')).toBeOnTheScreen();
     expect(screen.getByTestId('confirmation-card')).toBeOnTheScreen();
     // Cleared after a successful send.

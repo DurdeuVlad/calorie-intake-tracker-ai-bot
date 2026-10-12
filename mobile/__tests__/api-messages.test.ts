@@ -1,5 +1,6 @@
 import { ApiClient, type FetchResponse } from '../src/api/client';
 import { ApiError, AuthError, userFacingMessage } from '../src/api/errors';
+import { sendAudioMessage, sendMessage } from '../src/api/messages';
 import type { AuthTokens } from '../src/api/types';
 import type { SessionStore, StoredSession } from '../src/auth/storage';
 
@@ -73,7 +74,7 @@ describe('ApiClient.sendMessage', () => {
     const { impl, calls } = fetchQueue(jsonResponse(200, REPLY));
     const client = makeClient(store, impl);
 
-    const res = await client.sendMessage('two eggs');
+    const res = await client.sendMessage({ text: 'two eggs' });
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe('http://localhost:8000/api/v1/messages');
@@ -156,6 +157,34 @@ describe('ApiClient.sendAudioMessage', () => {
   });
 });
 
+describe('api/messages module', () => {
+  it('sendMessage issues the JSON POST through the supplied request executor', async () => {
+    const request = jest.fn(async (_path: string, _init: RequestInit) => REPLY);
+
+    const res = await sendMessage(request, { text: 'supă de pui' });
+
+    expect(request).toHaveBeenCalledWith('/api/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ text: 'supă de pui' }),
+    });
+    expect(res).toBe(REPLY);
+  });
+
+  it('sendAudioMessage uploads multipart form data through the supplied executor', async () => {
+    const request = jest.fn(async (_path: string, _init: RequestInit) => REPLY);
+
+    await sendAudioMessage(request, { uri: 'file:///cache/rec.m4a', caption: '  lunch  ' });
+
+    const [path, init] = request.mock.calls[0];
+    expect(path).toBe('/api/v1/messages');
+    expect(init.method).toBe('POST');
+    const form = init.body as FormData;
+    expect(form.getAll('audio')).toHaveLength(1);
+    expect(form.getAll('caption')).toEqual(['lunch']);
+  });
+});
+
 describe('userFacingMessage', () => {
   it('maps backend statuses to user-readable strings', async () => {
     const store = new MemoryStore();
@@ -170,7 +199,7 @@ describe('userFacingMessage', () => {
     const messages: string[] = [];
     for (let i = 0; i < 4; i++) {
       try {
-        await client.sendMessage('ping');
+        await client.sendMessage({ text: 'ping' });
         messages.push('no error');
       } catch (err) {
         messages.push(userFacingMessage(err));
