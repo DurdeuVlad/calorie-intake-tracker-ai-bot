@@ -4,6 +4,7 @@
 from app.db.models.auth import AuthAccount, MobileRefreshToken
 from app.db.models.companion import CompanionMemory
 from app.db.models.conversation import ConversationMemory
+from app.db.models.devices import MobileDevice, PushOutboxMessage
 from app.db.models.entries import FoodEntry, FoodItem
 from app.db.models.journal_changes import JournalChangeMutation, JournalChangeSet
 from app.db.models.messaging import (
@@ -25,6 +26,8 @@ __all__ = [
     "MobileRefreshToken",
     "CompanionMemory",
     "ConversationMemory",
+    "MobileDevice",
+    "PushOutboxMessage",
     "FoodEntry",
     "FoodItem",
     "JournalChangeMutation",

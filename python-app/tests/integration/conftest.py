@@ -33,6 +33,7 @@ async def _clean_tables():
         await session.execute(
             text(
                 "TRUNCATE food_users, auth_accounts, mobile_refresh_tokens, "
+                "mobile_devices, push_outbox, "
                 "telegram_access_grants, messaging_inbox, messaging_outbox, "
                 "messaging_identities, messaging_routes, frontend_link_codes, "
                 "conversation_memory, companion_memory, pending_nutrition_quotes, "

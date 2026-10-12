@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -113,6 +113,27 @@ class CompanionMemoryItem(BaseModel):
 
 class MemoryListResponse(BaseModel):
     memories: list[CompanionMemoryItem]
+
+
+class DeviceRegisterRequest(BaseModel):
+    platform: Literal["ios", "android"]
+    push_token: str = Field(min_length=1, max_length=1024)
+    app_version: str | None = Field(default=None, max_length=64)
+    locale: str | None = Field(default=None, max_length=32)
+
+
+class DeviceResponse(BaseModel):
+    id: int
+    platform: str
+    app_version: str | None
+    locale: str | None
+    created_at: datetime
+    last_seen_at: datetime
+    disabled_at: datetime | None
+
+
+class DeviceListResponse(BaseModel):
+    devices: list[DeviceResponse]
 
 
 class LinkIssueResponse(BaseModel):
