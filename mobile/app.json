@@ -23,7 +23,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Calorie Tracker to use your microphone so you can log meals by voice."
+        }
+      ]
     ]
   }
 }

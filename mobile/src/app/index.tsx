@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Link } from 'expo-router';
 
 import { useAuth } from '../auth/AuthContext';
 
@@ -24,7 +25,8 @@ export default function HomeScreen() {
   }, [client]);
 
   useEffect(() => {
-    void loadStatus();
+    const id = setTimeout(() => void loadStatus(), 0);
+    return () => clearTimeout(id);
   }, [loadStatus]);
 
   return (
@@ -55,6 +57,12 @@ export default function HomeScreen() {
           )}
         </View>
 
+        <Link href="/log" asChild>
+          <Pressable style={styles.logButton} testID="log-meal-button">
+            <Text style={styles.logButtonText}>Log a meal</Text>
+          </Pressable>
+        </Link>
+
         <Pressable style={styles.signOut} onPress={() => void signOut()} testID="sign-out-button">
           <Text style={styles.signOutText}>Sign out</Text>
         </Pressable>
@@ -84,6 +92,13 @@ const styles = StyleSheet.create({
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   errorText: { color: '#b3261e', fontSize: 14 },
   retry: { color: '#1a6ef5', fontSize: 14, fontWeight: '600' },
+  logButton: {
+    backgroundColor: '#1a6ef5',
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  logButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   signOut: { marginTop: 'auto', alignItems: 'center', paddingVertical: 14 },
   signOutText: { color: '#b3261e', fontSize: 16, fontWeight: '600' },
 });

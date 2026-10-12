@@ -16,3 +16,25 @@ export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
 }
+
+// POST /api/v1/messages — JournalActionResult / MessageResponse.
+
+export interface JournalActionEntry {
+  id: number | null;
+  calories: number | null;
+  eaten_at: string | null;
+  description: string | null;
+}
+
+export interface JournalActionResult {
+  ok: boolean;
+  type: string;
+  entry: JournalActionEntry | null;
+  date: string | null;
+  message: string | null;
+}
+
+export interface MessageResponse {
+  reply: string;
+  actions: JournalActionResult[];
+}

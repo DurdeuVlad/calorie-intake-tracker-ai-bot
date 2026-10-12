@@ -10,3 +10,12 @@ jest.mock('expo-secure-store', () => ({
 jest.mock('expo-crypto', () => ({
   randomUUID: jest.fn(async () => 'test-device-id'),
 }));
+
+jest.mock('expo-file-system', () => ({
+  File: jest.fn().mockImplementation((uri: string) => ({
+    uri,
+    name: uri.split('/').pop() ?? 'voice.m4a',
+    type: 'audio/m4a',
+    arrayBuffer: async () => new ArrayBuffer(8),
+  })),
+}));

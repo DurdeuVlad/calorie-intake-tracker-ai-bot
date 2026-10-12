@@ -44,6 +44,8 @@ __tests__/          jest + @testing-library/react-native
 | POST | `/api/v1/auth/login` | `client.login(email, password)` |
 | POST | `/api/v1/auth/refresh` | internal — on 401, retried request once |
 | GET | `/api/v1/link/status` | `client.getLinkStatus()` |
+| POST | `/api/v1/messages` (JSON `{text}`) | `client.sendMessage(text)` |
+| POST | `/api/v1/messages` (multipart `audio` + optional `caption`) | `client.sendAudioMessage({uri, mimeType, caption?})` |
 
 Auth requests send `{email, password, device_id}`; `device_id` is a UUID
 minted once and persisted in SecureStore (it survives sign-out — refresh

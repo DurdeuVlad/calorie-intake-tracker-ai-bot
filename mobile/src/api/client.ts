@@ -1,6 +1,13 @@
+import { File } from 'expo-file-system';
+
 import type { SessionStore } from '../auth/storage';
 import { ApiError, AuthError } from './errors';
-import type { AuthTokens, LinkStatusResponse, TokenResponse } from './types';
+import type {
+  AuthTokens,
+  LinkStatusResponse,
+  MessageResponse,
+  TokenResponse,
+} from './types';
 
 /** Minimal fetch surface the client needs — keeps tests free of real Response objects. */
 export interface FetchResponse {
@@ -17,6 +24,15 @@ export interface ApiClientOptions {
   fetchImpl?: FetchLike;
   /** Called once when the session is unrecoverably expired (refresh or retry 401). */
   onSessionExpired?: () => void;
+}
+
+export interface AudioMessageInput {
+  /** Local URI of the recording (expo-audio `recorder.uri`). */
+  uri: string;
+  /** Becomes the multipart part's Content-Type; falls back to the file's own type. */
+  mimeType?: string;
+  /** Optional note the backend appends to the transcript, like a Telegram caption. */
+  caption?: string;
 }
 
 const JSON_HEADERS = {
@@ -83,6 +99,42 @@ export class ApiClient {
 
   async getLinkStatus(): Promise<LinkStatusResponse> {
     return this.authedRequest<LinkStatusResponse>('/api/v1/link/status', { method: 'GET' });
+  }
+
+  /** Typed meal logging — POST /api/v1/messages as JSON {text}. */
+  async sendMessage(text: string): Promise<MessageResponse> {
+    return this.authedRequest<MessageResponse>('/api/v1/messages', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ text }),
+    });
+  }
+
+  /**
+   * Voice note meal logging — POST /api/v1/messages as multipart with the
+   * recording in the `audio` field (plus optional `caption`). Serialized by
+   * the Expo fetch runtime installed as the global fetch; RN's stock fetch
+   * cannot send File/Blob form parts.
+   */
+  async sendAudioMessage({ uri, mimeType, caption }: AudioMessageInput): Promise<MessageResponse> {
+    const file = new File(uri);
+    const audio = new Blob([await file.arrayBuffer()], {
+      type: mimeType || file.type || 'audio/m4a',
+    });
+    const filename = file.name || 'voice.m4a';
+    // `name` also becomes the part filename on the stock RN FormData path,
+    // which ignores the third append argument but reads a `name` property.
+    (audio as Blob & { name?: string }).name = filename;
+
+    const form = new FormData();
+    form.append('audio', audio, filename);
+    const trimmedCaption = caption?.trim();
+    if (trimmedCaption) form.append('caption', trimmedCaption);
+
+    return this.authedRequest<MessageResponse>('/api/v1/messages', {
+      method: 'POST',
+      body: form,
+    });
   }
 
   async signOut(): Promise<void> {
