@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from app.db.base import dispose_engine, get_engine
 from app.mobile.auth import router as mobile_router
-from app.mobile.link import router as mobile_link_router
+from app.mobile.linking import router as mobile_link_router
 from app.mobile.memories import router as mobile_memories_router
 from app.mobile.messages import router as mobile_messages_router
 from app.telegram_bot.webhook_router import router as telegram_webhook_router
