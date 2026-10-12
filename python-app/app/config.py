@@ -158,6 +158,12 @@ class Settings(BaseSettings):
         if url.startswith("postgresql://"):
             url = "postgresql+asyncpg://" + url[len("postgresql://") :]
         host_part = url.split("://", 1)[1]
+        # Windows resolves "localhost" to ::1 first, and Docker Desktop's IPv6
+        # port proxy accepts the TCP connection but stalls the Postgres
+        # handshake (connects hang until timeout). Pin the loopback name to
+        # IPv4 so local dev/test connects reliably; real hostnames are untouched.
+        if host_part == "localhost" or host_part.startswith(("localhost:", "localhost/")):
+            host_part = "127.0.0.1" + host_part[len("localhost") :]
         return f"postgresql+asyncpg://{self.database_username}:{self.database_password}@{host_part}"
 
 
