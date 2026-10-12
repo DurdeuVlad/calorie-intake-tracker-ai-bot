@@ -19,3 +19,28 @@ jest.mock('expo-file-system', () => ({
     arrayBuffer: async () => new ArrayBuffer(8),
   })),
 }));
+
+jest.mock('expo-notifications', () => ({
+  getPermissionsAsync: jest.fn(async () => ({
+    granted: false,
+    status: 'denied',
+    canAskAgain: true,
+    expires: 'never',
+  })),
+  requestPermissionsAsync: jest.fn(async () => ({
+    granted: false,
+    status: 'denied',
+    canAskAgain: true,
+    expires: 'never',
+  })),
+  getExpoPushTokenAsync: jest.fn(async () => ({
+    data: 'ExponentPushToken[test]',
+    type: 'expo',
+  })),
+  setNotificationChannelAsync: jest.fn(async () => null),
+  AndroidImportance: { MAX: 5, DEFAULT: 3, HIGH: 4, LOW: 2, MIN: 1, NONE: 0, UNSPECIFIED: -1000 },
+}));
+
+jest.mock('expo-localization', () => ({
+  getLocales: jest.fn(() => [{ languageTag: 'en-US' }]),
+}));

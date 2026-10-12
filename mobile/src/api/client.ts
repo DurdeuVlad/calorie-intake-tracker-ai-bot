@@ -1,5 +1,8 @@
 import type { SessionStore } from '../auth/storage';
 import { ApiError, AuthError } from './errors';
+import { disableDevice, listDevices, registerDevice } from './devices';
+import { issueLinkCode, linkStatus, redeemLinkCode } from './linking';
+import { deleteMemory, listMemories } from './memories';
 import {
   sendAudioMessage,
   sendMessage,
@@ -8,12 +11,18 @@ import {
 } from './messages';
 import type {
   AuthTokens,
+  DeviceListResponse,
+  DeviceRegisterInput,
+  DeviceResponse,
+  LinkIssueResponse,
   LinkStatusResponse,
+  MemoryListResponse,
   MessageResponse,
   TokenResponse,
 } from './types';
 
 export type { AudioMessageInput, SendMessageInput } from './messages';
+export type { DeviceRegisterInput } from './types';
 
 /** Minimal fetch surface the client needs — keeps tests free of real Response objects. */
 export interface FetchResponse {
@@ -95,7 +104,42 @@ export class ApiClient {
   }
 
   async getLinkStatus(): Promise<LinkStatusResponse> {
-    return this.authedRequest<LinkStatusResponse>('/api/v1/link/status', { method: 'GET' });
+    return linkStatus(this.authedRequest.bind(this));
+  }
+
+  /** Mint a Telegram link code — POST /api/v1/link/issue. */
+  async issueLinkCode(): Promise<LinkIssueResponse> {
+    return issueLinkCode(this.authedRequest.bind(this));
+  }
+
+  /** Consume a bot-issued code — POST /api/v1/link/redeem (400 invalid, 409 conflict). */
+  async redeemLinkCode(code: string): Promise<LinkStatusResponse> {
+    return redeemLinkCode(this.authedRequest.bind(this), code);
+  }
+
+  /** Every durable fact the agent saved — GET /api/v1/memories. */
+  async listMemories(): Promise<MemoryListResponse> {
+    return listMemories(this.authedRequest.bind(this));
+  }
+
+  /** Soft-delete one memory — DELETE /api/v1/memories/{id} (204). */
+  async deleteMemory(memoryId: number): Promise<void> {
+    return deleteMemory(this.authedRequest.bind(this), memoryId);
+  }
+
+  /** Upsert this install's push token — POST /api/v1/devices. */
+  async registerDevice(input: DeviceRegisterInput): Promise<DeviceResponse> {
+    return registerDevice(this.authedRequest.bind(this), input);
+  }
+
+  /** Every device row for the account — GET /api/v1/devices. */
+  async listDevices(): Promise<DeviceListResponse> {
+    return listDevices(this.authedRequest.bind(this));
+  }
+
+  /** Stop pushes to one device — DELETE /api/v1/devices/{id} (204). */
+  async disableDevice(deviceId: number): Promise<void> {
+    return disableDevice(this.authedRequest.bind(this), deviceId);
   }
 
   /** Typed meal logging — POST /api/v1/messages as JSON {text}. */
@@ -184,7 +228,11 @@ export class ApiClient {
   }
 
   private async unwrap<T>(res: FetchResponse): Promise<T> {
-    if (res.ok) return (await res.json()) as T;
+    if (res.ok) {
+      // 204 carries no body (DELETE memories/devices) — nothing to parse.
+      if (res.status === 204) return undefined as T;
+      return (await res.json()) as T;
+    }
     const detail = await extractDetail(res);
     if (res.status === 401) throw new AuthError(detail ?? 'Unauthorized', detail);
     throw new ApiError(res.status, detail ?? `Request failed (${res.status})`, detail);

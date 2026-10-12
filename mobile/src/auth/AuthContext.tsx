@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 import { createApiClient, sessionStore } from '../api';
 import type { ApiClient } from '../api/client';
+import { registerCurrentDevice } from '../devices/register';
 import { normalizeEmail } from './validation';
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'authenticated';
@@ -45,6 +46,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // Best-effort push registration on every authenticated transition (restored
+  // session or fresh sign-in/sign-up). registerCurrentDevice swallows all
+  // failures — it never affects auth state or the UI.
+  useEffect(() => {
+    if (state.status === 'authenticated') void registerCurrentDevice(client);
+  }, [state.status, client]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

@@ -63,6 +63,22 @@ export default function HomeScreen() {
           </Pressable>
         </Link>
 
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Account</Text>
+          <Link href="/link" asChild>
+            <Pressable style={styles.navRow} testID="linking-button">
+              <Text style={styles.navRowText}>Linked accounts</Text>
+              <Text style={styles.navRowChevron}>›</Text>
+            </Pressable>
+          </Link>
+          <Link href="/memories" asChild>
+            <Pressable style={styles.navRow} testID="memories-button">
+              <Text style={styles.navRowText}>Saved memories</Text>
+              <Text style={styles.navRowChevron}>›</Text>
+            </Pressable>
+          </Link>
+        </View>
+
         <Pressable style={styles.signOut} onPress={() => void signOut()} testID="sign-out-button">
           <Text style={styles.signOutText}>Sign out</Text>
         </Pressable>
@@ -92,6 +108,14 @@ const styles = StyleSheet.create({
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   errorText: { color: '#b3261e', fontSize: 14 },
   retry: { color: '#1a6ef5', fontSize: 14, fontWeight: '600' },
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
+  navRowText: { fontSize: 16 },
+  navRowChevron: { fontSize: 20, color: '#8a8a92' },
   logButton: {
     backgroundColor: '#1a6ef5',
     borderRadius: 12,

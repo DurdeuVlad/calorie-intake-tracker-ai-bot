@@ -25,13 +25,18 @@ config plugins / dev-client modules later, not via eject.
 src/app/            expo-router routes (every file = a screen)
   _layout.tsx       AuthProvider + AuthGate + Stack
   (auth)/           unauthenticated group: login.tsx, signup.tsx
-  index.tsx         home — account email + linkedProviders
+  index.tsx         home — account email + linkedProviders + settings nav
+  log.tsx           meal logging (text + push-to-talk voice)
+  memories.tsx      agent-saved facts, with confirmed delete
+  link.tsx          Telegram linking — status, issue code, redeem code
 src/api/            typed client for /api/v1/* (client.ts), wire types (types.ts),
+                    per-endpoint modules (messages/linking/memories/devices.ts),
                     ApiError/AuthError (errors.ts), base URL (config.ts),
                     composition root (index.ts)
 src/auth/           SessionStore port + SecureStore impl (storage.ts),
                     AuthContext state (AuthContext.tsx), route gate (AuthGate.tsx),
                     form rules mirrored from the server (validation.ts)
+src/devices/        fire-and-forget push registration (register.ts)
 src/components/     AuthForm (shared login/signup form)
 __tests__/          jest + @testing-library/react-native
 ```
@@ -44,6 +49,13 @@ __tests__/          jest + @testing-library/react-native
 | POST | `/api/v1/auth/login` | `client.login(email, password)` |
 | POST | `/api/v1/auth/refresh` | internal — on 401, retried request once |
 | GET | `/api/v1/link/status` | `client.getLinkStatus()` |
+| POST | `/api/v1/link/issue` | `client.issueLinkCode()` |
+| POST | `/api/v1/link/redeem` | `client.redeemLinkCode(code)` |
+| GET | `/api/v1/memories` | `client.listMemories()` |
+| DELETE | `/api/v1/memories/{id}` | `client.deleteMemory(id)` |
+| POST | `/api/v1/devices` | `client.registerDevice({platform, push_token, app_version?, locale?})` |
+| GET | `/api/v1/devices` | `client.listDevices()` |
+| DELETE | `/api/v1/devices/{id}` | `client.disableDevice(id)` |
 | POST | `/api/v1/messages` (JSON `{text}`) | `client.sendMessage(text)` |
 | POST | `/api/v1/messages` (multipart `audio` + optional `caption`) | `client.sendAudioMessage({uri, mimeType, caption?})` |
 
