@@ -113,3 +113,16 @@ class CompanionMemoryItem(BaseModel):
 
 class MemoryListResponse(BaseModel):
     memories: list[CompanionMemoryItem]
+
+
+class LinkIssueResponse(BaseModel):
+    code: str
+    expiresAt: datetime
+
+
+class LinkRedeemRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+
+
+class LinkStatusResponse(BaseModel):
+    linkedProviders: list[str]

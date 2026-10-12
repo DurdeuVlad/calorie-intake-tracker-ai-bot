@@ -14,6 +14,16 @@ async def find_by_provider_and_external_id(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def list_providers(session: AsyncSession, user_id: int) -> list[str]:
+    stmt = (
+        select(MessagingIdentity.provider)
+        .where(MessagingIdentity.user_id == user_id)
+        .distinct()
+        .order_by(MessagingIdentity.provider)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
 async def create(session: AsyncSession, user: FoodUser, provider: str, external_user_id: str) -> MessagingIdentity:
     identity = MessagingIdentity(user_id=user.id, provider=provider, external_user_id=external_user_id)
     session.add(identity)
