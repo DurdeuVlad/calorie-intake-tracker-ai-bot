@@ -20,6 +20,10 @@ import {
 import { useAuth } from '../auth/AuthContext';
 import { userFacingMessage } from '../api/errors';
 import type { JournalActionResult, MessageResponse } from '../api/types';
+import { evaluate } from '../restrictions/engine';
+import { getRestrictionStore } from '../restrictions/sqliteStore';
+import { dayKey } from '../restrictions/store';
+import type { Nudge } from '../restrictions/types';
 
 // RecordingPresets.HIGH_QUALITY is .m4a/AAC on both iOS and Android, which the
 // backend transcriber accepts.
@@ -36,9 +40,45 @@ export default function LogScreen() {
   const [micDenied, setMicDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MessageResponse | null>(null);
+  const [nudges, setNudges] = useState<Nudge[]>([]);
   // Tracks the physical press across the async permission/prepare steps, so a
   // release that lands mid-setup can still cancel the recording before it starts.
   const pressHeld = useRef(false);
+
+  // Advisory only: rules run before every send and can only add a nudge
+  // banner — a failure here must never block or break logging.
+  const runRules = useCallback(async (logText: string) => {
+    try {
+      const store = getRestrictionStore();
+      const now = new Date();
+      const [rules, tally] = await Promise.all([
+        store.listRules(),
+        store.getIntake(dayKey(now)),
+      ]);
+      setNudges(
+        evaluate(rules, {
+          now,
+          text: logText,
+          caloriesToday: tally.calories,
+          entriesToday: tally.entries,
+        }),
+      );
+    } catch {
+      setNudges([]);
+    }
+  }, []);
+
+  // Feeds the daily_cap rules: keep a local tally of confirmed log calories.
+  const recordIntake = useCallback(async (response: MessageResponse) => {
+    try {
+      const logged = response.actions.filter((a) => a.ok && a.entry);
+      if (logged.length === 0) return;
+      const calories = logged.reduce((sum, a) => sum + (a.entry?.calories ?? 0), 0);
+      await getRestrictionStore().addIntake(dayKey(new Date()), calories, logged.length);
+    } catch {
+      // Tally is advisory bookkeeping; losing it must not break the flow.
+    }
+  }, []);
 
   const startRecording = useCallback(async () => {
     if (recording || sending || pressHeld.current) return;
@@ -91,13 +131,16 @@ export default function LogScreen() {
     }
 
     try {
-      setResult(await client.sendAudioMessage({ uri, mimeType: RECORDING_MIME_TYPE }));
+      await runRules('');
+      const response = await client.sendAudioMessage({ uri, mimeType: RECORDING_MIME_TYPE });
+      setResult(response);
+      void recordIntake(response);
     } catch (err) {
       setError(userFacingMessage(err));
     } finally {
       setSending(false);
     }
-  }, [client, recorder, recording]);
+  }, [client, recorder, recording, runRules, recordIntake]);
 
   const sendText = useCallback(async () => {
     const trimmed = text.trim();
@@ -106,14 +149,17 @@ export default function LogScreen() {
     setError(null);
 
     try {
-      setResult(await client.sendMessage({ text: trimmed }));
+      await runRules(trimmed);
+      const response = await client.sendMessage({ text: trimmed });
+      setResult(response);
       setText('');
+      void recordIntake(response);
     } catch (err) {
       setError(userFacingMessage(err));
     } finally {
       setSending(false);
     }
-  }, [client, text, sending, recording]);
+  }, [client, text, sending, recording, runRules, recordIntake]);
 
   const busy = recording || sending;
 
@@ -175,6 +221,27 @@ export default function LogScreen() {
             <Text style={styles.sendButtonText}>Send</Text>
           </Pressable>
         </View>
+
+        {nudges.length > 0 && (
+          <View style={styles.nudge} testID="nudge-banner">
+            <View style={styles.nudgeBody}>
+              {nudges.map((nudge) => (
+                <Text key={nudge.ruleId} style={styles.nudgeText}>
+                  {nudge.message}
+                </Text>
+              ))}
+            </View>
+            <Pressable
+              onPress={() => setNudges([])}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              testID="nudge-dismiss"
+              hitSlop={8}
+            >
+              <Text style={styles.nudgeDismiss}>×</Text>
+            </Pressable>
+          </View>
+        )}
 
         {error && (
           <Text style={styles.error} testID="send-error">
@@ -268,6 +335,19 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: { opacity: 0.4 },
   sendButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  nudge: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: '#fff4d6',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e8c96a',
+  },
+  nudgeBody: { flex: 1, gap: 4 },
+  nudgeText: { fontSize: 14, color: '#5b4a00', lineHeight: 19 },
+  nudgeDismiss: { fontSize: 20, color: '#8a6d00', paddingHorizontal: 4 },
   error: { color: '#b3261e', fontSize: 14 },
   response: { gap: 12 },
   reply: { fontSize: 16, lineHeight: 22 },

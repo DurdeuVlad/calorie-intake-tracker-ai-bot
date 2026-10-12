@@ -6,6 +6,8 @@ import {
 
 import LogScreen from '../src/app/log';
 import { useAuth } from '../src/auth/AuthContext';
+import { getRestrictionStore } from '../src/restrictions/sqliteStore';
+import { dayKey, MemoryRestrictionStore } from '../src/restrictions/store';
 
 jest.mock('expo-audio', () => {
   // One shared recorder — the screen holds the instance from first render in
@@ -33,9 +35,14 @@ jest.mock('../src/auth/AuthContext', () => ({
   useAuth: jest.fn(),
 }));
 
+jest.mock('../src/restrictions/sqliteStore', () => ({
+  getRestrictionStore: jest.fn(),
+}));
+
 const mockedUseAuth = jest.mocked(useAuth);
 const mockedPermission = jest.mocked(requestRecordingPermissionsAsync);
 const mockedUseAudioRecorder = jest.mocked(useAudioRecorder);
+const mockedGetStore = jest.mocked(getRestrictionStore);
 
 const sendMessage = jest.fn();
 const sendAudioMessage = jest.fn();
@@ -62,6 +69,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockedPermission.mockResolvedValue({ granted: true } as never);
   mockedUseAuth.mockReturnValue({ client: { sendMessage, sendAudioMessage } } as never);
+  mockedGetStore.mockReturnValue(new MemoryRestrictionStore() as never);
 });
 
 describe('LogScreen voice logging', () => {
@@ -124,6 +132,42 @@ describe('LogScreen text logging', () => {
     expect(screen.getByTestId('confirmation-card')).toBeOnTheScreen();
     // Cleared after a successful send.
     expect(screen.getByTestId('text-input').props.value).toBe('');
+  });
+
+  it('shows the rule nudge but still sends — restriction is advisory', async () => {
+    const store = new MemoryRestrictionStore();
+    await store.saveRule({
+      id: 'r1',
+      kind: 'keyword',
+      params: { keyword: 'cake' },
+      enabled: true,
+    });
+    mockedGetStore.mockReturnValue(store as never);
+    sendMessage.mockResolvedValue(RESPONSE);
+
+    await render(<LogScreen />);
+    await fireEvent.changeText(screen.getByTestId('text-input'), 'big slice of cake');
+    await fireEvent.press(screen.getByTestId('send-text-button'));
+
+    const banner = await screen.findByTestId('nudge-banner');
+    expect(banner).toHaveTextContent(/cake/);
+    // Advisory: the send still went through and the reply rendered.
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith({ text: 'big slice of cake' }));
+    expect(await screen.findByTestId('agent-reply')).toBeOnTheScreen();
+    // And the confirmed calories fed today's tally for daily_cap rules.
+    expect(await store.getIntake(dayKey(new Date()))).toEqual({ calories: 230, entries: 1 });
+  });
+
+  it('sends without a banner when no rule triggers', async () => {
+    sendMessage.mockResolvedValue(RESPONSE);
+    await render(<LogScreen />);
+
+    await fireEvent.changeText(screen.getByTestId('text-input'), 'salată');
+    await fireEvent.press(screen.getByTestId('send-text-button'));
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalled());
+    expect(await screen.findByTestId('agent-reply')).toBeOnTheScreen();
+    expect(screen.queryByTestId('nudge-banner')).toBeNull();
   });
 
   it('surfaces the mapped error when the send fails', async () => {

@@ -41,6 +41,12 @@ jest.mock('expo-notifications', () => ({
   AndroidImportance: { MAX: 5, DEFAULT: 3, HIGH: 4, LOW: 2, MIN: 1, NONE: 0, UNSPECIFIED: -1000 },
 }));
 
+jest.mock('expo-sqlite', () => ({
+  openDatabaseSync: jest.fn(() => {
+    throw new Error('expo-sqlite is not available under jest — inject a fake store');
+  }),
+}));
+
 jest.mock('expo-localization', () => ({
   getLocales: jest.fn(() => [{ languageTag: 'en-US' }]),
 }));

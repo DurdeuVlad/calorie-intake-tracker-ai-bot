@@ -77,6 +77,12 @@ export default function HomeScreen() {
               <Text style={styles.navRowChevron}>›</Text>
             </Pressable>
           </Link>
+          <Link href="/restrictions" asChild>
+            <Pressable style={styles.navRow} testID="restrictions-button">
+              <Text style={styles.navRowText}>Restrictions & reminders</Text>
+              <Text style={styles.navRowChevron}>›</Text>
+            </Pressable>
+          </Link>
         </View>
 
         <Pressable style={styles.signOut} onPress={() => void signOut()} testID="sign-out-button">
