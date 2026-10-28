@@ -206,5 +206,6 @@ async def test_captioned_voice_survives_a_transcription_failure_with_an_honest_r
     async with session_scope() as session:
         rows = (await session.execute(select(MessagingOutboundMessage))).scalars().all()
     assert [r.text for r in rows] == [
+        "I could not transcribe the audio; I used only your written details.\n" +
         "Voice caption (no transcript): two eggs\nLogged: meal — 300 kcal\nSend Undo within 10 minutes."
     ]

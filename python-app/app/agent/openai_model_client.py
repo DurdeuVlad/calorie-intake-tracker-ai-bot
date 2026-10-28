@@ -38,24 +38,25 @@ def _user_content(context: AgentContext) -> str:
 
     if context.media_kind == "voice" and media_text:
         message, replaced = _replace_server_media_value(
-            message, media_text, f"[Server transcript: {media_text[:500]}]"
+            message, media_text, f"[Server transcript: {media_text}]"
         )
         if not replaced:
-            message = f"{message}\n[Server transcript: {media_text[:500]}]"
+            message = f"{message}\n[Server transcript: {media_text}]"
         if media_caption and media_caption not in message:
-            message = f"{message}\n[Voice caption: {media_caption[:180]}]"
+            message = f"{message}\n[Voice caption: {media_caption}]"
     elif context.media_kind == "voice_caption_only" and media_caption:
         message, replaced = _replace_server_media_value(
-            message, media_caption, f"[Voice caption (no transcript): {media_caption[:180]}]"
+            message, media_caption, f"[Voice caption (no transcript): {media_caption}]"
         )
         if not replaced:
-            message = f"{message}\n[Voice caption (no transcript): {media_caption[:180]}]"
-    elif context.media_kind == "photo" and media_text:
+            message = f"{message}\n[Voice caption (no transcript): {media_caption}]"
+    elif context.media_kind in ("photo", "document", "attachments") and media_text:
+        label = "Photo interpretation" if context.media_kind == "photo" else "Media evidence"
         message, replaced = _replace_server_media_value(
-            message, media_text, f"[Photo interpretation: {media_text[:500]}]"
+            message, media_text, f"[{label}: {media_text}]"
         )
         if not replaced:
-            message = f"{message}\n[Photo interpretation: {media_text[:500]}]"
+            message = f"{message}\n[{label}: {media_text}]"
 
     return message
 
