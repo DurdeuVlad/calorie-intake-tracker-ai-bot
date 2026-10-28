@@ -67,12 +67,20 @@ class JournalAgent:
             if not reply.tool_calls:
                 if not reply.text or not reply.text.strip():
                     return self._complete(self._fallback_receipt(exchanges) or self._unavailable())
+                if any(e.call.name == "apply_journal_actions" or (e.call.name == "undo_last_change" and e.result.ok) for e in exchanges):
+                    return self._complete(self._fallback_receipt(exchanges) or self._unavailable())
                 return self._complete(self._safe_reply(reply.text))
 
             for call in reply.tool_calls:
                 if calls >= self._max_calls:
-                    return self._complete(self._fallback_receipt(exchanges) or self._limit())
+                    receipt = self._fallback_receipt(exchanges)
+                    return self._complete(f"{receipt}\n{self._limit()}" if receipt else self._limit())
                 calls += 1
+                if call.name == "apply_journal_actions":
+                    attempts = [exchange for exchange in exchanges if exchange.call.name == "apply_journal_actions"]
+                    if any(exchange.result.data.get("successful", 0) > 0 for exchange in attempts) or len(attempts) >= 2:
+                        # Never replay a partially/fully applied batch in one turn.
+                        return self._complete(self._fallback_receipt(exchanges) or self._limit())
 
                 try:
                     raw = await self._tools.execute(session, context, call, todos)
@@ -136,11 +144,9 @@ class JournalAgent:
 
         batches: list[AgentToolResult] = []
         for exchange in exchanges[last_undo + 1:]:
-            if exchange.call.name != "apply_journal_actions" or not exchange.result.ok:
+            if exchange.call.name != "apply_journal_actions":
                 continue
-            successful = exchange.result.data.get("successful")
-            if isinstance(successful, int) and not isinstance(successful, bool) and successful > 0:
-                batches.append(exchange.result)
+            batches.append(exchange.result)
 
         receipts: list[str] = []
         if last_undo >= 0:
@@ -154,6 +160,7 @@ class JournalAgent:
                 data = result.data
                 rows = data.get("results")
                 if not isinstance(rows, list):
+                    lines.append("Journal change failed: " + (result.user_hint or "no changes confirmed."))
                     continue
                 undo_available = undo_available or data.get("undoAvailable") is True
                 for row in rows:
@@ -168,7 +175,9 @@ class JournalAgent:
                         description = " ".join(description.split())[:300] or "entry"
                         calories = row.get("calories")
                         suffix = f" — {calories} kcal" if isinstance(calories, int) and not isinstance(calories, bool) else ""
-                        lines.append(f"{verbs.get(action_type, 'Changed')}: {description}{suffix}.")
+                        provenance = " (estimate)" if row.get("nutritionSource") == "ai_estimate" else ""
+                        date = f" [{row['date']}]" if isinstance(row.get("date"), str) else ""
+                        lines.append(f"{verbs.get(action_type, 'Changed')}: {description}{suffix}{provenance}{date}.")
                     else:
                         message = row.get("message")
                         if isinstance(message, str) and message:
@@ -176,6 +185,9 @@ class JournalAgent:
                             lines.append(f"{action_type}: could not be applied ({message}).")
                         else:
                             lines.append(f"{action_type}: could not be applied.")
+            summary = batches[-1].data.get("todaySummary")
+            if isinstance(summary, dict) and isinstance(summary.get("calories"), int):
+                lines.append(f"Today: {summary['calories']} kcal; {summary.get('entries', '?')} entries.")
             if undo_available:
                 if len(batches) == 1:
                     lines.append("Send Undo within 10 minutes to reverse the successful changes.")
@@ -192,6 +204,7 @@ class JournalAgent:
     def _fallback_durable_tool_receipt(self, exchanges: list[AgentExchange]) -> str | None:
         """Acknowledge durable non-journal tool work after a provider outage."""
         lines: list[str] = []
+        attempted_journal = any(e.call.name == "apply_journal_actions" for e in exchanges)
         for exchange in exchanges:
             if not exchange.result.ok:
                 continue
@@ -200,18 +213,18 @@ class JournalAgent:
                 products = data.get("products")
                 if isinstance(products, list) and products:
                     lines.append(f"Found {len(products)} packaged nutrition choices. Reply with the one you want to use.")
-            elif exchange.call.name == "estimate_food":
+            elif exchange.call.name == "estimate_food" and not attempted_journal:
                 item = data.get("item")
                 if isinstance(item, dict):
                     name = item.get("name") if isinstance(item.get("name"), str) else "food"
                     calories = item.get("totalCalories")
                     suffix = f" — {calories} kcal" if isinstance(calories, int) and not isinstance(calories, bool) else ""
-                    lines.append(f"Prepared an estimate for {' '.join(name.split())[:255]}{suffix}. Tell me if you want to log it.")
+                    lines.append(f"Prepared an estimate for {' '.join(name.split())[:255]}{suffix}. Not logged.")
             elif exchange.call.name == "select_packaged_food":
                 item = data.get("item")
                 if isinstance(item, dict):
                     name = item.get("name") if isinstance(item.get("name"), str) else "the selected food"
-                    lines.append(f"Selected {' '.join(name.split())[:255]}. Tell me if you want to log it.")
+                    lines.append(f"Selected {' '.join(name.split())[:255]}. Not logged.")
             elif exchange.call.name == "save_private_food":
                 name = data.get("name")
                 calories = data.get("caloriesPer100g")
@@ -256,4 +269,4 @@ class JournalAgent:
         return "I cannot process that right now. Please try again or send the meal details as text."
 
     def _limit(self) -> str:
-        return "I need one more detail to finish safely. Tell me the food, quantity, or journal entry involved."
+        return "The tool-call limit was reached. Only changes listed above were applied; any remaining work is incomplete."

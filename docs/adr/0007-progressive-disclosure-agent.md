@@ -64,3 +64,11 @@ Tools are organized into named groups (all tools remain available to the model; 
 - **Planning**: `plan_todos`, `complete_todo`
 
 Future optimization (post-v2.0): send only always-available + loaded-capability tools. Requires a routing layer. Deferred.
+
+
+## Supervised hardening: mutation receipts and bounded ordinary-food logging
+
+- After a journal mutation attempt, final receipts are rendered from server-owned action rows, including failures, estimate labels and a fresh todaySummary read after flush. Model prose cannot substitute a different mutation result. Provider outages use the same receipt. A turn cannot replay a batch after any success; an all-failed batch gets at most one retry. Tool-budget exhaustion states incomplete work rather than inventing a missing user detail.
+- Important residual: a no-tool free-text answer still has no typed journal-claim field and can falsely assert a save. The adversarial terminal-contract test is deliberately xfailed; this is an unmet gate, not an enforced guarantee. Closing it requires a structured terminal reply separating conversational text from journal outcome/receipt references, with server-validated references and server-only mutation claims; no success-word regex is used.
+- Ordinary foods use direct transparent estimates, with targeted lookup for products/restaurants and explicit verification. Supplied calories and printed values at their real basis remain authoritative. Six estimates plus instruction loading, one batch and readback use nine tool calls under the unchanged ten-call cap.
+- EDIT quantity/unit replace a single persisted food item's quantity; same-unit quantity-only edits rescale its stored total. A changed basis needs replacement calories. Numeric corrections invalidate stale nutrition evidence/macros, retaining originals in the Undo snapshot. Owned search/get results expose structured quantities. Direct ml/portion AI totals retain ai_estimate/estimate without inventing grams or verified provenance; their free-text basis is included in the receipt, not a new durable evidence schema.
