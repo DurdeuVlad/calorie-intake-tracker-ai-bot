@@ -91,6 +91,7 @@ flowchart TD
 
 ### 5. Media Handling & Privacy
 - Voice notes, images, and document uploads are processed transiently in memory/tmpfs.
+- Every attachment admitted by ingress is extracted, including attachments sent with text. Full extracted text and captions reach the model once, labelled by origin; they remain user-role evidence, not system instructions. Multi-attachment extraction is bounded by the existing ingress attachment limit. If any extraction in a multi-attachment message fails, the worker declines the entire message before journal processing rather than silently logging a subset. A failed single voice transcription can still use written text/caption, explicitly marked as having no transcript.
 - Media files are deleted immediately after transcription or vision extraction completes. Raw media is **never** saved to disk or PostgreSQL.
 
 ### 6. Idempotency & Outbox Pattern

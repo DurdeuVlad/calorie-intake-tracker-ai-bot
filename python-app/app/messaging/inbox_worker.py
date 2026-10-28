@@ -75,8 +75,8 @@ async def resolve_identity_user(session, message: InboundMessage, default_timezo
     return await _load_user_by_id(session, identity.user_id)
 
 
-async def _extract_media_text(deps: InboxWorkerDeps, message: InboundMessage) -> str:
-    attachment = message.attachments[0]
+async def _extract_media_text(deps: InboxWorkerDeps, message: InboundMessage, attachment=None) -> str:
+    attachment = attachment or message.attachments[0]
     frontend = deps.frontends.require(message.provider)
     data = await frontend.download(attachment)
     if attachment.kind == AttachmentKind.VOICE:
@@ -188,28 +188,46 @@ async def handle_message(
         media_text: str | None = None
         media_caption: str | None = None
         caption_already_used = False
-        if message.attachments and not text:
+        if message.attachments:
             attachment = message.attachments[0]
             try:
                 stage_started = perf_counter()
-                text = await _extract_media_text(deps, message)
-                if attachment.kind == AttachmentKind.VOICE:
+                original_text = text
+                extracted = []
+                for part in message.attachments:
+                    value = await _extract_media_text(deps, message, part)
+                    if not value or not value.strip():
+                        raise ValueError("Empty media extraction")
+                    extracted.append((part, value))
+                if len(extracted) == 1:
+                    text = extracted[0][1]
+                else:
+                    labels = {AttachmentKind.VOICE: "Server transcript", AttachmentKind.PHOTO: "Photo interpretation", AttachmentKind.DOCUMENT: "Document extraction"}
+                    text = "\n".join(f"[{labels[part.kind]} {index}: {value}]" for index, (part, value) in enumerate(extracted, 1))
+                media_text = text
+                if len(extracted) > 1:
+                    media_kind = "attachments"
+                elif attachment.kind == AttachmentKind.DOCUMENT:
+                    media_kind = "document"
+                elif attachment.kind == AttachmentKind.VOICE:
                     media_kind = "voice"
                     media_text = text
                     media_caption = caption or None
                 elif attachment.kind == AttachmentKind.PHOTO:
                     media_kind = "photo"
                     media_text = text
+                if original_text:
+                    text = f"{text}\nUser text: {original_text}"
                 logger.info("Inbox stage complete: provider=%s event_id=%s stage=media elapsed_ms=%d", message.provider, message.event_id, (perf_counter() - stage_started) * 1000)
             except Exception:
                 logger.exception("Media processing failed: provider=%s kind=%s", message.provider, message.attachments[0].kind)
                 # A user-written caption remains usable when transcription
                 # fails; label the missing transcript in the final receipt
                 # instead of silently treating the caption as audio content.
-                if attachment.kind == AttachmentKind.VOICE and caption:
-                    text = caption
+                if len(message.attachments) == 1 and attachment.kind == AttachmentKind.VOICE and (caption or text):
+                    text = "\n".join(value for value in (text, caption) if value)
                     media_kind = "voice_caption_only"
-                    media_caption = caption
+                    media_caption = text
                     caption_already_used = True
                 else:
                     reply = (
@@ -217,6 +235,8 @@ async def handle_message(
                         if attachment.kind == AttachmentKind.VOICE
                         else "I could not analyze that media. Please send clearer media or text."
                     )
+                    if len(message.attachments) > 1:
+                        reply = "I could not analyze every attachment. Nothing from this message was logged. Please resend the media or meal details as text."
                     await outbox.reply(session, message.provider, message.conversation_id, reply)
                     return
 
