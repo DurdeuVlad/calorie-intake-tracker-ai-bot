@@ -6,6 +6,7 @@ v2.0: The model writes full replies from structured tool results. No
 deterministic reply templates, no `if context.romanian` branches. The
 system prompt instructs the model on receipt format and language."""
 
+import json
 import logging
 from typing import Any
 
@@ -154,7 +155,14 @@ class JournalAgent:
 
         if batches:
             lines: list[str] = []
-            verbs = {"CREATE": "Logged", "EDIT": "Updated", "MOVE": "Moved", "DELETE": "Deleted"}
+            romanian = batches[-1].data.get("replyLanguage") == "ro"
+            verbs = {"CREATE": "Notat" if romanian else "Logged", "EDIT": "Actualizat" if romanian else "Updated",
+                     "MOVE": "Mutat" if romanian else "Moved", "DELETE": "Șters" if romanian else "Deleted"}
+            # A successful retry supersedes an earlier failed attempt for the
+            # same server-labelled action, without hiding unrelated failures.
+            resolved = {row.get("actionKey") for batch in batches for row in batch.data.get("results", [])
+                        if isinstance(row, dict) and row.get("ok") is True and row.get("actionKey")}
+
             undo_available = False
             for result in batches:
                 data = result.data
@@ -175,24 +183,40 @@ class JournalAgent:
                         description = " ".join(description.split())[:300] or "entry"
                         calories = row.get("calories")
                         suffix = f" — {calories} kcal" if isinstance(calories, int) and not isinstance(calories, bool) else ""
-                        provenance = " (estimate)" if row.get("nutritionSource") == "ai_estimate" else ""
+                        receipt = row.get("receipt") if isinstance(row.get("receipt"), dict) else {}
+                        if receipt.get("quantityReplaced") is True and isinstance(receipt.get("quantity"), (int, float)):
+                            quantity = f"{receipt['quantity']:g} {receipt.get('unit', 'unspecified')}"
+                            description = (f"cantitate nouă: {quantity}; eticheta intrării: «{description}»" if romanian
+                                           else f"replacement quantity: {quantity}; entry label: «{description}»")
+                        provenance = (" (estimare)" if romanian else " (estimate)") if row.get("nutritionSource") == "ai_estimate" else ""
+                        basis = receipt.get("basis") if row.get("nutritionSource") == "ai_estimate" else None
+                        if isinstance(basis, str) and basis.strip():
+                            provenance += f" — {'bază' if romanian else 'basis'}: {' '.join(basis.split())[:180]}"
+
                         date = f" [{row['date']}]" if isinstance(row.get("date"), str) else ""
                         lines.append(f"{verbs.get(action_type, 'Changed')}: {description}{suffix}{provenance}{date}.")
                     else:
+                        if row.get("actionKey") and row["actionKey"] in resolved:
+                            continue
+                        identity = row.get("requestedDescription") or f"item {row.get('actionIndex', '?')}"
+                        identity = " ".join(str(identity).split())[:255]
+                        failed_label = f"{action_type} #{row.get('actionIndex', '?')} ({identity})"
+                        failed_verb = "nu s-a aplicat" if romanian else "could not be applied"
                         message = row.get("message")
                         if isinstance(message, str) and message:
                             message = " ".join(message.split())[:300]
-                            lines.append(f"{action_type}: could not be applied ({message}).")
+                            lines.append(f"{failed_label}: {failed_verb} ({message}).")
                         else:
-                            lines.append(f"{action_type}: could not be applied.")
+                            lines.append(f"{failed_label}: {failed_verb}.")
             summary = batches[-1].data.get("todaySummary")
             if isinstance(summary, dict) and isinstance(summary.get("calories"), int):
-                lines.append(f"Today: {summary['calories']} kcal; {summary.get('entries', '?')} entries.")
+                label, count_label = ("Azi", "intrări") if romanian else ("Today", "entries")
+                lines.append(f"{label}: {summary['calories']} kcal; {summary.get('entries', '?')} {count_label}.")
             if undo_available:
                 if len(batches) == 1:
-                    lines.append("Send Undo within 10 minutes to reverse the successful changes.")
+                    lines.append("Trimite Undo în 10 minute pentru a anula modificările reușite." if romanian else "Send Undo within 10 minutes to reverse the successful changes.")
                 else:
-                    lines.append("Send Undo within 10 minutes to reverse only the latest successful change batch.")
+                    lines.append("Trimite Undo în 10 minute pentru a anula doar ultimul lot reușit." if romanian else "Send Undo within 10 minutes to reverse only the latest successful change batch.")
             if lines:
                 receipts.append("\n".join(lines))
 
@@ -205,11 +229,21 @@ class JournalAgent:
         """Acknowledge durable non-journal tool work after a provider outage."""
         lines: list[str] = []
         attempted_journal = any(e.call.name == "apply_journal_actions" for e in exchanges)
+        submitted_quotes = set()
+        for exchange in exchanges:
+            if exchange.call.name != "apply_journal_actions":
+                continue
+            try:
+                actions = json.loads(exchange.call.arguments).get("actions", [])
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if isinstance(actions, list):
+                submitted_quotes.update(a["quoteId"] for a in actions if isinstance(a, dict) and isinstance(a.get("quoteId"), str))
         for exchange in exchanges:
             if not exchange.result.ok:
                 continue
             data = exchange.result.data
-            if exchange.call.name == "search_packaged_food":
+            if exchange.call.name == "search_packaged_food" and not attempted_journal:
                 products = data.get("products")
                 if isinstance(products, list) and products:
                     lines.append(f"Found {len(products)} packaged nutrition choices. Reply with the one you want to use.")
@@ -221,6 +255,13 @@ class JournalAgent:
                     suffix = f" — {calories} kcal" if isinstance(calories, int) and not isinstance(calories, bool) else ""
                     lines.append(f"Prepared an estimate for {' '.join(name.split())[:255]}{suffix}. Not logged.")
             elif exchange.call.name == "select_packaged_food":
+                # Submitted selections are accounted for by the action receipt,
+                # successful or failed. A genuinely unsubmitted choice remains
+                # explicitly not logged. Legacy result doubles without an ID
+                # cannot establish a distinct unsubmitted selection.
+                quote_id = data.get("quoteId")
+                if attempted_journal and (not isinstance(quote_id, str) or quote_id in submitted_quotes):
+                    continue
                 item = data.get("item")
                 if isinstance(item, dict):
                     name = item.get("name") if isinstance(item.get("name"), str) else "the selected food"

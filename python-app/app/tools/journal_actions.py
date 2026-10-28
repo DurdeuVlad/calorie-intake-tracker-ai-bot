@@ -280,7 +280,7 @@ async def _edit_action(executor, session, context, args, change_set, now, timezo
         change_set.add_mutation("EDIT", before, after)
     receipt = None
     if len(current) == 1:
-        receipt = {"quantity": float(current[0].quantity) if current[0].quantity is not None else None, "unit": current[0].quantity_unit}
+        receipt = {"quantity": float(current[0].quantity) if current[0].quantity is not None else None, "unit": current[0].quantity_unit, "quantityReplaced": quantity_change}
     undo_deadline = now + UNDO_WINDOW if change_set is not None else None
     return _action_success("EDIT", entry, timezone_name, receipt=receipt, undo_deadline=undo_deadline)
 
@@ -315,6 +315,35 @@ async def _delete_action(executor, session, context, args, change_set, now, time
     return _action_success("DELETE", entry, timezone_name, undo_deadline=undo_deadline)
 
 
+async def _action_identity(session, context, raw, index) -> dict[str, Any]:
+    """Bounded owned identity for receipts, not authorization or nutrition."""
+    identity = {"actionIndex": index, "requestedDescription": f"item {index}", "actionKey": f"item:{index}"}
+    if not isinstance(raw, dict):
+        return identity
+    name = raw.get("description") or raw.get("name")
+    try:
+        quote_id = _quote_id(raw) if raw.get("quoteId") is not None else None
+    except ValidationError:
+        quote_id = None
+    if quote_id is not None:
+        quote = await pending_nutrition_quote_repo.find_owned(session, quote_id, context.user)
+        if quote is not None:
+            name = quote.product_name
+        identity["actionKey"] = f"quote:{quote_id}"
+    elif isinstance(raw.get("entryId"), int) and not isinstance(raw.get("entryId"), bool):
+        identity["actionKey"] = f"entry:{raw['entryId']}"
+        identity["requestedDescription"] = f"entry {raw['entryId']}"
+        if 1 <= raw["entryId"] <= MAX_DATABASE_ID:
+            entry = await food_entry_repo.find_by_id_and_user(session, raw["entryId"], context.user)
+            if entry is not None:
+                name = name or entry.original_message
+    if isinstance(name, str) and name.strip():
+        identity["requestedDescription"] = " ".join(name.split())[:MAX_TEXT_CHARS]
+        if quote_id is None and "entryId" not in raw:
+            identity["actionKey"] = f"name:{identity['requestedDescription']}"
+    return identity
+
+
 async def apply_journal_actions(executor, session, context, args, todos) -> AgentToolResult:
     requested = args.get("actions")
     if not isinstance(requested, list) or not requested:
@@ -324,6 +353,9 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
             "VALIDATION_ERROR", f"A message may contain at most {MAX_ACTIONS_PER_BATCH} journal actions."
         )
 
+    language = _text(args, "replyLanguage", 2) or "en"
+    if language not in {"en", "ro"}:
+        raise ValidationError("Use en or ro for receipt language.")
     await food_user_repo.lock_for_journal_mutation(session, context.user.id)
     settings = await executor._settings_for(session, context)
     now = datetime.now(UTC)
@@ -332,15 +364,16 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
 
     results: list[dict[str, Any]] = []
     changed = 0
-    for raw in requested:
+    for index, raw in enumerate(requested, 1):
+        identity = await _action_identity(session, context, raw, index)
         if not isinstance(raw, dict):
-            results.append(_action_failure("ACTION", "Invalid journal action."))
+            results.append({**_action_failure("ACTION", "Invalid journal action."), **identity})
             continue
         raw_type = raw.get("type")
         if raw_type is None:
             action_type = "ACTION"
         elif not isinstance(raw_type, str):
-            results.append(_action_failure("ACTION", "The action type must be text."))
+            results.append({**_action_failure("ACTION", "The action type must be text."), **identity})
             continue
         else:
             action_type = raw_type.upper()
@@ -358,11 +391,11 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
             if result.get("ok"):
                 await session.flush()
                 changed += 1
-            results.append(result)
+            results.append({**result, **identity})
         except AgentToolFailure as failure:
-            results.append(_action_failure(action_type, failure.result.user_hint or "The action was rejected."))
+            results.append({**_action_failure(action_type, failure.result.user_hint or "The action was rejected."), **identity})
         except ValidationError as failure:
-            results.append(_action_failure(action_type, str(failure) or "The action details are invalid."))
+            results.append({**_action_failure(action_type, str(failure) or "The action details are invalid."), **identity})
 
     if changed > 0:
         session.add(change_set)
@@ -377,7 +410,7 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
     summary = await get_today_summary(executor, session, context, {}, todos)
     return AgentToolResult.success(
         {"results": results, "successful": changed, "failed": len(results) - changed, "undoAvailable": changed > 0,
-         "todaySummary": summary.data}
+         "todaySummary": summary.data, "replyLanguage": language}
     )
 
 

@@ -242,8 +242,8 @@ def tool_definitions() -> list[dict[str, Any]]:
             "and either calories or a server-issued quoteId; quantity is optional when calories are explicit. Never provide source URLs: provenance is copied only from "
             "the selected server quote. EDIT/MOVE/DELETE need entryId. EDIT calories "
             "is the entry's replacement total, never an increment or delta. EDIT quantity/unit replace the single persisted item quantity; without calories, same-unit quantities proportionally rescale its existing total. Results include fresh todaySummary. MOVE also needs date. Actions succeed or "
-            "fail independently and the result reports each outcome.",
-            _object({"actions": {"type": "array", "minItems": 1, "maxItems": MAX_ACTIONS_PER_BATCH, "items": action}}, ["actions"]),
+            "fail independently and the result reports each indexed food outcome. Set replyLanguage to the dominant current-message language (en or ro) for the server receipt.",
+            _object({"actions": {"type": "array", "minItems": 1, "maxItems": MAX_ACTIONS_PER_BATCH, "items": action}, "replyLanguage": {"type": "string", "enum": ["en", "ro"]}}, ["actions", "replyLanguage"]),
         ),
         _tool(
             "undo_last_change",
