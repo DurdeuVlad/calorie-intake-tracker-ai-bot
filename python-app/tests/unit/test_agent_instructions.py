@@ -16,9 +16,9 @@ def test_core_prompt_is_small_and_contains_capability_index():
 
     assert "a user-owned private-food result, and a photo's Label line" in prompt
     assert "as trusted nutrition" in prompt
-    assert "always try to ground the value with search_web" in prompt
+    assert "web search is not a prerequisite" in prompt
     assert "search_web checks a fresh cache first" in prompt
-    assert "Only use estimate_food after search_web/fetch_web_page are unavailable or yield no usable nutrition" in prompt
+    assert "Use targeted search_web or packaged lookup" in prompt
     assert "Do not use 1 kcal as a fallback" in prompt
     assert "gin tonic is not water" in prompt
     assert '"do 150 kcal" means EDIT it with calories 150' in prompt

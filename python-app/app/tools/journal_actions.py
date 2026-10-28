@@ -7,6 +7,7 @@ from typing import Any
 
 from app.db.constraints import (
     MAX_ACTIONS_PER_BATCH,
+    MAX_BASIS_CHARS,
     MAX_CALORIES,
     MAX_DATE_CHARS,
     MAX_PROVIDER_CHARS,
@@ -125,7 +126,10 @@ async def _create_action(executor, session, context, args, change_set, now, time
     consumed: list[PendingNutritionQuote] = []
     created_evidence: dict[int, NutritionEvidence] = {}
     receipt: dict[str, Any] = {"quantity": quantity, "unit": unit}
-    unverified_source = args.get("quoteId") is None and _unverified_source_claim(requested_source)
+    unverified_source = args.get("quoteId") is None and source != "ai_estimate" and _unverified_source_claim(requested_source)
+    if source == "ai_estimate":
+        confidence = "estimate"
+        receipt["basis"] = _text(args, "basis", MAX_BASIS_CHARS) or "AI estimate; not externally verified"
     derivation: str | None = None
     source_url: str | None = None
     source_name: str | None = None
@@ -230,13 +234,55 @@ async def _edit_action(executor, session, context, args, change_set, now, timezo
         calories = entry.calories
     if calories is None or calories < MIN_CALORIES or calories > MAX_CALORIES:
         raise ValidationError(f"Calories must be between {MIN_CALORIES} and {MAX_CALORIES}.")
+    quantity = _quantity_number(args, "quantity")
+    quantity_change = "quantity" in args or "unit" in args
+    if quantity_change:
+        if len(current) != 1:
+            raise ValidationError("A quantity replacement requires a single food item; specify the item to correct.")
+        if quantity is None:
+            raise ValidationError("A replacement quantity is required with unit.")
+        unit = _quantity_unit(_text(args, "unit", MAX_UNIT_CHARS) or current[0].quantity_unit, quantity)
+        if "calories" not in args:
+            old_quantity = current[0].quantity if current[0].quantity is not None else current[0].quantity_grams
+            if old_quantity is None or old_quantity <= 0 or current[0].quantity_unit != unit:
+                raise ValidationError("Changing the quantity basis requires a replacement calorie total.")
+            calories = round(Decimal(entry.calories) * Decimal(str(quantity)) / old_quantity)
+            if not MIN_CALORIES <= calories <= MAX_CALORIES:
+                raise ValidationError("The corrected calorie total is outside journal limits.")
+    else:
+        unit = None
+
+    # Numeric corrections invalidate the old immutable nutrition basis. The
+    # before snapshot retains it for Undo; never present it as current evidence.
+    numeric_change = quantity_change or ("calories" in args and calories != entry.calories)
+    source = "ai_estimate" if args.get("nutritionSource") == "ai_estimate" or (
+        quantity_change and "calories" not in args and entry.nutrition_source == "ai_estimate"
+    ) else "manual"
+    if numeric_change:
+        for evidence in evidence_by_item_id.values():
+            await session.delete(evidence)
+        evidence_by_item_id = {}
+        entry.nutrition_source = source
+        entry.confidence = "estimate" if source == "ai_estimate" else "high"
     entry.revise(description, calories)
     executor._synchronize_items_after_edit(current, description, calories)
+    if quantity_change:
+        current[0].quantity = Decimal(str(quantity))
+        current[0].quantity_unit = unit
+        current[0].quantity_grams = Decimal(str(quantity)) if unit == "g" else None
+    if numeric_change:
+        for item in current:
+            item.nutrition_source = entry.nutrition_source
+            item.nutrition_confidence = entry.confidence
+            item.protein_grams = item.carbs_grams = item.fat_grams = None
     after = snapshot.capture(entry, current, evidence_by_item_id)
     if change_set is not None:
         change_set.add_mutation("EDIT", before, after)
+    receipt = None
+    if len(current) == 1:
+        receipt = {"quantity": float(current[0].quantity) if current[0].quantity is not None else None, "unit": current[0].quantity_unit, "quantityReplaced": quantity_change}
     undo_deadline = now + UNDO_WINDOW if change_set is not None else None
-    return _action_success("EDIT", entry, timezone_name, undo_deadline=undo_deadline)
+    return _action_success("EDIT", entry, timezone_name, receipt=receipt, undo_deadline=undo_deadline)
 
 
 async def _move_action(executor, session, context, args, change_set, now, timezone_name) -> dict[str, Any]:
@@ -269,6 +315,35 @@ async def _delete_action(executor, session, context, args, change_set, now, time
     return _action_success("DELETE", entry, timezone_name, undo_deadline=undo_deadline)
 
 
+async def _action_identity(session, context, raw, index) -> dict[str, Any]:
+    """Bounded owned identity for receipts, not authorization or nutrition."""
+    identity = {"actionIndex": index, "requestedDescription": f"item {index}", "actionKey": f"item:{index}"}
+    if not isinstance(raw, dict):
+        return identity
+    name = raw.get("description") or raw.get("name")
+    try:
+        quote_id = _quote_id(raw) if raw.get("quoteId") is not None else None
+    except ValidationError:
+        quote_id = None
+    if quote_id is not None:
+        quote = await pending_nutrition_quote_repo.find_owned(session, quote_id, context.user)
+        if quote is not None:
+            name = quote.product_name
+        identity["actionKey"] = f"quote:{quote_id}"
+    elif isinstance(raw.get("entryId"), int) and not isinstance(raw.get("entryId"), bool):
+        identity["actionKey"] = f"entry:{raw['entryId']}"
+        identity["requestedDescription"] = f"entry {raw['entryId']}"
+        if 1 <= raw["entryId"] <= MAX_DATABASE_ID:
+            entry = await food_entry_repo.find_by_id_and_user(session, raw["entryId"], context.user)
+            if entry is not None:
+                name = name or entry.original_message
+    if isinstance(name, str) and name.strip():
+        identity["requestedDescription"] = " ".join(name.split())[:MAX_TEXT_CHARS]
+        if quote_id is None and "entryId" not in raw:
+            identity["actionKey"] = f"name:{identity['requestedDescription']}"
+    return identity
+
+
 async def apply_journal_actions(executor, session, context, args, todos) -> AgentToolResult:
     requested = args.get("actions")
     if not isinstance(requested, list) or not requested:
@@ -278,6 +353,9 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
             "VALIDATION_ERROR", f"A message may contain at most {MAX_ACTIONS_PER_BATCH} journal actions."
         )
 
+    language = _text(args, "replyLanguage", 2) or "en"
+    if language not in {"en", "ro"}:
+        raise ValidationError("Use en or ro for receipt language.")
     await food_user_repo.lock_for_journal_mutation(session, context.user.id)
     settings = await executor._settings_for(session, context)
     now = datetime.now(UTC)
@@ -286,15 +364,16 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
 
     results: list[dict[str, Any]] = []
     changed = 0
-    for raw in requested:
+    for index, raw in enumerate(requested, 1):
+        identity = await _action_identity(session, context, raw, index)
         if not isinstance(raw, dict):
-            results.append(_action_failure("ACTION", "Invalid journal action."))
+            results.append({**_action_failure("ACTION", "Invalid journal action."), **identity})
             continue
         raw_type = raw.get("type")
         if raw_type is None:
             action_type = "ACTION"
         elif not isinstance(raw_type, str):
-            results.append(_action_failure("ACTION", "The action type must be text."))
+            results.append({**_action_failure("ACTION", "The action type must be text."), **identity})
             continue
         else:
             action_type = raw_type.upper()
@@ -312,11 +391,11 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
             if result.get("ok"):
                 await session.flush()
                 changed += 1
-            results.append(result)
+            results.append({**result, **identity})
         except AgentToolFailure as failure:
-            results.append(_action_failure(action_type, failure.result.user_hint or "The action was rejected."))
+            results.append({**_action_failure(action_type, failure.result.user_hint or "The action was rejected."), **identity})
         except ValidationError as failure:
-            results.append(_action_failure(action_type, str(failure) or "The action details are invalid."))
+            results.append({**_action_failure(action_type, str(failure) or "The action details are invalid."), **identity})
 
     if changed > 0:
         session.add(change_set)
@@ -325,10 +404,13 @@ async def apply_journal_actions(executor, session, context, args, todos) -> Agen
         try:
             await executor.send_budget_alert(session, context.user, context.chat_id)
         except Exception:
-            pass
+            logger.exception("Budget alert failed for user_id=%s", context.user.id)
 
+    await session.flush()
+    summary = await get_today_summary(executor, session, context, {}, todos)
     return AgentToolResult.success(
-        {"results": results, "successful": changed, "failed": len(results) - changed, "undoAvailable": changed > 0}
+        {"results": results, "successful": changed, "failed": len(results) - changed, "undoAvailable": changed > 0,
+         "todaySummary": summary.data, "replyLanguage": language}
     )
 
 
@@ -509,6 +591,16 @@ async def get_weekly_summary(executor, session, context, args, todos) -> AgentTo
     })
 
 
+async def _entry_details(session, entry) -> dict[str, Any]:
+    details = _summary(entry)
+    items = await food_item_repo.find_by_entry(session, entry)
+    details["items"] = [{"name": item.name, "quantity": float(item.quantity) if item.quantity is not None else None,
+                         "unit": item.quantity_unit, "calories": item.calories,
+                         "nutritionSource": item.nutrition_source, "nutritionConfidence": item.nutrition_confidence}
+                        for item in items]
+    return details
+
+
 async def search_entries(executor, session, context, args, todos) -> AgentToolResult:
     from zoneinfo import ZoneInfo
 
@@ -521,7 +613,7 @@ async def search_entries(executor, session, context, args, todos) -> AgentToolRe
     today = food_entry_repo.local_tracking_date(context.started_at.astimezone(zone), zone, settings.day_boundary_hour)
 
     rows = await executor._search_entries_impl(session, context, q, date_arg, from_arg, to_arg, zone, today, settings.day_boundary_hour)
-    return AgentToolResult.success({"entries": [_summary(r) for r in rows[:10]]})
+    return AgentToolResult.success({"entries": [await _entry_details(session, r) for r in rows[:10]]})
 
 
 async def get_entry(executor, session, context, args, todos) -> AgentToolResult:
@@ -534,7 +626,7 @@ async def get_entry(executor, session, context, args, todos) -> AgentToolResult:
     )
     if entry is None:
         return AgentToolResult.failure("NOT_FOUND", "No matching journal entry exists.")
-    return AgentToolResult.success({"entry": _summary(entry)})
+    return AgentToolResult.success({"entry": await _entry_details(session, entry)})
 
 
 async def search_food_history(executor, session, context, args, todos) -> AgentToolResult:

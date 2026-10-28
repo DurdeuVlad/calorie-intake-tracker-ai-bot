@@ -40,3 +40,9 @@ async def find_by_batch(session: AsyncSession, user: FoodUser, batch_id: uuid.UU
 
 async def delete_quote(session: AsyncSession, quote: PendingNutritionQuote) -> None:
     await session.delete(quote)
+
+
+async def find_owned(session: AsyncSession, quote_id: uuid.UUID, user: FoodUser) -> PendingNutritionQuote | None:
+    """Identity-only lookup, including expired choices; never authorizes use."""
+    stmt = select(PendingNutritionQuote).where(PendingNutritionQuote.quote_id == quote_id, PendingNutritionQuote.user_id == user.id)
+    return (await session.execute(stmt)).scalar_one_or_none()

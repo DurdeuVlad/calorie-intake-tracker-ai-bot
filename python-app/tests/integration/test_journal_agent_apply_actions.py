@@ -834,7 +834,7 @@ async def test_pinned_status_failure_does_not_roll_back_journal_mutation():
         )
         await session.commit()
 
-    assert "Logged status safe" in result
+    assert "Logged: status safe" in result
     async with session_scope() as session:
         entries = (await session.execute(select(FoodEntry).where(FoodEntry.original_message == "status safe"))).scalars().all()
     assert len(entries) == 1
@@ -1011,7 +1011,8 @@ async def test_hits_the_max_tool_call_limit():
         user = await get_or_create_by_telegram_user_id(session, 444, "Tester", "Europe/Bucharest")
         await session.commit()
         reply = await agent.run(session, AgentContext(user=user, chat_id="1", message="anything"))
-    assert "detail" in reply.lower()
+    assert "tool-call limit" in reply.lower()
+    assert "incomplete" in reply.lower()
 
 
 @pytest.mark.asyncio

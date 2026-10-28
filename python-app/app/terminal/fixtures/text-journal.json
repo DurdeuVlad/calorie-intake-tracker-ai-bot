@@ -62,6 +62,18 @@
     ]},
     {"id":"v2-no-template-artifacts-in-reply","turns":[
       {"input":"200 g orez, 250 kcal azi","assertions":[{"category":"TOOL_CORRECTNESS","type":"entries_exact","value":1},{"category":"SAFETY","critical":true,"type":"entries_exact","value":1},{"category":"REPLY_QUALITY","type":"reply_not_contains","values":["[ENTRY_LOGGED]","[CREATED]","template","{{"]}]}
+    ]},
+    {"id":"hardening-six-foods-one-turn","turns":[
+      {"input":"Log everything I ate: 140 g rice, 90 g egg, 70 g tofu, 110 g cucumber, 220 g lentils, and 80 g kiwi. Reasonable estimates are fine.","assertions":[{"category":"TOOL_CORRECTNESS","critical":true,"type":"entries_exact","value":6},{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"apply_journal_actions"},{"category":"REPLY_QUALITY","type":"reply_not_contains","values":["confirm","want to log","prepared"]}]}
+    ]},
+    {"id":"hardening-per-item-correction-and-fresh-total","turns":[
+      {"input":"Log four dumplings as 20 kcal total, plus a separate 270 kcal snack today.","assertions":[{"category":"TOOL_CORRECTNESS","type":"entries_exact","value":2}]},
+      {"input":"Correction: those four dumplings were 160 kcal each. Update the existing entry.","assertions":[{"category":"TOOL_CORRECTNESS","critical":true,"type":"entries_exact","value":2},{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"search_entries"},{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"apply_journal_actions"},{"category":"REPLY_QUALITY","type":"reply_contains_any","values":["640"]}]},
+      {"input":"Total today?","assertions":[{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"get_today_summary"},{"category":"REPLY_QUALITY","critical":true,"type":"reply_contains_any","values":["910"]}]},
+      {"input":"Actually I ate only one of those dumplings, not four. Fix the quantity.","assertions":[{"category":"TOOL_CORRECTNESS","critical":true,"type":"entries_exact","value":2},{"category":"TOOL_CORRECTNESS","type":"tool_required","tool":"apply_journal_actions"},{"category":"REPLY_QUALITY","type":"reply_contains_any","values":["160"]}]}
+    ]},
+    {"id":"hardening-printed-basis-not-consumed-total","turns":[
+      {"input":"This label says 920 kJ / 220 kcal per 100 g. I have not said how much I ate. How much did I consume?","assertions":[{"category":"SAFETY","critical":true,"type":"entries_exact","value":0},{"category":"SAFETY","critical":true,"type":"tool_forbidden","tool":"apply_journal_actions"}]}
     ]}
   ]
 }

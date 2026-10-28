@@ -151,6 +151,7 @@ def _action_schema() -> dict[str, Any]:
             "localTime": _string(max_length=MAX_DATE_CHARS),
             "quoteId": _string(max_length=MAX_IDENTIFIER_CHARS),
             "nutritionSource": _string(max_length=MAX_PROVIDER_CHARS),
+            "basis": _string(max_length=MAX_BASIS_CHARS),
             "nutritionConfidence": {"type": "string", "enum": ["high", "estimate", "unknown"]},
         },
         ["type"],
@@ -211,7 +212,7 @@ def tool_definitions() -> list[dict[str, Any]]:
         _tool("select_packaged_food", "Read a server-owned packaged quote before logging it.", _object({"quoteId": _string(max_length=MAX_IDENTIFIER_CHARS)}, ["quoteId"])),
         _tool(
             "search_web",
-            "Use this to ground nutrition when no explicit calories or trusted local, private-food, or exact packaged "
+            "Use targeted verification for a specific product, restaurant, or explicit recheck when no explicit calories or trusted local, private-food, or exact packaged "
             "result is available. Checks a fresh cache before an outbound query. Search restaurant, menu, product, and "
             f"serving facts. Returns up to {MAX_WEB_SEARCH_RESULTS} results with title, url, and snippet. May be unavailable.",
             _object({"query": _string(max_length=MAX_WEB_SEARCH_QUERY_CHARS)}, ["query"]),
@@ -224,7 +225,7 @@ def tool_definitions() -> list[dict[str, Any]]:
         ),
         _tool(
             "estimate_food",
-            "Create a server-owned AI estimate for a food item when no explicit calories, packaged result, or web search result is available. Use this immediately for common foods the user ate without giving calories — do not ask the user for nutrition data.",
+            "Create a server-owned AI estimate immediately for ordinary foods without explicit calories; web search is not a prerequisite. Use transparent typical-portion assumptions, not invented verification. Do not ask the user for nutrition data. For ml or portions with no gram basis, preserve the unit and send a transparent total with nutritionSource ai_estimate, nutritionConfidence estimate, and basis in apply_journal_actions.",
             _object(
                 {
                     "name": _string(max_length=MAX_TEXT_CHARS),
@@ -240,9 +241,9 @@ def tool_definitions() -> list[dict[str, Any]]:
             "Apply independent journal mutations immediately. Each CREATE needs a description/name or a server-issued quoteId, "
             "and either calories or a server-issued quoteId; quantity is optional when calories are explicit. Never provide source URLs: provenance is copied only from "
             "the selected server quote. EDIT/MOVE/DELETE need entryId. EDIT calories "
-            "is the entry's replacement total, never an increment or delta. MOVE also needs date. Actions succeed or "
-            "fail independently and the result reports each outcome.",
-            _object({"actions": {"type": "array", "minItems": 1, "maxItems": MAX_ACTIONS_PER_BATCH, "items": action}}, ["actions"]),
+            "is the entry's replacement total, never an increment or delta. EDIT quantity/unit replace the single persisted item quantity; without calories, same-unit quantities proportionally rescale its existing total. Results include fresh todaySummary. MOVE also needs date. Actions succeed or "
+            "fail independently and the result reports each indexed food outcome. Set replyLanguage to the dominant current-message language (en or ro) for the server receipt.",
+            _object({"actions": {"type": "array", "minItems": 1, "maxItems": MAX_ACTIONS_PER_BATCH, "items": action}, "replyLanguage": {"type": "string", "enum": ["en", "ro"]}}, ["actions", "replyLanguage"]),
         ),
         _tool(
             "undo_last_change",

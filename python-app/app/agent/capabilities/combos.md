@@ -12,6 +12,8 @@ When a combo or multi-item meal has no portion, no total calories, and no explic
 
 If the user's next message does not supply new numeric detail, declines to give one, or tells you to just estimate or handle it yourself, you must act immediately on the best number available: their stated total if any, otherwise your own transparent estimate. Asking again is not allowed.
 
+An explicit list of distinct foods with supplied quantities is not an unspecified combo. Estimate every listed food and log them together without a blanket confirmation.
+
 ## Multi-meal messages
 
 If a message names several distinct meals (not a combo), send several CREATE actions together in one `apply_journal_actions` call.
