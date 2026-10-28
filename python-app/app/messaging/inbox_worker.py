@@ -274,6 +274,8 @@ async def handle_message(
 
         stage_started = perf_counter()
         response = await execution_context.run(_run_journal)
+        if media_kind == "voice_caption_only":
+            response = "I could not transcribe the audio; I used only your written details.\n" + response
         logger.info("Inbox stage complete: provider=%s event_id=%s stage=journal elapsed_ms=%d", message.provider, message.event_id, (perf_counter() - stage_started) * 1000)
         try:
             async with session.begin_nested():
