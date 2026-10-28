@@ -158,13 +158,15 @@ class JournalAgent:
             romanian = batches[-1].data.get("replyLanguage") == "ro"
             verbs = {"CREATE": "Notat" if romanian else "Logged", "EDIT": "Actualizat" if romanian else "Updated",
                      "MOVE": "Mutat" if romanian else "Moved", "DELETE": "Șters" if romanian else "Deleted"}
-            # A successful retry supersedes an earlier failed attempt for the
-            # same server-labelled action, without hiding unrelated failures.
-            resolved = {row.get("actionKey") for batch in batches for row in batch.data.get("results", [])
-                        if isinstance(row, dict) and row.get("ok") is True and row.get("actionKey")}
-
             undo_available = False
-            for result in batches:
+            for attempt, result in enumerate(batches, 1):
+                label = "Încercarea" if romanian else "Attempt"
+                history = ""
+                if len(batches) > 1:
+                    history = (" (ultima încercare)" if attempt == len(batches) else " (încercare anterioară)") if romanian else (
+                        " (latest attempt)" if attempt == len(batches) else " (earlier attempt)"
+                    )
+                lines.append(f"{label} {attempt}{history}:")
                 data = result.data
                 rows = data.get("results")
                 if not isinstance(rows, list):
@@ -196,8 +198,6 @@ class JournalAgent:
                         date = f" [{row['date']}]" if isinstance(row.get("date"), str) else ""
                         lines.append(f"{verbs.get(action_type, 'Changed')}: {description}{suffix}{provenance}{date}.")
                     else:
-                        if row.get("actionKey") and row["actionKey"] in resolved:
-                            continue
                         identity = row.get("requestedDescription") or f"item {row.get('actionIndex', '?')}"
                         identity = " ".join(str(identity).split())[:255]
                         failed_label = f"{action_type} #{row.get('actionIndex', '?')} ({identity})"

@@ -266,7 +266,9 @@ async def test_all_failed_then_successful_retry_has_unambiguous_final_receipt():
         reply = await JournalAgent(RetryOnce(), JournalToolExecutor(), 10).run(session, ctx)
         assert "Notat: pară" in reply
         assert "90 kcal" in reply
-        assert "nu s-a aplicat" not in reply
+        assert "Încercarea 1 (încercare anterioară)" in reply
+        assert "Încercarea 2 (ultima încercare)" in reply
+        assert "nu s-a aplicat" in reply
         assert "an invented result" not in reply
         assert len((await session.execute(select(FoodEntry))).scalars().all()) == 1
 
