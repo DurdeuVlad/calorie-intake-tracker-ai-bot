@@ -146,7 +146,7 @@ def _action_schema() -> dict[str, Any]:
             "name": _string(max_length=MAX_TEXT_CHARS),
             "calories": _integer(minimum=MIN_CALORIES, maximum=MAX_CALORIES),
             "quantity": _number(minimum=float(MIN_QUANTITY), maximum=float(MAX_QUANTITY), exclusive_minimum=float(MIN_QUANTITY), multiple_of=float(QUANTITY_STEP)),
-            "unit": {"type": "string", "enum": ["g", "ml", "portion", "unspecified"]},
+            "unit": {"type": "string", "enum": ["g", "ml", "piece", "portion", "unspecified"]},
             "date": _string(max_length=MAX_DATE_CHARS),
             "localTime": _string(max_length=MAX_DATE_CHARS),
             "quoteId": _string(max_length=MAX_IDENTIFIER_CHARS),

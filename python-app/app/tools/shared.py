@@ -183,7 +183,7 @@ def _quantity_unit(raw: str | None, quantity: float | None) -> str:
     try:
         unit = QuantityUnit.from_database_value(raw).value
     except ValueError as failure:
-        raise ValidationError("Use g, ml, portion, or unspecified for the unit.") from failure
+        raise ValidationError("Use g, ml, piece, portion, or unspecified for the unit.") from failure
     if quantity is None and unit != QuantityUnit.UNSPECIFIED.value:
         raise ValidationError("A quantity is required when a concrete unit is provided.")
     return unit

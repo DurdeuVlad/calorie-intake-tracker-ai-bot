@@ -5,6 +5,7 @@ class QuantityUnit(str, Enum):
     G = "g"
     ML = "ml"
     PORTION = "portion"
+    PIECE = "piece"
     UNSPECIFIED = "unspecified"
 
     @classmethod
