@@ -15,6 +15,7 @@ from app.agent.openai_model_client import (
     AgentProviderUnavailableError,
     OpenAiJournalAgentModel,
 )
+from app.agent.qa_gate import MAX_QA_RETRIES, PlausibilityJudge
 from app.agent.trace_sink import AgentTraceSink, NoopTraceSink
 from app.db.models.conversation import ConversationMemory
 from app.domain.agent_types import (
@@ -38,6 +39,7 @@ class JournalAgent:
         memory_recent=None,
         feedback_recent=None,
         trace: AgentTraceSink | None = None,
+        qa: PlausibilityJudge | None = None,
     ) -> None:
         self._model = model
         self._tools = tools
@@ -45,6 +47,7 @@ class JournalAgent:
         self._memory_recent = memory_recent  # async (session, user) -> list[ConversationMemory], or None
         self._feedback_recent = feedback_recent  # async (session, user) -> list[UserFeedback], or None
         self._trace = trace or NoopTraceSink()
+        self._qa = qa
 
     async def run(self, session: AsyncSession, context: AgentContext) -> str:
         self._trace.started(context)
@@ -54,9 +57,12 @@ class JournalAgent:
         feedback: list = await self._feedback_recent(session, context.user) if self._feedback_recent else []
 
         calls = 0
+        qa_notes: list[str] = []
         while True:
             try:
-                reply = await self._model.next(context, recent, exchanges, feedback)
+                # qa_notes is passed only after a rejection so plain model fakes keep working.
+                extra = {"qa_notes": qa_notes} if qa_notes else {}
+                reply = await self._model.next(context, recent, exchanges, feedback, **extra)
             except AgentProviderUnavailableError:
                 logger.exception("Agent model call failed")
                 return self._complete(self._fallback_receipt(exchanges) or self._unavailable())
@@ -67,7 +73,14 @@ class JournalAgent:
             if not reply.tool_calls:
                 if not reply.text or not reply.text.strip():
                     return self._complete(self._fallback_receipt(exchanges) or self._unavailable())
-                return self._complete(self._safe_reply(reply.text))
+                text = self._safe_reply(reply.text)
+                if self._qa is not None and len(qa_notes) < MAX_QA_RETRIES:
+                    verdict = await self._qa.review(context, exchanges, text)
+                    if not verdict.plausible:
+                        logger.info("QA gate rejected reply (round %d): %s", len(qa_notes) + 1, verdict.issues)
+                        qa_notes.append(f"Draft reply: {text}\nRejected because: {verdict.issues}")
+                        continue
+                return self._complete(text)
 
             for call in reply.tool_calls:
                 if calls >= self._max_calls:
