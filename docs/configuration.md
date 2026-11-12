@@ -49,7 +49,7 @@ All canonical application settings are declared via environment variables and lo
 | `OPENAI_BASE_URL` | No | Direct OpenAI API; Compose uses `http://litellm:4000/v1` | OpenAI-compatible API endpoint. Use the LiteLLM proxy in Compose for routing and caching. |
 | `OPENAI_MODEL` | No | `gpt-5.6-luna` | Chat model for conversation and tool calling. |
 | `QA_GATE_ENABLED` | No | `true` | Run an independent plausibility judge on each reply before it is sent. A rejected reply sends the model back to fix it, at most 2 times per user request; the judge fails open on provider errors. |
-| `QA_MODEL` | No | *(uses `OPENAI_MODEL`)*; Compose sets `gpt-5.4-mini` | Model for the plausibility judge. Must be listed in `litellm_config.yaml` when going through LiteLLM. Live-tested: `gpt-5.4-mini` 7/7 on a plausibility case set; `gpt-5.4-nano` 6/7 (false rejection of a sensible log). |
+| `QA_MODEL` | No | *(uses `OPENAI_MODEL`)*; Compose sets `gpt-6-luna` | Model for the plausibility judge. Must be listed in `litellm_config.yaml` when going through LiteLLM. Live-tested on a plausibility case set: `gpt-6-luna` and `gpt-5.4-mini` catch every implausible case; `gpt-5.4-nano` falsely rejects sensible logs. |
 | `OPENAI_TRANSCRIPTION_MODEL` | No | `gpt-4o-mini-transcribe` | Model used for audio voice-note transcription. |
 | `AGENT_MAX_TOOL_CALLS` | No | `10` | Maximum tool-call turns per agent run; hard-capped at 10. |
 
