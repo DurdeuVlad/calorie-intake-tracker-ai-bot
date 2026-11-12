@@ -234,3 +234,18 @@ def test_photo_label_line_is_trusted_like_an_explicit_value():
     assert "a photo's Label line (when it states a real printed value, not \"none\") as trusted nutrition" in prompt
     assert "without re-estimating from the photo's Interpretation/Estimate" in prompt
     assert "without asking the user to retype a number already printed and captured in Label" in prompt
+
+
+def test_no_prompt_surface_tells_model_to_estimate_before_searching():
+    from app.agent.capabilities import registry
+
+    prompt = instructions(romanian=False)
+    nutrition = registry.load("nutrition")
+    estimate = next(t for t in tool_definitions() if t["function"]["name"] == "estimate_food")["function"]["description"]
+
+    assert "Estimate a typical portion with estimate_food" not in prompt
+    assert "estimate_food is only the fallback" in prompt
+    assert "Default: estimate_food" not in nutrition
+    assert "call `search_web` first" in nutrition
+    assert "Use this immediately" not in estimate
+    assert "Call search_web first" in estimate

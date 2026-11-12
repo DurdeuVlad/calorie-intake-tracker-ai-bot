@@ -224,7 +224,7 @@ def tool_definitions() -> list[dict[str, Any]]:
         ),
         _tool(
             "estimate_food",
-            "Create a server-owned AI estimate for a food item when no explicit calories, packaged result, or web search result is available. Use this immediately for common foods the user ate without giving calories — do not ask the user for nutrition data.",
+            "Fallback only: create a server-owned AI estimate when no explicit calories, packaged result, or usable web search result is available. Call search_web first; use this only after it is unavailable or yields no usable nutrition. Do not ask the user for nutrition data. grams is the total for the full quantity eaten.",
             _object(
                 {
                     "name": _string(max_length=MAX_TEXT_CHARS),
