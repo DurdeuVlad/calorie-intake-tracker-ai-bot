@@ -11,7 +11,7 @@ The canonical Python application uses PostgreSQL 17 with the retained V1–V17 P
 | `food_users` | V1 | Primary user record. Stores numeric Telegram ID and registration timestamp (`id` PK). |
 | `user_settings` | V1 + Alembic | Per-user configuration: IANA `timezone`, `calorie_target`, `preferred_language`, `reports_enabled`, `onboarding_stage` (`NAME` → `TIMEZONE` → `CALORIE_TARGET` → `COMPLETE`), `onboarding_completed`, `day_boundary_hour` (0-23, default 0), `day_boundary_reminder_enabled`, `target_mode` (`max` \| `min`), `budget_alerts_enabled`, `tracking_nudge_enabled` (`user_id` FK, 1:1). |
 | `food_entries` | V1 | One eating event: timestamp, meal type, original text evidence, total calories/macros, `user_id` FK. |
-| `food_items` | V1 | Structured food item within an entry: food name, quantity value, unit (`g`, `ml`, `portion`, `unspecified`), calories, protein, carbs, fat, nutrition source provenance. |
+| `food_items` | V1 | Structured food item within an entry: food name, quantity value, unit (`g`, `ml`, `piece`, `portion`, `unspecified`), calories, protein, carbs, fat, nutrition source provenance. |
 | `journal_change_sets` | V17 | Message-level change set for 10-minute reversible undo (`user_id`, `created_at`, `expires_at`). |
 | `journal_change_mutations` | V17 | Ordered before/after state diffs (INSERT, UPDATE, DELETE) belonging to a `journal_change_set`. |
 | `nutrition_sources` | V5 | Cached provenance for Open Food Facts, private foods, and web lookups. |
