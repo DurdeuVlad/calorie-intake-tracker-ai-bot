@@ -68,7 +68,8 @@ class OpenAiJournalAgentModel:
         )
 
     async def next(
-        self, context: AgentContext, memory: list[ConversationMemory], exchanges: list[AgentExchange], feedback: list | None = None
+        self, context: AgentContext, memory: list[ConversationMemory], exchanges: list[AgentExchange], feedback: list | None = None,
+        qa_notes: list[str] | None = None,
     ) -> AgentReply | None:
         if not self._settings.openai_api_key:
             return AgentReply(None, [])
@@ -77,6 +78,9 @@ class OpenAiJournalAgentModel:
         if feedback:
             tips = "\n".join(f"- {f.kind}: {f.message}" for f in feedback[-5:])
             messages.append({"role": "system", "content": f"Recent feedback from this user — learn from it and avoid repeating these mistakes:\n{tips}"})
+        if qa_notes:
+            notes = "\n\n".join(qa_notes)
+            messages.append({"role": "system", "content": f"An independent quality check rejected your draft reply. Fix the problem before replying: re-search or re-estimate, and EDIT or DELETE any entry you logged wrongly. Do not repeat the rejected answer.\n{notes}"})
         for turn in memory:
             messages.append({"role": turn.role, "content": turn.content})
         messages.append({"role": "user", "content": _user_content(context)})

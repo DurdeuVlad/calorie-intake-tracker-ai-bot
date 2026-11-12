@@ -4,6 +4,7 @@ they exercise the exact same agent wiring, differing only in the trace sink."""
 
 from app.agent.journal_agent import JournalAgent
 from app.agent.openai_model_client import OpenAiJournalAgentModel
+from app.agent.qa_gate import PlausibilityJudge
 from app.agent.trace_sink import AgentTraceSink
 from app.config import Settings
 from app.integrations.browserless import BrowserlessClient
@@ -36,5 +37,6 @@ def build_journal_application_service(settings: Settings, trace: AgentTraceSink 
         refresh_daily_status=daily_status_service.refresh_for_tool_executor,
         send_budget_alert=report_scheduler.maybe_send_budget_alert_for_tool_executor,
     )
-    agent = JournalAgent(model, tools, settings.agent_max_tool_calls, memory_recent=memory_recent, feedback_recent=feedback_repo.recent_for_user, trace=trace)
+    agent = JournalAgent(model, tools, settings.agent_max_tool_calls, memory_recent=memory_recent, feedback_recent=feedback_repo.recent_for_user, trace=trace,
+                         qa=PlausibilityJudge(settings) if settings.qa_gate_enabled else None)
     return JournalApplicationService(settings.default_timezone, agent=agent)

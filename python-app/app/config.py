@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
     openai_model: str = Field(default="gpt-5.6-luna", alias="OPENAI_MODEL")
     agent_max_tool_calls: int = Field(default=10, alias="AGENT_MAX_TOOL_CALLS")
+    qa_gate_enabled: bool = Field(default=True, alias="QA_GATE_ENABLED")
+    qa_model: str = Field(default="", alias="QA_MODEL")
     openai_transcription_model: str = Field(default="gpt-4o-mini-transcribe", alias="OPENAI_TRANSCRIPTION_MODEL")
 
     # Nutrition / web tools

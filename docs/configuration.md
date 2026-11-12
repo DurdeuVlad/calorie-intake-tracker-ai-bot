@@ -48,6 +48,8 @@ All canonical application settings are declared via environment variables and lo
 | `OPENAI_API_KEY` | Yes (for AI features) | *(empty)* | OpenAI API key credential. Keep it in the deployment secret store. |
 | `OPENAI_BASE_URL` | No | Direct OpenAI API; Compose uses `http://litellm:4000/v1` | OpenAI-compatible API endpoint. Use the LiteLLM proxy in Compose for routing and caching. |
 | `OPENAI_MODEL` | No | `gpt-5.6-luna` | Chat model for conversation and tool calling. |
+| `QA_GATE_ENABLED` | No | `true` | Run an independent plausibility judge on each reply before it is sent. A rejected reply sends the model back to fix it, at most 2 times per user request; the judge fails open on provider errors. |
+| `QA_MODEL` | No | *(uses `OPENAI_MODEL`)* | Model for the plausibility judge. Use a small, cheap model. |
 | `OPENAI_TRANSCRIPTION_MODEL` | No | `gpt-4o-mini-transcribe` | Model used for audio voice-note transcription. |
 | `AGENT_MAX_TOOL_CALLS` | No | `10` | Maximum tool-call turns per agent run; hard-capped at 10. |
 
