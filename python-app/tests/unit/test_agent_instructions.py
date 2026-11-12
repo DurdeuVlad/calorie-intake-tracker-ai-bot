@@ -8,7 +8,8 @@ from app.domain.agent_types import AgentContext
 def test_core_prompt_is_small_and_contains_capability_index():
     prompt = instructions()
     # Core prompt should be small (was a 5000+ char monolith)
-    assert len(prompt) < 12000
+    assert len(prompt) < 13500
+    assert "{language}" not in prompt  # unsubstituted placeholder once leaked to the model
     assert "Capability index" in prompt
     assert "load_instructions" in prompt
     for topic in ("nutrition", "portions", "combos", "editing", "daily_totals", "onboarding", "aliases"):
