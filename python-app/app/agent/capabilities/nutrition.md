@@ -1,10 +1,14 @@
 # Nutrition resolution rules
 
-## Default: estimate_food for foods without explicit calories
+## Default: search first, estimate only as a fallback
 
-When the user ate a food without giving calories, call `estimate_food` with a typical adult portion, then `apply_journal_actions` to log it. Do not ask the user for calories or grams.
+When the user ate a food without giving calories, call `search_web` first (for restaurant or brand items, search the brand plus the item, e.g. "KFC Hot Wings calories"), use `fetch_web_page` on the strongest result if the snippet has no number, then log with `apply_journal_actions` in the same turn. Do not ask the user for calories or grams. Use `search_packaged_food` + `select_packaged_food` for barcode/package lookups and `get_private_food` for saved household foods.
 
-Use `search_packaged_food` + `select_packaged_food` for barcode/package lookups, `get_private_food` for saved household foods, or `search_web` + `fetch_web_page` for web grounding when available. These are optional refinements — `estimate_food` is always a valid fallback.
+Use `estimate_food` only after the search tools are unavailable or yield no usable nutrition. Never skip the search silently.
+
+## Sanity check the number
+
+Calories must cover the full quantity the user stated: multiply a per-piece value by the count (10 wings = 10 x per-wing). A real food or portion is almost never under about 20 kcal; if a result implies a few kcal for a wing, fries portion, or sauce, you misread the lookup or the quantity. Re-check it before logging.
 
 ## When the user asks "cate calorii are X?" (a question, not a logging request)
 
